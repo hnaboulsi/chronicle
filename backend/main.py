@@ -16,9 +16,14 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI(title="Life-Manager Agent API")
 
 # Serve frontend static files
+from fastapi.responses import RedirectResponse
 frontend_path = os.path.join(os.path.dirname(__file__), "frontend")
 os.makedirs(frontend_path, exist_ok=True)
 app.mount("/dashboard", StaticFiles(directory=frontend_path, html=True), name="frontend")
+
+@app.get("/")
+async def redirect_to_dashboard():
+    return RedirectResponse(url="/dashboard/index.html")
 
 @app.post("/api/mac-telemetry")
 async def receive_mac_telemetry(data: MacTelemetry, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
