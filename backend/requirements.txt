@@ -5,3 +5,4 @@ httpx
 pydantic
 google-genai
 python-dotenv
+jinja2

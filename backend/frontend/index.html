@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Life Manager Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="dashboard-container">
+        
+        <!-- Header -->
+        <header class="glass-header">
+            <div class="header-left">
+                <div class="pulse-ring"></div>
+                <h1>Life Manager <span class="badge">Live</span></h1>
+            </div>
+            <div class="datetime-display" id="clock">Loading...</div>
+        </header>
+
+        <!-- Current States -->
+        <section class="device-states">
+            <div class="state-card glass-panel" id="card-mac">
+                <div class="card-icon mac-icon">💻</div>
+                <div class="card-content">
+                    <h3>MacBook M4</h3>
+                    <p class="status-value" id="mac-status">Tracking active...</p>
+                    <p class="sub-text" id="mac-detail">Waiting for telemetry...</p>
+                </div>
+            </div>
+
+            <div class="state-card glass-panel" id="card-ios">
+                <div class="card-icon ios-icon">📱</div>
+                <div class="card-content">
+                    <h3>iPhone</h3>
+                    <p class="status-value" id="ios-status">Waiting for webhook...</p>
+                    <p class="sub-text" id="ios-detail">Unknown location</p>
+                </div>
+            </div>
+            
+            <div class="state-card glass-panel" id="card-mode">
+                <div class="card-icon mode-icon">🎯</div>
+                <div class="card-content">
+                    <h3>Focus Mode</h3>
+                    <p class="status-value" id="focus-status">Inactive</p>
+                    <p class="sub-text" id="focus-detail">Study mode off</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Activity Feed -->
+        <section class="activity-feed glass-panel">
+            <div class="feed-header">
+                <h2>Live Activity Log</h2>
+                <button id="refresh-btn" class="icon-btn">↻</button>
+            </div>
+            <div class="table-container">
+                <table id="logs-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Device</th>
+                            <th>Activity / App</th>
+                            <th>Context / Tab</th>
+                        </tr>
+                    </thead>
+                    <tbody id="logs-body">
+                        <!-- Filled by JS -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
