@@ -1,89 +1,78 @@
+import subprocess
 import datetime
-import os.path
-
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
-
-# If modifying these scopes, delete the file token.json.
-SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
-
-def _get_credentials():
-    creds = None
-    # The file token.json stores the user's access and refresh tokens, and is
-    # created automatically when the authorization flow completes for the first
-    # time.
-    if os.path.exists("token.json"):
-        creds = Credentials.from_authorized_user_file("token.json", SCOPES)
-    # If there are no (valid) credentials available, let the user log in.
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            if not os.path.exists("credentials.json"):
-                print("Missing credentials.json. Please follow Google API setup.")
-                return None
-            flow = InstalledAppFlow.from_client_secrets_file(
-                "credentials.json", SCOPES
-            )
-            creds = flow.run_local_server(port=0)
-        # Save the credentials for the next run
-        with open("token.json", "w") as token:
-            token.write(creds.to_json())
-    return creds
+import json
 
 def get_first_event_tomorrow() -> str:
-    """Shows basic usage of the Google Calendar API.
-    Prints the start and name of the next 10 events on the user's calendar.
     """
-    creds = _get_credentials()
-    if not creds:
-        return "No credentials"
-
+    Uses AppleScript to query the native macOS Calendar application
+    for the first event scheduled for tomorrow.
+    """
+    
+    # Calculate tomorrow's date for the AppleScript query
+    now = datetime.datetime.now()
+    tomorrow = now + datetime.timedelta(days=1)
+    
+    # Format dates for AppleScript (e.g., "date "Thursday, October 26, 2023 at 12:00:00 AM"")
+    start_str = tomorrow.strftime("%A, %B %d, %Y at 12:00:00 AM")
+    end_str = tomorrow.strftime("%A, %B %d, %Y at 11:59:59 PM")
+    
+    applescript = f'''
+    set startDate to date "{start_str}"
+    set endDate to date "{end_str}"
+    set upcomingEvents to {{}}
+    
+    tell application "Calendar"
+        repeat with aCalendar in calendars
+            set theEvents to (every event of aCalendar whose start date is greater than or equal to startDate and start date is less than or equal to endDate)
+            repeat with anEvent in theEvents
+                set end of upcomingEvents to {{summary:summary of anEvent, startTime:start date of anEvent}}
+            end repeat
+        end repeat
+    end tell
+    
+    -- Try to find the earliest event
+    set earliestEvent to missing value
+    set earliestTime to endDate
+    
+    repeat with evt in upcomingEvents
+        if startTime of evt is less than earliestTime then
+            set earliestTime to startTime of evt
+            set earliestEvent to summary of evt
+        end if
+    end repeat
+    
+    if earliestEvent is not missing value then
+        return earliestEvent & " at " & earliestTime
+    else
+        return "No upcoming events found tomorrow."
+    end if
+    '''
+    
     try:
-        service = build("calendar", "v3", credentials=creds)
-
-        # Call the Calendar API
-        now = datetime.datetime.utcnow()
-        # Get start of tomorrow
-        tomorrow = now + datetime.timedelta(days=1)
-        start_of_tomorrow = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0).isoformat() + "Z"
-        end_of_tomorrow = tomorrow.replace(hour=23, minute=59, second=59, microsecond=0).isoformat() + "Z"
-
-        print(f"Getting first event for tomorrow...")
-        events_result = (
-            service.events()
-            .list(
-                calendarId="primary",
-                timeMin=start_of_tomorrow,
-                timeMax=end_of_tomorrow,
-                maxResults=1,
-                singleEvents=True,
-                orderBy="startTime",
-            )
-            .execute()
+        result = subprocess.run(
+            ["osascript", "-e", applescript],
+            capture_output=True,
+            text=True,
+            check=True
         )
-        events = events_result.get("items", [])
-
-        if not events:
-            return "No upcoming events found tomorrow."
-
-        event = events[0]
-        start = event["start"].get("dateTime", event["start"].get("date"))
-        return f"{event['summary']} at {start}"
-
-    except HttpError as error:
-        print(f"An error occurred: {error}")
-        return f"Error: {error}"
+        output = result.stdout.strip()
+        if not output:
+             return "No upcoming events found tomorrow."
+        return output
+    except Exception as e:
+        print(f"Error querying Apple Calendar: {e}")
+        return "Error accessing Calendar"
 
 def calculate_alarm_time(event_str: str) -> str:
     # Logic to parse the event string and subtract 1.5 hours buffer time to get ready/commute
-    # If no event, maybe default to 8:00 AM
     print(f"Calculating smart alarm for: {event_str}")
-    # Mocking return
     return "07:00 AM"
 
 if __name__ == "__main__":
-    print(get_first_event_tomorrow())
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "--test":
+        print("Testing Apple Calendar Sync...")
+        print(get_first_event_tomorrow())
+    else:
+        print(get_first_event_tomorrow())
+

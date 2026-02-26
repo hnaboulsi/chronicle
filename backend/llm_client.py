@@ -1,31 +1,41 @@
-import httpx
 from typing import Optional
-import json
+import os
+from dotenv import load_dotenv
+from google import genai
 
-MISTRAL_URL = "http://localhost:11434/api/generate"
+# Load environment variables (e.g., GEMINI_API_KEY) from .env file
+load_dotenv()
 
-async def ask_mistral(prompt: str, context: Optional[str] = None) -> str:
+api_key = os.getenv("GEMINI_API_KEY")
+if not api_key:
+    print("WARNING: GEMINI_API_KEY environment variable not set. Please provide it in a .env file or environment.")
+
+# Initialize the Gemini client (it automatically uses GEMINI_API_KEY from the env)
+try:
+    client = genai.Client()
+except Exception as e:
+    client = None
+    print(f"Failed to initialize Gemini client: {e}")
+
+async def ask_gemini(prompt: str, context: Optional[str] = None) -> str:
     """
-    Sends a prompt to the local Mistral model via Ollama API.
+    Sends a prompt to the Gemini API using gemini-2.5-flash.
     """
+    if not client:
+        return "Error: Gemini client not initialized."
+        
     full_prompt = prompt
     if context:
         full_prompt = f"Context:\n{context}\n\nQuery:\n{prompt}"
         
-    payload = {
-        "model": "mistral",
-        "prompt": full_prompt,
-        "stream": False
-    }
-
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(MISTRAL_URL, json=payload)
-            response.raise_for_status()
-            data = response.json()
-            return data.get("response", "").strip()
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=full_prompt,
+        )
+        return response.text.strip()
     except Exception as e:
-        print(f"Error calling Mistral: {e}")
+        print(f"Error calling Gemini: {e}")
         return ""
 
 async def check_if_vague(app_name: str, window_title: str) -> bool:
@@ -37,7 +47,7 @@ async def check_if_vague(app_name: str, window_title: str) -> bool:
         "Does this describe a specific, productive task, or is it vague/unfocused (like generic web browsing or watching videos)? "
         "Answer ONLY with YES (if vague) or NO (if specific)."
     )
-    response = await ask_mistral(prompt)
+    response = await ask_gemini(prompt)
     return "YES" in response.upper()
 
 async def generate_prompt(app_name: str, window_title: str) -> str:
@@ -46,7 +56,7 @@ async def generate_prompt(app_name: str, window_title: str) -> str:
         "Generate a short, friendly question asking if they are doing something else (like cooking or cleaning) "
         "or if they got distracted. Keep it under 15 words."
     )
-    return await ask_mistral(prompt)
+    return await ask_gemini(prompt)
 
 async def generate_daily_recap(logs_summary: str) -> str:
     prompt = (
@@ -54,4 +64,4 @@ async def generate_daily_recap(logs_summary: str) -> str:
         "provide a concise daily summary and a productivity score out of 10. Tell the user where their time went.\n\n"
         f"Logs:\n{logs_summary}"
     )
-    return await ask_mistral(prompt)
+    return await ask_gemini(prompt)
