@@ -1,0 +1,4 @@
+requests
+pyobjc-core
+pyobjc-framework-AppKit
+pyobjc-framework-Quartz
