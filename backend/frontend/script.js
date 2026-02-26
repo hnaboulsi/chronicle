@@ -14,9 +14,9 @@ const refreshBtn = document.getElementById('refresh-btn');
 // Update Local Clock
 function updateClock() {
     const now = new Date();
-    clockEl.innerText = now.toLocaleString(undefined, { 
-        weekday: 'short', month: 'short', day: 'numeric', 
-        hour: '2-digit', minute: '2-digit', second: '2-digit' 
+    clockEl.innerText = now.toLocaleString(undefined, {
+        weekday: 'short', month: 'short', day: 'numeric',
+        hour: '2-digit', minute: '2-digit', second: '2-digit'
     });
 }
 setInterval(updateClock, 1000);
@@ -28,11 +28,11 @@ async function fetchData() {
         // Fetch logs
         const logsRes = await fetch(`${API_BASE}/api/logs?limit=15`);
         const logs = await logsRes.json();
-        
+
         // Fetch states
         const stateRes = await fetch(`${API_BASE}/api/state`);
         const states = await stateRes.json();
-        
+
         updateUI(logs, states);
     } catch (err) {
         console.error("Error fetching data:", err);
@@ -45,7 +45,7 @@ function updateUI(logs, states) {
     if (latestMac) {
         macStatus.innerText = latestMac.app_name || 'Unknown App';
         macDetail.innerText = latestMac.is_idle ? "⚠️ Idle > 30 mins" : "Active";
-        if(latestMac.is_idle) macDetail.style.color = "var(--warning)";
+        if (latestMac.is_idle) macDetail.style.color = "var(--warning)";
         else macDetail.style.color = "var(--text-secondary)";
     }
 
@@ -70,20 +70,22 @@ function updateUI(logs, states) {
         const tr = document.createElement('tr');
         tr.className = 'fade-in';
         tr.style.animationDelay = `${index * 0.05}s`;
-        
-        const time = new Date(log.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+
+        let timestampStr = log.timestamp;
+        if (!timestampStr.endsWith('Z')) timestampStr += 'Z';
+        const time = new Date(timestampStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         const isMac = log.device === 'mac';
-        
+
         let activityText = "";
         let contextText = "";
-        
+
         if (isMac) {
             activityText = log.app_name;
             // Safari/Chrome now send "Tab Name - URL"
             let titleText = log.window_title;
-            if(titleText) {
+            if (titleText) {
                 // Formatting
-                if(titleText.length > 55) titleText = titleText.substring(0, 55) + "...";
+                if (titleText.length > 55) titleText = titleText.substring(0, 55) + "...";
                 contextText = `<span class="tab-pill">${titleText}</span>`;
             } else {
                 contextText = `<span style="color:var(--text-secondary)">No active tab</span>`;
