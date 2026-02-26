@@ -122,7 +122,7 @@ def main():
     print("Starting Life Manager Mac Tracker with Tab Tracking...")
     print("Press Ctrl+C to exit.")
     
-    poll_interval = 5.0
+    poll_interval = 60.0 # Changed to 60s to save LLM credits
     
     while True:
         try:
@@ -135,6 +135,14 @@ def main():
             print(f"Active: {app_name} [{display_title}] - Idle: {idle_time}s")
             
             send_telemetry(app_name, window_title, idle_time)
+            
+            # Dynamically fetch the polling interval
+            try:
+                settings_resp = requests.get(f"{BACKEND_URL}/api/settings", timeout=2.0)
+                if settings_resp.status_code == 200:
+                    poll_interval = settings_resp.json().get("polling_interval_seconds", 60)
+            except Exception as e:
+                pass # Use previous poll interval
             
             time.sleep(poll_interval)
             

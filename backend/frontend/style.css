@@ -21,7 +21,7 @@
 body {
     font-family: 'Inter', sans-serif;
     background-color: var(--bg-color);
-    background-image: 
+    background-image:
         radial-gradient(circle at 15% 50%, rgba(88, 166, 255, 0.08), transparent 25%),
         radial-gradient(circle at 85% 30%, rgba(63, 185, 80, 0.05), transparent 25%);
     color: var(--text-primary);
@@ -38,7 +38,8 @@ body {
 }
 
 /* Glassmorphism Classes */
-.glass-header, .glass-panel {
+.glass-header,
+.glass-panel {
     background: var(--glass-bg);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
@@ -89,9 +90,20 @@ h1 {
 }
 
 @keyframes pulse {
-    0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(63, 185, 80, 0.7); }
-    70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(63, 185, 80, 0); }
-    100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(63, 185, 80, 0); }
+    0% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(63, 185, 80, 0.7);
+    }
+
+    70% {
+        transform: scale(1);
+        box-shadow: 0 0 0 10px rgba(63, 185, 80, 0);
+    }
+
+    100% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(63, 185, 80, 0);
+    }
 }
 
 .datetime-display {
@@ -122,7 +134,7 @@ h1 {
 
 .card-icon {
     font-size: 2rem;
-    background: rgba(255,255,255,0.05);
+    background: rgba(255, 255, 255, 0.05);
     padding: 1rem;
     border-radius: 12px;
     border: 1px solid var(--glass-border);
@@ -174,6 +186,45 @@ h1 {
     font-weight: 400;
 }
 
+.controls-container {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+}
+
+.slider-group {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+}
+
+.slider-group label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+}
+
+.styled-slider {
+    -webkit-appearance: none;
+    width: 120px;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 2px;
+    outline: none;
+}
+
+.styled-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    box-shadow: 0 0 10px var(--accent-glow);
+}
+
 .icon-btn {
     background: transparent;
     border: 1px solid var(--glass-border);
@@ -187,7 +238,7 @@ h1 {
 
 .icon-btn:hover {
     color: var(--text-primary);
-    background: rgba(255,255,255,0.1);
+    background: rgba(255, 255, 255, 0.1);
 }
 
 .table-container {
@@ -239,8 +290,15 @@ tr:hover td {
 }
 
 @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(5px); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+        opacity: 0;
+        transform: translateY(5px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 @media (max-width: 768px) {

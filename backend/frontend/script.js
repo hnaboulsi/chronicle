@@ -105,9 +105,49 @@ function updateUI(logs, states) {
     });
 }
 
+const pollingSlider = document.getElementById('polling-slider');
+const pollingLabel = document.getElementById('polling-label');
+
+let currentPollIntervalId = null;
+
+// Handle slider changes
+pollingSlider.addEventListener('input', (e) => {
+    pollingLabel.innerText = `Check every: ${e.target.value}m`;
+});
+
+// Update backend when user finishes dragging slider
+pollingSlider.addEventListener('change', async (e) => {
+    const mins = parseInt(e.target.value);
+    const secs = mins * 60;
+    try {
+        await fetch(`${API_BASE}/api/settings`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ polling_interval_seconds: secs })
+        });
+        console.log(`Updated backend polling interval to ${mins}m`);
+    } catch (err) {
+        console.error("Failed to update polling setting:", err);
+    }
+});
+
+// Fetch Settings
+async function fetchSettings() {
+    try {
+        const res = await fetch(`${API_BASE}/api/settings`);
+        const data = await res.json();
+        const mins = Math.max(1, Math.floor(data.polling_interval_seconds / 60));
+        pollingSlider.value = mins;
+        pollingLabel.innerText = `Check every: ${mins}m`;
+    } catch (err) {
+        console.error("Error fetching settings:", err);
+    }
+}
+
 // Event Listeners and Poll
 refreshBtn.addEventListener('click', fetchData);
 
-// Initial fetch and poll every 5 seconds
+// Setup
+fetchSettings();
 fetchData();
-setInterval(fetchData, 5000);
+currentPollIntervalId = setInterval(fetchData, 5000); // Dashboard still refreshes table every 5s

@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,9 +8,10 @@
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
 </head>
+
 <body>
     <div class="dashboard-container">
-        
+
         <!-- Header -->
         <header class="glass-header">
             <div class="header-left">
@@ -38,7 +40,7 @@
                     <p class="sub-text" id="ios-detail">Unknown location</p>
                 </div>
             </div>
-            
+
             <div class="state-card glass-panel" id="card-mode">
                 <div class="card-icon mode-icon">🎯</div>
                 <div class="card-content">
@@ -53,7 +55,14 @@
         <section class="activity-feed glass-panel">
             <div class="feed-header">
                 <h2>Live Activity Log</h2>
-                <button id="refresh-btn" class="icon-btn">↻</button>
+                <div class="controls-container">
+                    <div class="slider-group">
+                        <label for="polling-slider" id="polling-label">Check every: 1m</label>
+                        <input type="range" id="polling-slider" class="styled-slider" min="1" max="60" value="1"
+                            step="1">
+                    </div>
+                    <button id="refresh-btn" class="icon-btn">↻</button>
+                </div>
             </div>
             <div class="table-container">
                 <table id="logs-table">
@@ -71,9 +80,10 @@
                 </table>
             </div>
         </section>
-        
+
     </div>
 
     <script src="script.js"></script>
 </body>
+
 </html>

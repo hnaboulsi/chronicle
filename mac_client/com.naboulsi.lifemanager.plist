@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.naboulsi.lifemanager</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/naboulsi/.gemini/antigravity/scratch/life-manager-agent/mac_client/venv/bin/python</string>
+        <string>/Users/naboulsi/.gemini/antigravity/scratch/life-manager-agent/mac_client/tracker.py</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/naboulsi/.gemini/antigravity/scratch/life-manager-agent/mac_client</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/tmp/lifemanager.out</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/lifemanager.err</string>
+</dict>
+</plist>

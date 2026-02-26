@@ -59,6 +59,17 @@ async def receive_ios_telemetry(data: iOSTelemetry, background_tasks: Background
 async def get_state(db: Session = Depends(get_db)):
     return agent_logic.get_all_states(db)
 
+@app.get("/api/settings")
+async def get_settings(db: Session = Depends(get_db)):
+    polling_str = agent_logic.get_state(db, "polling_interval_seconds", "60")
+    return {"polling_interval_seconds": int(polling_str)}
+
+@app.post("/api/settings")
+async def update_settings(payload: Dict[str, Any], db: Session = Depends(get_db)):
+    if "polling_interval_seconds" in payload:
+        agent_logic.set_state(db, "polling_interval_seconds", str(payload["polling_interval_seconds"]))
+    return {"status": "updated"}
+
 @app.get("/api/logs")
 async def get_logs(limit: int = 50, db: Session = Depends(get_db)):
     logs = db.query(ActivityLog).order_by(desc(ActivityLog.timestamp)).limit(limit).all()
