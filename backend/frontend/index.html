@@ -15,10 +15,13 @@
         <!-- Header -->
         <header class="glass-header">
             <div class="header-left">
-                <div class="pulse-ring"></div>
-                <h1>Life Manager <span class="badge">Live</span></h1>
+                <div class="pulse-ring" id="tracking-pulse"></div>
+                <h1>Life Manager <span class="badge" id="tracking-badge">Live</span></h1>
             </div>
-            <div class="datetime-display" id="clock">Loading...</div>
+            <div class="header-right" style="display: flex; align-items: center; gap: 1rem;">
+                <button id="toggle-tracking-btn" class="toggle-btn active">Tracking: ON</button>
+                <div class="datetime-display" id="clock">Loading...</div>
+            </div>
         </header>
 
         <!-- Current States -->

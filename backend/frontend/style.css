@@ -112,6 +112,42 @@ h1 {
     font-variant-numeric: tabular-nums;
 }
 
+.toggle-btn {
+    background: transparent;
+    border: 1px solid var(--glass-border);
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    text-transform: uppercase;
+    transition: all 0.2s;
+    letter-spacing: 0.5px;
+}
+
+.toggle-btn.active {
+    background: rgba(63, 185, 80, 0.1);
+    color: var(--success);
+    border-color: rgba(63, 185, 80, 0.3);
+}
+
+.toggle-btn.inactive {
+    background: rgba(248, 81, 73, 0.1);
+    color: var(--danger);
+    border-color: rgba(248, 81, 73, 0.3);
+}
+
+.pulse-ring.inactive {
+    background: var(--danger);
+    box-shadow: 0 0 0 0 rgba(248, 81, 73, 0.7);
+    animation: none;
+}
+
+.badge.inactive {
+    background: var(--danger);
+}
+
 /* State Cards */
 .device-states {
     display: grid;

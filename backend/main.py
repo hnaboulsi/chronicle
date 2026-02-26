@@ -62,12 +62,18 @@ async def get_state(db: Session = Depends(get_db)):
 @app.get("/api/settings")
 async def get_settings(db: Session = Depends(get_db)):
     polling_str = agent_logic.get_state(db, "polling_interval_seconds", "60")
-    return {"polling_interval_seconds": int(polling_str)}
+    tracking_enabled_str = agent_logic.get_state(db, "tracking_enabled", "true")
+    return {
+        "polling_interval_seconds": int(polling_str),
+        "tracking_enabled": tracking_enabled_str.lower() == "true"
+    }
 
 @app.post("/api/settings")
 async def update_settings(payload: Dict[str, Any], db: Session = Depends(get_db)):
     if "polling_interval_seconds" in payload:
         agent_logic.set_state(db, "polling_interval_seconds", str(payload["polling_interval_seconds"]))
+    if "tracking_enabled" in payload:
+        agent_logic.set_state(db, "tracking_enabled", str(payload["tracking_enabled"]).lower())
     return {"status": "updated"}
 
 @app.get("/api/logs")

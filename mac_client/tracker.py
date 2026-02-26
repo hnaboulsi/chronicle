@@ -126,6 +126,21 @@ def main():
     
     while True:
         try:
+            # Dynamically fetch the polling interval and tracking state
+            try:
+                settings_resp = requests.get(f"{BACKEND_URL}/api/settings", timeout=2.0)
+                if settings_resp.status_code == 200:
+                    data = settings_resp.json()
+                    poll_interval = data.get("polling_interval_seconds", 60)
+                    tracking_enabled = data.get("tracking_enabled", True)
+            except Exception as e:
+                tracking_enabled = True # failsafe
+
+            if not tracking_enabled:
+                print(f"Tracking is DISABLED. Sleeping for {poll_interval}s...")
+                time.sleep(poll_interval)
+                continue
+
             idle_time = get_idle_time()
             app_name = get_active_app()
             window_title = get_window_title(app_name)
@@ -135,14 +150,6 @@ def main():
             print(f"Active: {app_name} [{display_title}] - Idle: {idle_time}s")
             
             send_telemetry(app_name, window_title, idle_time)
-            
-            # Dynamically fetch the polling interval
-            try:
-                settings_resp = requests.get(f"{BACKEND_URL}/api/settings", timeout=2.0)
-                if settings_resp.status_code == 200:
-                    poll_interval = settings_resp.json().get("polling_interval_seconds", 60)
-            except Exception as e:
-                pass # Use previous poll interval
             
             time.sleep(poll_interval)
             

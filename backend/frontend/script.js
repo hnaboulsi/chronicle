@@ -134,6 +134,44 @@ pollingSlider.addEventListener('change', async (e) => {
 });
 
 // Fetch Settings
+const toggleTrackingBtn = document.getElementById('toggle-tracking-btn');
+const trackingPulse = document.getElementById('tracking-pulse');
+const trackingBadge = document.getElementById('tracking-badge');
+let isTrackingEnabled = true;
+
+function updateTrackingUI(enabled) {
+    isTrackingEnabled = enabled;
+    if (enabled) {
+        toggleTrackingBtn.innerText = "Tracking: ON";
+        toggleTrackingBtn.classList.remove('inactive');
+        toggleTrackingBtn.classList.add('active');
+        trackingPulse.classList.remove('inactive');
+        trackingBadge.classList.remove('inactive');
+        trackingBadge.innerText = "Live";
+    } else {
+        toggleTrackingBtn.innerText = "Tracking: OFF";
+        toggleTrackingBtn.classList.remove('active');
+        toggleTrackingBtn.classList.add('inactive');
+        trackingPulse.classList.add('inactive');
+        trackingBadge.classList.add('inactive');
+        trackingBadge.innerText = "Paused";
+    }
+}
+
+toggleTrackingBtn.addEventListener('click', async () => {
+    const newState = !isTrackingEnabled;
+    try {
+        await fetch(`${API_BASE}/api/settings`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tracking_enabled: newState })
+        });
+        updateTrackingUI(newState);
+    } catch (err) {
+        console.error("Failed to toggle tracking:", err);
+    }
+});
+
 async function fetchSettings() {
     try {
         const res = await fetch(`${API_BASE}/api/settings`);
@@ -141,6 +179,10 @@ async function fetchSettings() {
         const mins = Math.max(1, Math.floor(data.polling_interval_seconds / 60));
         pollingSlider.value = mins;
         pollingLabel.innerText = `Check every: ${mins}m`;
+
+        if (data.tracking_enabled !== undefined) {
+            updateTrackingUI(data.tracking_enabled);
+        }
     } catch (err) {
         console.error("Error fetching settings:", err);
     }
