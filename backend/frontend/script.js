@@ -101,6 +101,8 @@ function updateUI(logs, states) {
             <td>${activityText}</td>
             <td>${contextText}</td>
         `;
+
+        tr.onclick = () => openSummaryModal(log.id, isMac);
         logsBody.appendChild(tr);
     });
 }
@@ -143,6 +145,37 @@ async function fetchSettings() {
         console.error("Error fetching settings:", err);
     }
 }
+
+// Modal Logic
+const modalOverlay = document.getElementById('summary-modal');
+const closeModalBtn = document.getElementById('close-modal-btn');
+const summaryText = document.getElementById('summary-text');
+
+async function openSummaryModal(logId, isMac) {
+    modalOverlay.classList.remove('hidden');
+    summaryText.innerHTML = '<span class="pulse-ring" style="display:inline-block; margin-right:10px"></span> Generating AI insights...';
+
+    try {
+        const res = await fetch(`${API_BASE}/api/summary/${logId}`);
+        if (res.ok) {
+            const data = await res.json();
+            summaryText.innerText = data.summary;
+        } else {
+            summaryText.innerText = "Wow, 404... I couldn't find any insights for this event!";
+        }
+    } catch (err) {
+        summaryText.innerText = "Error connecting to the AI brain.";
+    }
+}
+
+closeModalBtn.addEventListener('click', () => {
+    modalOverlay.classList.add('hidden');
+});
+modalOverlay.addEventListener('click', (e) => {
+    if (e.target === modalOverlay) {
+        modalOverlay.classList.add('hidden');
+    }
+});
 
 // Event Listeners and Poll
 refreshBtn.addEventListener('click', fetchData);

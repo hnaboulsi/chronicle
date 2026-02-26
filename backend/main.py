@@ -75,6 +75,21 @@ async def get_logs(limit: int = 50, db: Session = Depends(get_db)):
     logs = db.query(ActivityLog).order_by(desc(ActivityLog.timestamp)).limit(limit).all()
     return logs
 
+@app.get("/api/summary/{log_id}")
+async def get_log_summary(log_id: int, db: Session = Depends(get_db)):
+    log = db.query(ActivityLog).filter(ActivityLog.id == log_id).first()
+    if not log:
+        raise HTTPException(status_code=404, detail="Log not found")
+        
+    if log.device == "mac":
+        app = log.app_name or "Unknown App"
+        title = log.window_title or "Unknown Title"
+        import llm_client
+        summary = await llm_client.generate_activity_summary(app, title)
+        return {"summary": summary}
+    else:
+        return {"summary": f"User was {log.activity_type} near {log.location_label}."}
+
 @app.post("/api/prompt-reply")
 async def handle_prompt_reply(payload: Dict[str, Any], db: Session = Depends(get_db)):
     reply = payload.get("reply", "")
