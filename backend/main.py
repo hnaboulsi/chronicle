@@ -405,7 +405,7 @@ async def ios_setup_page():
   <p>
     <a class="action-btn" href="/setup/shortcut/download?kind=charge_off">Download Charging Off</a>
   </p>
-  <p class="note">Each shortcut now has only 2 actions: <strong>Location</strong> + <strong>POST webhook</strong>.</p>
+  <p class="note"><strong>GPS</strong> uses Location + POST webhook. All other shortcuts use only POST webhook.</p>
   <p class="note">If AirDrop feels annoying, use iCloud Drive and open the files from the iPhone Files app.</p>
 </div>
 
@@ -458,19 +458,49 @@ def _build_shortcut_bytes(kind: str = "gps") -> bytes:
 
     kind = (kind or "gps").lower()
     templates = {
-        "gps": {"name": "Life Manager GPS", "activity": "ios_ping", "is_charging": None},
-        "arrive": {"name": "Life Manager Arrive", "activity": "Arrive", "is_charging": "false"},
-        "walking": {"name": "Life Manager Walking", "activity": "Walking", "is_charging": "false"},
-        "charge_on": {"name": "Life Manager Charging On", "activity": "Stationary", "is_charging": "true"},
-        "charge_off": {"name": "Life Manager Charging Off", "activity": "Stationary", "is_charging": "false"},
+        "gps": {
+            "name": "Life Manager GPS",
+            "activity": "ios_ping",
+            "is_charging": None,
+            "use_location_action": True,
+            "location_label": "current_location",
+        },
+        "arrive": {
+            "name": "Life Manager Arrive",
+            "activity": "Arrive",
+            "is_charging": "false",
+            "use_location_action": False,
+            "location_label": "arrive_trigger",
+        },
+        "walking": {
+            "name": "Life Manager Walking",
+            "activity": "Walking",
+            "is_charging": "false",
+            "use_location_action": False,
+            "location_label": "walking_trigger",
+        },
+        "charge_on": {
+            "name": "Life Manager Charging On",
+            "activity": "Stationary",
+            "is_charging": "true",
+            "use_location_action": False,
+            "location_label": "charging_trigger",
+        },
+        "charge_off": {
+            "name": "Life Manager Charging Off",
+            "activity": "Stationary",
+            "is_charging": "false",
+            "use_location_action": False,
+            "location_label": "charging_trigger",
+        },
     }
     if kind not in templates:
         raise ValueError(f"Unknown shortcut kind: {kind}")
 
     cfg = templates[kind]
     backend_url = _get_backend_url() + "/api/ios-telemetry"
-    loc_uuid = str(uuid.uuid4()).upper()
     post_uuid = str(uuid.uuid4()).upper()
+    loc_uuid = str(uuid.uuid4()).upper()
 
     def _dict_item(key: str, value_obj: dict) -> dict:
         return {
@@ -479,17 +509,22 @@ def _build_shortcut_bytes(kind: str = "gps") -> bytes:
             "WFValue": value_obj,
         }
 
-    payload_items = [
-        _dict_item(
-            "location_label",
-            {
-                "Value": {
-                    "attachmentsByRange": {"{0, 1}": {"Type": "ActionOutput", "OutputName": "MyLocation", "OutputUUID": loc_uuid}},
-                    "string": "\ufffc",
-                },
-                "WFSerializationType": "WFTextTokenString",
+    if cfg["use_location_action"]:
+        location_value = {
+            "Value": {
+                "attachmentsByRange": {"{0, 1}": {"Type": "ActionOutput", "OutputName": "MyLocation", "OutputUUID": loc_uuid}},
+                "string": "\ufffc",
             },
-        ),
+            "WFSerializationType": "WFTextTokenString",
+        }
+    else:
+        location_value = {
+            "Value": {"string": cfg["location_label"]},
+            "WFSerializationType": "WFTextTokenString",
+        }
+
+    payload_items = [
+        _dict_item("location_label", location_value),
         _dict_item(
             "activity_type",
             {"Value": {"string": cfg["activity"]}, "WFSerializationType": "WFTextTokenString"},
@@ -503,32 +538,39 @@ def _build_shortcut_bytes(kind: str = "gps") -> bytes:
             )
         )
 
+    actions = []
+    if cfg["use_location_action"]:
+        actions.append(
+            {
+                "WFWorkflowActionIdentifier": "is.workflow.actions.location",
+                "WFWorkflowActionParameters": {"CustomOutputName": "MyLocation", "UUID": loc_uuid},
+            }
+        )
+
+    actions.append(
+        {
+            "WFWorkflowActionIdentifier": "is.workflow.actions.downloadurl",
+            "WFWorkflowActionParameters": {
+                "WFURL": backend_url,
+                "WFHTTPMethod": "POST",
+                "WFHTTPBodyType": "Json",
+                "ShowHeaders": False,
+                "UUID": post_uuid,
+                "WFRequestVariable": {
+                    "Value": {"WFDictionaryFieldValueItems": payload_items},
+                    "WFSerializationType": "WFDictionaryFieldValue",
+                },
+            },
+        }
+    )
+
     shortcut = {
         "WFWorkflowMinimumClientVersion": 900,
         "WFWorkflowMinimumClientVersionString": "900",
         "WFWorkflowName": cfg["name"],
         "WFWorkflowTypes": [],
         "WFWorkflowIcon": {"WFWorkflowIconGlyphNumber": 59511, "WFWorkflowIconStartColor": 4275765759},
-        "WFWorkflowActions": [
-            {
-                "WFWorkflowActionIdentifier": "is.workflow.actions.location",
-                "WFWorkflowActionParameters": {"CustomOutputName": "MyLocation", "UUID": loc_uuid},
-            },
-            {
-                "WFWorkflowActionIdentifier": "is.workflow.actions.downloadurl",
-                "WFWorkflowActionParameters": {
-                    "WFURL": backend_url,
-                    "WFHTTPMethod": "POST",
-                    "WFHTTPBodyType": "Json",
-                    "ShowHeaders": False,
-                    "UUID": post_uuid,
-                    "WFRequestVariable": {
-                        "Value": {"WFDictionaryFieldValueItems": payload_items},
-                        "WFSerializationType": "WFDictionaryFieldValue",
-                    },
-                },
-            },
-        ],
+        "WFWorkflowActions": actions,
     }
     return plistlib.dumps(shortcut, fmt=plistlib.FMT_XML)
 
