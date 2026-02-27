@@ -4,7 +4,6 @@ from models import AgentState, ActivityLog, MacTelemetry, iOSTelemetry, HourlySu
 import llm_client
 import calendar_sync
 from datetime import datetime, timedelta
-import json
 
 # Categories that go on the calendar automatically
 PRODUCTIVE_CATEGORIES = {"studying", "working", "creative"}
@@ -308,6 +307,16 @@ async def process_ios_telemetry(data: iOSTelemetry, db: Session):
     set_state(db, "last_ios_ping", now.isoformat())
     set_state(db, "sleep_source", "iphone_only")
     set_state(db, "sleep_status_note", "Sleep detection uses iPhone automations.")
+    activity_type = data.activity_type or ""
+    activity_type_lower = activity_type.lower()
+    if activity_type_lower == "ios_ping":
+        set_state(db, "seen_periodic_automation", "true")
+    if activity_type_lower in {"arrive", "arrival", "arrived"}:
+        set_state(db, "seen_arrive_automation", "true")
+    if "walk" in activity_type_lower:
+        set_state(db, "seen_walking_automation", "true")
+    if data.is_charging is not None:
+        set_state(db, "seen_charging_automation", "true")
     is_walking = bool(data.activity_type and "walk" in data.activity_type.lower())
 
     # Store steps if provided
