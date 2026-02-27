@@ -3,14 +3,23 @@ Life Manager — macOS Menu Bar App
 Starts the backend server automatically and runs the activity tracker.
 Click the 🧠 icon in the menu bar to control everything.
 """
+import sys
+import os
+
+# Ensure venv packages (rumps, requests, etc.) are importable regardless of
+# how this script is launched (terminal, launchd, open -a Python.app, etc.)
+_here = os.path.dirname(os.path.abspath(__file__))
+for _sp in os.listdir(os.path.join(_here, "venv", "lib")):
+    _site = os.path.join(_here, "venv", "lib", _sp, "site-packages")
+    if os.path.isdir(_site) and _site not in sys.path:
+        sys.path.insert(0, _site)
+
 import rumps
 import threading
 import requests
 import subprocess
-import sys
-import os
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _here)
 import tracker
 import notifier
 
