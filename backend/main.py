@@ -568,16 +568,28 @@ async def ios_setup_page():
   .note {{ font-size: 0.85rem; color: #8b949e; margin-top: 0.75rem; }}
   .divider {{ border: none; border-top: 1px solid rgba(255,255,255,0.08); margin: 2rem 0; }}
   .badge-remote {{ background: rgba(63,185,80,0.15); color: #3fb950; border: 1px solid rgba(63,185,80,0.3); border-radius: 6px; padding: 0.2rem 0.6rem; font-size: 0.8rem; font-weight: 600; margin-left: 0.5rem; }}
+  pre.cmd {{ background: #161b22; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 1rem; overflow-x: auto; font-size: 0.85rem; color: #c9d1d9; white-space: pre-wrap; word-break: break-all; position: relative; }}
+  pre.cmd .copy-btn {{ position: absolute; top: 0.5rem; right: 0.5rem; background: rgba(88,166,255,0.2); color: #58a6ff; border: 1px solid rgba(88,166,255,0.3); border-radius: 6px; padding: 0.25rem 0.5rem; font-size: 0.75rem; cursor: pointer; font-family: 'Inter', sans-serif; }}
+  pre.cmd .copy-btn:hover {{ background: rgba(88,166,255,0.4); }}
+  .signing-note {{ background: rgba(210,153,34,0.1); border: 1px solid rgba(210,153,34,0.3); border-radius: 8px; padding: 1rem; margin: 1rem 0; }}
+  .signing-note strong {{ color: #d29922; }}
 </style>
+<script>
+function copyCmd(el) {{
+  const pre = el.closest('pre');
+  const text = pre.textContent.replace('Copy', '').trim();
+  navigator.clipboard.writeText(text).then(() => {{ el.textContent = 'Copied!'; setTimeout(() => el.textContent = 'Copy', 1500); }});
+}}
+</script>
 </head>
 <body>
 <h1>📱 iPhone Setup <span class="badge-remote" style="{remote_only}">☁️ Cloud</span></h1>
-<p>iOS blocks shortcuts imported from the browser. Use one of these methods instead — takes under 2 minutes.</p>
+<p>iOS requires shortcuts to be <strong>signed</strong> before they can be imported. Follow the steps below — takes under 2 minutes.</p>
 
-<h2>Method A — Download on Mac, AirDrop to iPhone</h2>
+<h2>Step 1 — Download shortcuts to your Mac</h2>
 <div class="step">
-  <div class="step-num">Step 1 — On your Mac (open this page in Safari/Chrome)</div>
-  <p>Download and import all 5 shortcuts (AirDrop each file to your iPhone and tap <strong>Add Shortcut</strong>):</p>
+  <div class="step-num">On your Mac (open this page in Safari/Chrome)</div>
+  <p>Download all 5 shortcuts:</p>
   <p>
     <a class="action-btn" href="/setup/shortcut/download?kind=gps">Download GPS Ping</a>
     <a class="action-btn" href="/setup/shortcut/download?kind=arrive">Download Arrive</a>
@@ -590,18 +602,43 @@ async def ios_setup_page():
     <a class="action-btn" href="/setup/shortcut/download?kind=charge_off">Download Charging Off</a>
   </p>
   <p class="note"><strong>GPS</strong> uses Location + POST webhook. All other shortcuts use only POST webhook.</p>
-  <p class="note">If AirDrop feels annoying, use iCloud Drive and open the files from the iPhone Files app.</p>
 </div>
 
-<hr class="divider" style="{local_only}">
+<h2>Step 2 — Sign the shortcuts on your Mac</h2>
+<div class="signing-note">
+  <strong>Why signing?</strong> iOS won't import unsigned .shortcut files. macOS has a built-in <code>shortcuts sign</code> command that signs them with your Apple ID.
+</div>
+<div class="step">
+  <div class="step-num">Option A — One-liner (signs all at once)</div>
+  <p>Open <strong>Terminal</strong> and paste this command:</p>
+  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>cd ~/Downloads && for f in LifeManager-*.shortcut; do shortcuts sign -m anyone -i "$f" -o "${{f%.shortcut}}-signed.shortcut" && echo "Signed: $f"; done</pre>
+  <p class="note">This creates signed copies (e.g. <code>LifeManager-gps-signed.shortcut</code>) in your Downloads folder.</p>
+</div>
+<div class="step">
+  <div class="step-num">Option B — Sign individually</div>
+  <p>If you prefer to sign one at a time, run each of these:</p>
+  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>shortcuts sign -m anyone -i ~/Downloads/LifeManager-gps.shortcut -o ~/Downloads/LifeManager-gps-signed.shortcut</pre>
+  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>shortcuts sign -m anyone -i ~/Downloads/LifeManager-arrive.shortcut -o ~/Downloads/LifeManager-arrive-signed.shortcut</pre>
+  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>shortcuts sign -m anyone -i ~/Downloads/LifeManager-walking.shortcut -o ~/Downloads/LifeManager-walking-signed.shortcut</pre>
+  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>shortcuts sign -m anyone -i ~/Downloads/LifeManager-charge_on.shortcut -o ~/Downloads/LifeManager-charge_on-signed.shortcut</pre>
+  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>shortcuts sign -m anyone -i ~/Downloads/LifeManager-charge_off.shortcut -o ~/Downloads/LifeManager-charge_off-signed.shortcut</pre>
+</div>
+
+<h2>Step 3 — Send to iPhone</h2>
+<div class="step">
+  <div class="step-num">AirDrop or iCloud Drive</div>
+  <p>Send each <strong>-signed.shortcut</strong> file to your iPhone via AirDrop, or drop them in iCloud Drive and open from the Files app.</p>
+  <p>Tap <strong>Add Shortcut</strong> for each one on your iPhone.</p>
+</div>
 
 <div style="{local_only}">
-<h2>Method B — iCloud Drive (no cables, local only)</h2>
+<hr class="divider">
+<h2>Alternative — iCloud Drive (no cables, local only)</h2>
 <div class="step">
   <div class="step-num">Step 1 — On your Mac</div>
   <p>Click the button below. It saves <strong>LifeManager.shortcut</strong> to your iCloud Drive and opens Finder there.</p>
   <a class="action-btn" href="/setup/save-to-icloud">Save to iCloud Drive →</a>
-  <p class="note">Requires iCloud Drive enabled in System Settings → Apple ID → iCloud.</p>
+  <p class="note">Requires iCloud Drive enabled in System Settings → Apple ID → iCloud. File is auto-signed if running on macOS.</p>
 </div>
 <div class="step">
   <div class="step-num">Step 2 — On your iPhone</div>
@@ -611,7 +648,7 @@ async def ios_setup_page():
 
 <hr class="divider">
 
-<h2>Step 2 — Create all automations (Run Shortcut only)</h2>
+<h2>Step 4 — Create all automations (Run Shortcut only)</h2>
 <div class="step">
   <div class="step-num">In the Shortcuts app on iPhone</div>
   <p><strong>Automation 1:</strong> Time of Day (every 30 min) → Run Shortcut <strong>Life Manager GPS</strong></p>
@@ -635,7 +672,45 @@ async def ios_setup_page():
 </html>"""
 
 
-def _build_shortcut_bytes(kind: str = "gps") -> bytes:
+def _sign_shortcut_bytes(unsigned_bytes: bytes, name: str = "shortcut") -> bytes:
+    """Sign shortcut bytes using the macOS `shortcuts sign` CLI.
+
+    Returns signed bytes on macOS, or the original unsigned bytes on Linux/Railway.
+    """
+    import shutil, tempfile
+    if not shutil.which("shortcuts"):
+        log.warning("shortcuts CLI not found (not macOS?) — returning unsigned")
+        return unsigned_bytes
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".shortcut", delete=False) as tmp_in:
+            tmp_in.write(unsigned_bytes)
+            tmp_in_path = tmp_in.name
+        tmp_out_path = tmp_in_path.replace(".shortcut", "-signed.shortcut")
+        result = subprocess.run(
+            ["shortcuts", "sign", "-m", "anyone", "-i", tmp_in_path, "-o", tmp_out_path],
+            capture_output=True, text=True
+        )
+        if result.returncode == 0:
+            with open(tmp_out_path, "rb") as f:
+                signed = f.read()
+            log.info("Signed shortcut: %s (%d bytes)", name, len(signed))
+            return signed
+        else:
+            log.error("shortcuts sign failed: %s", result.stderr.strip())
+            return unsigned_bytes
+    except Exception as e:
+        log.error("Error signing shortcut %s: %s", name, e)
+        return unsigned_bytes
+    finally:
+        import os
+        for p in [tmp_in_path, tmp_out_path]:
+            try:
+                os.unlink(p)
+            except OSError:
+                pass
+
+
+def _build_shortcut_bytes(kind: str = "gps", sign: bool = True) -> bytes:
     """Generate shortcut bytes for all iOS automation types."""
     import plistlib
     import uuid
@@ -756,7 +831,8 @@ def _build_shortcut_bytes(kind: str = "gps") -> bytes:
         "WFWorkflowIcon": {"WFWorkflowIconGlyphNumber": 59511, "WFWorkflowIconStartColor": 4275765759},
         "WFWorkflowActions": actions,
     }
-    return plistlib.dumps(shortcut, fmt=plistlib.FMT_XML)
+    raw = plistlib.dumps(shortcut, fmt=plistlib.FMT_XML)
+    return _sign_shortcut_bytes(raw, cfg["name"]) if sign else raw
 
 
 @app.get("/setup/save-to-icloud")
