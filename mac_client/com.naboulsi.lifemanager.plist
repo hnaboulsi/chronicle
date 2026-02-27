@@ -2,40 +2,39 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!-- Unique identifier for launchd -->
     <key>Label</key>
     <string>com.naboulsi.lifemanager</string>
 
-    <!-- What to run: the menu bar app (which also starts the backend) -->
+    <!--
+        Use /usr/bin/open to launch Python.app — this is the correct way to
+        start a GUI/menu bar app from launchd on modern macOS.
+        open registers the process with the window server so rumps can
+        create the menu bar icon.
+        --env passes the venv site-packages so all packages (rumps, requests)
+        are importable even though we're launching from the system Python.app.
+    -->
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/naboulsi/life-manager-agent/mac_client/venv/bin/python</string>
+        <string>/usr/bin/open</string>
+        <string>-n</string>
+        <string>-a</string>
+        <string>/Library/Frameworks/Python.framework/Versions/3.13/Resources/Python.app</string>
+        <string>--env</string>
+        <string>PYTHONPATH=/Users/naboulsi/life-manager-agent/mac_client/venv/lib/python3.13/site-packages</string>
+        <string>--args</string>
         <string>/Users/naboulsi/life-manager-agent/mac_client/menubar_app.py</string>
     </array>
 
-    <!-- Working directory -->
-    <key>WorkingDirectory</key>
-    <string>/Users/naboulsi/life-manager-agent/mac_client</string>
-
-    <!-- Launch on login -->
+    <!-- Run at login. KeepAlive is false because open exits immediately
+         after spawning Python.app — Python.app manages itself. -->
     <key>RunAtLoad</key>
     <true/>
 
-    <!-- Restart on crash, but NOT after a clean quit (so Quit from menu bar works) -->
     <key>KeepAlive</key>
-    <dict>
-        <key>SuccessfulExit</key>
-        <false/>
-    </dict>
+    <false/>
 
-    <!-- Required for menu bar / GUI apps (needs access to screen) -->
+    <!-- Aqua session required for GUI / window server access -->
     <key>LimitLoadToSessionType</key>
     <string>Aqua</string>
-
-    <!-- Logs -->
-    <key>StandardOutPath</key>
-    <string>/tmp/lifemanager.out</string>
-    <key>StandardErrorPath</key>
-    <string>/tmp/lifemanager.err</string>
 </dict>
 </plist>
