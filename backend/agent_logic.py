@@ -127,13 +127,13 @@ def _maybe_start_session(db: Session, category: str, summary: str, now: datetime
 
 
 async def _generate_and_store_hourly_summary(db: Session, now: datetime):
-    """Background task: generate and persist an hourly summary."""
-    hour_start = now - timedelta(hours=1)
+    """Background task: generate and persist a 30-min summary."""
+    hour_start = now - timedelta(minutes=30)
     logs = get_mac_logs_for_hour(db, since=hour_start)
     if not logs:
         return
 
-    hour_label = hour_start.strftime("%I:%M %p")
+    hour_label = f"{hour_start.strftime('%I:%M')}–{now.strftime('%I:%M %p')}"
     result = await llm_client.generate_hourly_summary(logs, hour_label)
 
     summary = HourlySummary(
@@ -197,7 +197,7 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session, background_task
     if background_tasks is not None:
         last_summary_str = get_state(db, "last_hourly_summary")
         last_summary = datetime.fromisoformat(last_summary_str) if last_summary_str else datetime.min
-        if (now - last_summary).total_seconds() > 3600:
+        if (now - last_summary).total_seconds() > 1800:
             set_state(db, "last_hourly_summary", now.isoformat())
             background_tasks.add_task(_generate_and_store_hourly_summary, db, now)
 
