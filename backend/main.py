@@ -540,12 +540,19 @@ async def ios_setup_status(db: Session = Depends(get_db)):
 
 @app.get("/setup/ios", response_class=HTMLResponse)
 async def ios_setup_page():
+    import shutil as _shutil
     backend_url = _get_backend_url()
     is_remote = backend_url.startswith("https://")
+    can_auto_sign = bool(_shutil.which("shortcuts"))  # True only on local macOS
     network_note = "Works from any network worldwide." if is_remote else "iPhone must be on the same WiFi network as your Mac."
 
     remote_only = "" if is_remote else "display:none"
     local_only = "display:none" if is_remote else ""
+    # Signing section: show only when on Railway (can't sign on Linux)
+    signing_section_display = "" if (is_remote and not can_auto_sign) else "display:none"
+    auto_signed_badge = "" if can_auto_sign else "display:none"
+    # "Sign all" button: only useful when running locally on macOS
+    sign_all_display = "" if (not is_remote and can_auto_sign) else "display:none"
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -568,6 +575,11 @@ async def ios_setup_page():
   .note {{ font-size: 0.85rem; color: #8b949e; margin-top: 0.75rem; }}
   .divider {{ border: none; border-top: 1px solid rgba(255,255,255,0.08); margin: 2rem 0; }}
   .badge-remote {{ background: rgba(63,185,80,0.15); color: #3fb950; border: 1px solid rgba(63,185,80,0.3); border-radius: 6px; padding: 0.2rem 0.6rem; font-size: 0.8rem; font-weight: 600; margin-left: 0.5rem; }}
+  .badge-signed {{ background: rgba(88,166,255,0.15); color: #58a6ff; border: 1px solid rgba(88,166,255,0.3); border-radius: 6px; padding: 0.2rem 0.6rem; font-size: 0.8rem; font-weight: 600; }}
+  .cmd-box {{ background: #161b22; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 1rem 1rem 1rem 1rem; font-family: 'SF Mono', 'Menlo', monospace; font-size: 0.85rem; color: #e6edf3; overflow-x: auto; white-space: pre-wrap; word-break: break-all; position: relative; margin: 0.75rem 0; line-height: 1.6; }}
+  .cmd-box .cmt {{ color: #8b949e; }}
+  .copy-btn {{ position: absolute; top: 0.5rem; right: 0.5rem; background: rgba(88,166,255,0.15); color: #58a6ff; border: 1px solid rgba(88,166,255,0.3); border-radius: 6px; padding: 0.25rem 0.6rem; font-size: 0.75rem; cursor: pointer; font-family: 'Inter', sans-serif; }}
+  .copy-btn:hover {{ background: rgba(88,166,255,0.3); }}
   pre.cmd {{ background: #161b22; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 1rem; overflow-x: auto; font-size: 0.85rem; color: #c9d1d9; white-space: pre-wrap; word-break: break-all; position: relative; }}
   pre.cmd .copy-btn {{ position: absolute; top: 0.5rem; right: 0.5rem; background: rgba(88,166,255,0.2); color: #58a6ff; border: 1px solid rgba(88,166,255,0.3); border-radius: 6px; padding: 0.25rem 0.5rem; font-size: 0.75rem; cursor: pointer; font-family: 'Inter', sans-serif; }}
   pre.cmd .copy-btn:hover {{ background: rgba(88,166,255,0.4); }}
@@ -575,98 +587,112 @@ async def ios_setup_page():
   .signing-note strong {{ color: #d29922; }}
 </style>
 <script>
-function copyCmd(el) {{
-  const pre = el.closest('pre');
-  const text = pre.textContent.replace('Copy', '').trim();
-  navigator.clipboard.writeText(text).then(() => {{ el.textContent = 'Copied!'; setTimeout(() => el.textContent = 'Copy', 1500); }});
+function copyCmd(btn) {{
+  // Clone the pre, remove the button node, then grab remaining text
+  const pre = btn.closest('pre');
+  const clone = pre.cloneNode(true);
+  clone.querySelectorAll('button').forEach(b => b.remove());
+  const text = clone.textContent.trim();
+  navigator.clipboard.writeText(text).then(() => {{
+    btn.textContent = 'Copied!';
+    btn.style.color = '#3fb950';
+    setTimeout(() => {{ btn.textContent = 'Copy'; btn.style.color = ''; }}, 2000);
+  }}).catch(() => {{
+    // Fallback for older browsers
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+    btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = 'Copy', 2000);
+  }});
 }}
 </script>
 </head>
 <body>
 <h1>📱 iPhone Setup <span class="badge-remote" style="{remote_only}">☁️ Cloud</span></h1>
-<p>iOS requires shortcuts to be <strong>signed</strong> before they can be imported. Follow the steps below — takes under 2 minutes.</p>
+<p>Follow these steps to set up Life Manager on your iPhone — takes under 3 minutes.</p>
 
+<!-- ── Step 1: Download ─────────────────────────────── -->
 <h2>Step 1 — Download shortcuts to your Mac</h2>
 <div class="step">
-  <div class="step-num">On your Mac (open this page in Safari/Chrome)</div>
-  <p>Download all 5 shortcuts:</p>
+  <div class="step-num">On your Mac — open this page in Safari or Chrome</div>
   <p>
-    <a class="action-btn" href="/setup/shortcut/download?kind=gps">Download GPS Ping</a>
-    <a class="action-btn" href="/setup/shortcut/download?kind=arrive">Download Arrive</a>
+    <span style="{auto_signed_badge}" class="badge-signed">✅ Auto-signed</span>
+    <span style="{signing_section_display}" class="badge-signed" style="background:rgba(210,153,34,0.15);color:#d29922;border-color:rgba(210,153,34,0.3);">⚠️ Requires signing — see Step 2</span>
   </p>
-  <p>
-    <a class="action-btn" href="/setup/shortcut/download?kind=walking">Download Walking</a>
-    <a class="action-btn" href="/setup/shortcut/download?kind=charge_on">Download Charging On</a>
+  <p style="margin-top:1rem">
+    <a class="action-btn" href="/setup/shortcut/download?kind=gps">⬇ GPS Ping</a>&nbsp;
+    <a class="action-btn" href="/setup/shortcut/download?kind=arrive">⬇ Arrive</a>&nbsp;
+    <a class="action-btn" href="/setup/shortcut/download?kind=walking">⬇ Walking</a>
   </p>
-  <p>
-    <a class="action-btn" href="/setup/shortcut/download?kind=charge_off">Download Charging Off</a>
+  <p style="margin-top:0.5rem">
+    <a class="action-btn" href="/setup/shortcut/download?kind=charge_on">⬇ Charging On</a>&nbsp;
+    <a class="action-btn" href="/setup/shortcut/download?kind=charge_off">⬇ Charging Off</a>
   </p>
-  <p class="note"><strong>GPS</strong> uses Location + POST webhook. All other shortcuts use only POST webhook.</p>
+  <p class="note"><strong>GPS Ping</strong> captures location. All others are event triggers (arrive, walk, charge).</p>
+  <!-- One-click sign all — only shows when running locally on Mac -->
+  <div style="{sign_all_display}; margin-top:1rem;">
+    <a class="action-btn" href="/setup/shortcut/sign-all" style="background:#3fb950;color:#000;">⚡ Download &amp; Sign All to Desktop</a>
+    <p class="note">Saves all 5 signed shortcuts to your Desktop and opens Finder. Then AirDrop to iPhone.</p>
+  </div>
 </div>
 
+<!-- ── Step 2: Sign (Railway only) ─────────────────── -->
+<div style="{signing_section_display}">
 <h2>Step 2 — Sign the shortcuts on your Mac</h2>
 <div class="signing-note">
-  <strong>Why signing?</strong> iOS won't import unsigned .shortcut files. macOS has a built-in <code>shortcuts sign</code> command that signs them with your Apple ID.
+  <strong>⚠️ Required when using Railway:</strong> iOS will not import unsigned shortcuts. Run this one-liner in Terminal to sign all 5 at once.
 </div>
 <div class="step">
-  <div class="step-num">Option A — One-liner (signs all at once)</div>
-  <p>Open <strong>Terminal</strong> and paste this command:</p>
-  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>cd ~/Downloads && for f in LifeManager-*.shortcut; do shortcuts sign -m anyone -i "$f" -o "${{f%.shortcut}}-signed.shortcut" && echo "Signed: $f"; done</pre>
-  <p class="note">This creates signed copies (e.g. <code>LifeManager-gps-signed.shortcut</code>) in your Downloads folder.</p>
+  <div class="step-num">Option A — One-liner in Terminal (recommended)</div>
+  <p>Open <strong>Terminal</strong> on your Mac and paste:</p>
+  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>cd ~/Downloads && for f in LifeManager-gps.shortcut LifeManager-arrive.shortcut LifeManager-walking.shortcut LifeManager-charge_on.shortcut LifeManager-charge_off.shortcut; do shortcuts sign -m anyone -i "$f" -o "${{f%.shortcut}}-signed.shortcut" && mv "${{f%.shortcut}}-signed.shortcut" "$f" && echo "✅ $f"; done && echo "All done!"</pre>
+  <p class="note">This signs the files in-place inside your Downloads folder. No new files — same filenames, now signed.</p>
 </div>
 <div class="step">
-  <div class="step-num">Option B — Sign individually</div>
-  <p>If you prefer to sign one at a time, run each of these:</p>
-  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>shortcuts sign -m anyone -i ~/Downloads/LifeManager-gps.shortcut -o ~/Downloads/LifeManager-gps-signed.shortcut</pre>
-  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>shortcuts sign -m anyone -i ~/Downloads/LifeManager-arrive.shortcut -o ~/Downloads/LifeManager-arrive-signed.shortcut</pre>
-  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>shortcuts sign -m anyone -i ~/Downloads/LifeManager-walking.shortcut -o ~/Downloads/LifeManager-walking-signed.shortcut</pre>
-  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>shortcuts sign -m anyone -i ~/Downloads/LifeManager-charge_on.shortcut -o ~/Downloads/LifeManager-charge_on-signed.shortcut</pre>
-  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>shortcuts sign -m anyone -i ~/Downloads/LifeManager-charge_off.shortcut -o ~/Downloads/LifeManager-charge_off-signed.shortcut</pre>
+  <div class="step-num">Option B — Sign each file individually</div>
+  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>shortcuts sign -m anyone -i ~/Downloads/LifeManager-gps.shortcut -o ~/Downloads/LifeManager-gps.shortcut</pre>
+  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>shortcuts sign -m anyone -i ~/Downloads/LifeManager-arrive.shortcut -o ~/Downloads/LifeManager-arrive.shortcut</pre>
+  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>shortcuts sign -m anyone -i ~/Downloads/LifeManager-walking.shortcut -o ~/Downloads/LifeManager-walking.shortcut</pre>
+  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>shortcuts sign -m anyone -i ~/Downloads/LifeManager-charge_on.shortcut -o ~/Downloads/LifeManager-charge_on.shortcut</pre>
+  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>shortcuts sign -m anyone -i ~/Downloads/LifeManager-charge_off.shortcut -o ~/Downloads/LifeManager-charge_off.shortcut</pre>
+</div>
 </div>
 
-<h2>Step 3 — Send to iPhone</h2>
+<!-- ── Step 2/3: Send to iPhone ─────────────────────── -->
+<h2 id="step-send">Step {{'3' if is_remote else '2'}} — Send to iPhone</h2>
 <div class="step">
-  <div class="step-num">AirDrop or iCloud Drive</div>
-  <p>Send each <strong>-signed.shortcut</strong> file to your iPhone via AirDrop, or drop them in iCloud Drive and open from the Files app.</p>
-  <p>Tap <strong>Add Shortcut</strong> for each one on your iPhone.</p>
+  <div class="step-num">Method A — AirDrop (fastest)</div>
+  <p>In Finder, right-click each <code>.shortcut</code> file → <strong>Share → AirDrop</strong> → select your iPhone. Tap <strong>Add Shortcut</strong> for each.</p>
 </div>
-
-<div style="{local_only}">
-<hr class="divider">
-<h2>Alternative — iCloud Drive (no cables, local only)</h2>
-<div class="step">
-  <div class="step-num">Step 1 — On your Mac</div>
-  <p>Click the button below. It saves <strong>LifeManager.shortcut</strong> to your iCloud Drive and opens Finder there.</p>
-  <a class="action-btn" href="/setup/save-to-icloud">Save to iCloud Drive →</a>
-  <p class="note">Requires iCloud Drive enabled in System Settings → Apple ID → iCloud. File is auto-signed if running on macOS.</p>
-</div>
-<div class="step">
-  <div class="step-num">Step 2 — On your iPhone</div>
-  <p>Open <strong>Files</strong> app → tap <strong>iCloud Drive</strong> → find <strong>LifeManager.shortcut</strong> → tap it → <strong>Add Shortcut</strong>.</p>
-</div>
+<div class="step" style="{local_only}">
+  <div class="step-num">Method B — iCloud Drive (no AirDrop needed)</div>
+  <p><a class="action-btn" href="/setup/save-to-icloud" style="font-size:0.9rem;padding:0.5rem 1rem;">Save GPS shortcut to iCloud Drive →</a></p>
+  <p class="note">On iPhone: <strong>Files app → iCloud Drive → LifeManager.shortcut → Add Shortcut</strong></p>
 </div>
 
 <hr class="divider">
 
-<h2>Step 4 — Create all automations (Run Shortcut only)</h2>
+<!-- ── Step 3/4: Automations ────────────────────────── -->
+<h2>Step {{'4' if is_remote else '3'}} — Create automations on iPhone</h2>
 <div class="step">
-  <div class="step-num">In the Shortcuts app on iPhone</div>
-  <p><strong>Automation 1:</strong> Time of Day (every 30 min) → Run Shortcut <strong>Life Manager GPS</strong></p>
-  <p><strong>Automation 2:</strong> Arrive (Library/campus) → Run Shortcut <strong>Life Manager Arrive</strong></p>
-  <p><strong>Automation 3:</strong> Workout: Walking starts → Run Shortcut <strong>Life Manager Walking</strong></p>
-  <p><strong>Automation 4:</strong> Charger connected → Run Shortcut <strong>Life Manager Charging On</strong></p>
-  <p><strong>Automation 5:</strong> Charger disconnected → Run Shortcut <strong>Life Manager Charging Off</strong></p>
-  <p class="note">For each automation: turn <strong>off</strong> Ask Before Running and Notify When Run.</p>
+  <div class="step-num">In the Shortcuts app → Automation tab → + New Automation</div>
+  <p><strong>1.</strong> <em>Time of Day</em> — every 15 min → Run Shortcut <strong>Life Manager GPS</strong></p>
+  <p><strong>2.</strong> <em>Arrive</em> — your campus/home → Run Shortcut <strong>Life Manager Arrive</strong></p>
+  <p><strong>3.</strong> <em>Workout: Walking starts</em> → Run Shortcut <strong>Life Manager Walking</strong></p>
+  <p><strong>4.</strong> <em>Charger connected</em> → Run Shortcut <strong>Life Manager Charging On</strong></p>
+  <p><strong>5.</strong> <em>Charger disconnected</em> → Run Shortcut <strong>Life Manager Charging Off</strong></p>
+  <p class="note">For each automation: disable <strong>Ask Before Running</strong> and <strong>Notify When Run</strong>.</p>
 </div>
 
 <h2>Your backend URL</h2>
 <div class="url-box">{backend_url}</div>
 <p class="note">{network_note}</p>
 
-<h2>Test it</h2>
+<h2>Verify</h2>
 <div class="step">
-  <div class="step-num">Verify</div>
-  <p>Run each imported shortcut once manually in Shortcuts, then check <a href="/api/ios-setup-status" style="color:#58a6ff">/api/ios-setup-status</a>. All checklist items should become configured.</p>
+  <div class="step-num">Run each shortcut once manually in the Shortcuts app</div>
+  <p>Then check <a href="/api/ios-setup-status" style="color:#58a6ff">/api/ios-setup-status</a> — all items should show as configured.</p>
 </div>
 </body>
 </html>"""
@@ -891,6 +917,42 @@ async def download_shortcut(kind: str = "gps"):
         media_type="application/octet-stream",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@app.get("/setup/shortcut/sign-all")
+async def sign_all_shortcuts():
+    """Download, sign, and save all 5 shortcuts to Desktop — macOS only."""
+    import os, shutil
+    from fastapi.responses import HTMLResponse as HR
+    if not shutil.which("shortcuts"):
+        return HR("<p style='font-family:sans-serif;color:#f85149'>This endpoint only works when the backend is running locally on macOS.</p>")
+    desktop = os.path.expanduser("~/Desktop")
+    kinds = ["gps", "arrive", "walking", "charge_on", "charge_off"]
+    saved = []
+    failed = []
+    for kind in kinds:
+        try:
+            signed_bytes = _build_shortcut_bytes(kind, sign=True)
+            dest = os.path.join(desktop, f"LifeManager-{kind}.shortcut")
+            with open(dest, "wb") as f:
+                f.write(signed_bytes)
+            saved.append(f"LifeManager-{kind}.shortcut")
+        except Exception as e:
+            failed.append(f"{kind}: {e}")
+    # Reveal Desktop in Finder
+    subprocess.run(["open", desktop])
+    items_html = "".join(f"<li>✅ {s}</li>" for s in saved)
+    items_html += "".join(f"<li style='color:#f85149'>❌ {f}</li>" for f in failed)
+    return HR(f"""<html><head><meta charset='UTF-8'><style>
+      body{{font-family:sans-serif;background:#0d1117;color:#f0f6fc;padding:2rem;max-width:500px;margin:0 auto;}}
+      li{{margin:0.5rem 0;color:#8b949e;}} a{{color:#58a6ff;text-decoration:none;}}
+      h2{{color:#3fb950;}} p{{color:#8b949e;}}
+    </style></head><body>
+    <h2>⚡ All shortcuts saved to Desktop!</h2>
+    <p>Finder opened. AirDrop each file to your iPhone and tap <strong>Add Shortcut</strong>.</p>
+    <ul>{items_html}</ul>
+    <p style='margin-top:1.5rem'><a href='/setup/ios'>← Back to setup</a></p>
+    </body></html>""")
 
 
 @app.get("/api/analytics/today")
