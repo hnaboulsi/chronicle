@@ -175,61 +175,75 @@ async def ios_setup_page():
   .step-num {{ font-size: 0.75rem; color: #58a6ff; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.5rem; }}
   code {{ background: rgba(88,166,255,0.1); color: #58a6ff; padding: 0.2rem 0.5rem; border-radius: 6px; font-size: 0.9rem; font-family: monospace; }}
   .url-box {{ background: rgba(88,166,255,0.08); border: 1px solid rgba(88,166,255,0.3); border-radius: 8px; padding: 1rem; font-family: monospace; font-size: 1.1rem; color: #58a6ff; word-break: break-all; margin: 1rem 0; }}
-  .download-btn {{ display: block; text-align: center; background: #58a6ff; color: #000; padding: 1rem; border-radius: 12px; font-weight: 600; text-decoration: none; margin: 1.5rem 0; font-size: 1.1rem; }}
-  .note {{ font-size: 0.85rem; color: #8b949e; margin-top: 0.5rem; }}
-  .badge {{ background: #3fb950; color: #000; font-size: 0.7rem; padding: 0.2rem 0.5rem; border-radius: 10px; font-weight: 600; }}
+  .action-btn {{ display: inline-block; text-align: center; background: #58a6ff; color: #000; padding: 0.75rem 1.5rem; border-radius: 10px; font-weight: 600; text-decoration: none; font-size: 1rem; border: none; cursor: pointer; }}
+  .action-btn:hover {{ background: #79b8ff; }}
+  .note {{ font-size: 0.85rem; color: #8b949e; margin-top: 0.75rem; }}
+  .divider {{ border: none; border-top: 1px solid rgba(255,255,255,0.08); margin: 2rem 0; }}
 </style>
 </head>
 <body>
 <h1>📱 iPhone Setup</h1>
-<p>This page sets up silent iPhone tracking. Open it on your iPhone via Safari.</p>
+<p>iOS blocks shortcuts imported from the browser. Use one of these two methods instead — both take under 2 minutes.</p>
 
-<h2>Step 1 — Download the Shortcut</h2>
+<h2>Method A — iCloud Drive (easiest, no cables)</h2>
 <div class="step">
-  <div class="step-num">Action</div>
-  <p>Tap the button below on your iPhone to download and install the Life Manager shortcut.</p>
-  <a class="download-btn" href="/setup/shortcut/download">⬇ Install Life Manager Shortcut</a>
-  <p class="note">Tap "Open in Shortcuts" then "Add Shortcut" when prompted.</p>
+  <div class="step-num">Step 1 — On your Mac</div>
+  <p>Click the button below. It saves <strong>LifeManager.shortcut</strong> to your iCloud Drive and opens Finder there.</p>
+  <a class="action-btn" href="/setup/save-to-icloud">Save to iCloud Drive →</a>
+  <p class="note">Requires iCloud Drive to be enabled on your Mac (System Settings → Apple ID → iCloud → iCloud Drive).</p>
+</div>
+<div class="step">
+  <div class="step-num">Step 2 — On your iPhone</div>
+  <p>1. Open the <strong>Files</strong> app → tap <strong>iCloud Drive</strong><br>
+     2. Find <strong>LifeManager.shortcut</strong> and tap it<br>
+     3. Tap <strong>Add Shortcut</strong> when Shortcuts opens</p>
 </div>
 
-<h2>Step 2 — Create the Silent Automation</h2>
+<hr class="divider">
+
+<h2>Method B — AirDrop</h2>
 <div class="step">
-  <div class="step-num">In Shortcuts app on iPhone</div>
-  <p>1. Open <strong>Shortcuts</strong> → tap <strong>Automation</strong> tab<br>
-     2. Tap <strong>+</strong> → <strong>Time of Day</strong><br>
-     3. Set to repeat every <strong>30 minutes</strong> (or pick a time interval)<br>
-     4. Under "Do", tap <strong>New Blank Automation</strong><br>
-     5. Add action: <strong>Run Shortcut</strong> → select <strong>Life Manager GPS</strong><br>
-     6. Toggle <strong>OFF</strong> "Ask Before Running" → tap "Don't Ask"<br>
-     7. Toggle <strong>OFF</strong> "Notify When Run"</p>
-  <p class="note">After this, it runs silently every 30 min — you'll never see it.</p>
+  <div class="step-num">Step 1 — On your Mac</div>
+  <p>Click below to save the shortcut to your Desktop, then Finder will open with it selected.</p>
+  <a class="action-btn" href="/setup/save-to-desktop">Save to Desktop →</a>
+</div>
+<div class="step">
+  <div class="step-num">Step 2 — AirDrop from Finder</div>
+  <p>1. Right-click <strong>LifeManager.shortcut</strong> in Finder<br>
+     2. Tap <strong>Share</strong> → <strong>AirDrop</strong> → select your iPhone<br>
+     3. On iPhone, tap <strong>Accept</strong> → <strong>Add Shortcut</strong></p>
 </div>
 
-<h2>Step 3 — Allow Location Access</h2>
+<hr class="divider">
+
+<h2>Step 3 — Set up the silent automation (both methods)</h2>
 <div class="step">
-  <div class="step-num">One-time permission</div>
-  <p>The first time it runs, iOS will ask for location access. Tap <strong>Always Allow</strong>.</p>
+  <div class="step-num">In the Shortcuts app on iPhone</div>
+  <p>1. Tap the <strong>Automation</strong> tab → tap <strong>+</strong><br>
+     2. Choose <strong>Time of Day</strong> → set interval to <strong>every 30 minutes</strong><br>
+     3. Under "Do" → tap <strong>New Blank Automation</strong><br>
+     4. Add action: <strong>Run Shortcut</strong> → select <strong>Life Manager GPS</strong><br>
+     5. Toggle <strong>off</strong> "Ask Before Running" → tap "Don't Ask"<br>
+     6. Toggle <strong>off</strong> "Notify When Run"</p>
+  <p class="note">Done — it will run silently every 30 minutes. You'll never see it.</p>
 </div>
 
-<h2>Your Backend URL</h2>
+<h2>Your backend URL</h2>
 <div class="url-box">{backend_url}</div>
-<p class="note">This is your Mac's local IP. Your iPhone must be on the same WiFi network.</p>
+<p class="note">iPhone must be on the same WiFi network as your Mac.</p>
 
-<h2>Test It</h2>
+<h2>Test it</h2>
 <div class="step">
-  <div class="step-num">Verify it works</div>
-  <p>After installing, open the Shortcuts app, find <strong>Life Manager GPS</strong>, and tap the play button. Then check the <a href="/" style="color:#58a6ff">dashboard</a> — your iPhone card should update within seconds.</p>
+  <div class="step-num">Verify</div>
+  <p>Open Shortcuts → find <strong>Life Manager GPS</strong> → tap play ▶. Then check the <a href="/" style="color:#58a6ff">dashboard</a> — the iPhone card should update within seconds.</p>
 </div>
 </body>
 </html>"""
 
 
-@app.get("/setup/shortcut/download")
-async def download_shortcut():
-    import plistlib, uuid
-    from fastapi.responses import Response
-    import socket
-
+def _build_shortcut_bytes() -> bytes:
+    """Generate the LifeManager.shortcut plist bytes with the current local IP embedded."""
+    import plistlib, uuid, socket
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
@@ -239,10 +253,8 @@ async def download_shortcut():
         local_ip = "localhost"
 
     backend_url = f"http://{local_ip}:8000/api/ios-telemetry"
-
     loc_uuid = str(uuid.uuid4()).upper()
     city_uuid = str(uuid.uuid4()).upper()
-    motion_uuid = str(uuid.uuid4()).upper()
     post_uuid = str(uuid.uuid4()).upper()
 
     shortcut = {
@@ -250,108 +262,83 @@ async def download_shortcut():
         "WFWorkflowMinimumClientVersionString": "900",
         "WFWorkflowName": "Life Manager GPS",
         "WFWorkflowTypes": [],
-        "WFWorkflowIcon": {
-            "WFWorkflowIconGlyphNumber": 59511,
-            "WFWorkflowIconStartColor": 4275765759,
-        },
+        "WFWorkflowIcon": {"WFWorkflowIconGlyphNumber": 59511, "WFWorkflowIconStartColor": 4275765759},
         "WFWorkflowActions": [
-            # 1. Get current location
-            {
-                "WFWorkflowActionIdentifier": "is.workflow.actions.location",
-                "WFWorkflowActionParameters": {
-                    "CustomOutputName": "MyLocation",
-                    "UUID": loc_uuid,
-                },
-            },
-            # 2. Get city from location
-            {
-                "WFWorkflowActionIdentifier": "is.workflow.actions.address",
-                "WFWorkflowActionParameters": {
-                    "WFAddressField": "City",
-                    "WFInput": {
-                        "Value": {
-                            "Type": "ActionOutput",
-                            "OutputName": "MyLocation",
-                            "OutputUUID": loc_uuid,
-                        },
-                        "WFSerializationType": "WFTextTokenAttachment",
-                    },
-                    "CustomOutputName": "CityName",
-                    "UUID": city_uuid,
-                },
-            },
-            # 3. Get motion activity
-            {
-                "WFWorkflowActionIdentifier": "is.workflow.actions.gettypedvalue",
-                "WFWorkflowActionParameters": {
-                    "WFInput": {
-                        "Value": {
-                            "Type": "ActionOutput",
-                            "OutputName": "MyLocation",
-                            "OutputUUID": loc_uuid,
-                        },
-                        "WFSerializationType": "WFTextTokenAttachment",
-                    },
-                    "CustomOutputName": "Latitude",
-                    "UUID": motion_uuid,
-                    "WFTypedValueType": "Latitude",
-                },
-            },
-            # 4. POST to backend
-            {
-                "WFWorkflowActionIdentifier": "is.workflow.actions.downloadurl",
-                "WFWorkflowActionParameters": {
-                    "WFURL": backend_url,
-                    "WFHTTPMethod": "POST",
-                    "WFHTTPBodyType": "Json",
-                    "ShowHeaders": False,
-                    "UUID": post_uuid,
-                    "WFRequestVariable": {
-                        "Value": {
-                            "WFDictionaryFieldValueItems": [
-                                {
-                                    "WFItemType": 0,
-                                    "WFKey": {
-                                        "Value": {"string": "location_label"},
-                                        "WFSerializationType": "WFTextTokenString",
-                                    },
-                                    "WFValue": {
-                                        "Value": {
-                                            "attachmentsByRange": {
-                                                "{0, 1}": {
-                                                    "Type": "ActionOutput",
-                                                    "OutputName": "CityName",
-                                                    "OutputUUID": city_uuid,
-                                                }
-                                            },
-                                            "string": "\ufffc",
-                                        },
-                                        "WFSerializationType": "WFTextTokenString",
-                                    },
-                                },
-                                {
-                                    "WFItemType": 0,
-                                    "WFKey": {
-                                        "Value": {"string": "activity_type"},
-                                        "WFSerializationType": "WFTextTokenString",
-                                    },
-                                    "WFValue": {
-                                        "Value": {"string": "ios_ping"},
-                                        "WFSerializationType": "WFTextTokenString",
-                                    },
-                                },
-                            ]
-                        },
-                        "WFSerializationType": "WFDictionaryFieldValue",
-                    },
-                },
-            },
+            {"WFWorkflowActionIdentifier": "is.workflow.actions.location",
+             "WFWorkflowActionParameters": {"CustomOutputName": "MyLocation", "UUID": loc_uuid}},
+            {"WFWorkflowActionIdentifier": "is.workflow.actions.address",
+             "WFWorkflowActionParameters": {
+                 "WFAddressField": "City",
+                 "WFInput": {"Value": {"Type": "ActionOutput", "OutputName": "MyLocation", "OutputUUID": loc_uuid},
+                             "WFSerializationType": "WFTextTokenAttachment"},
+                 "CustomOutputName": "CityName", "UUID": city_uuid}},
+            {"WFWorkflowActionIdentifier": "is.workflow.actions.downloadurl",
+             "WFWorkflowActionParameters": {
+                 "WFURL": backend_url, "WFHTTPMethod": "POST",
+                 "WFHTTPBodyType": "Json", "ShowHeaders": False, "UUID": post_uuid,
+                 "WFRequestVariable": {"Value": {"WFDictionaryFieldValueItems": [
+                     {"WFItemType": 0,
+                      "WFKey": {"Value": {"string": "location_label"}, "WFSerializationType": "WFTextTokenString"},
+                      "WFValue": {"Value": {"attachmentsByRange": {"{0, 1}": {"Type": "ActionOutput",
+                                  "OutputName": "CityName", "OutputUUID": city_uuid}}, "string": "\ufffc"},
+                                  "WFSerializationType": "WFTextTokenString"}},
+                     {"WFItemType": 0,
+                      "WFKey": {"Value": {"string": "activity_type"}, "WFSerializationType": "WFTextTokenString"},
+                      "WFValue": {"Value": {"string": "ios_ping"}, "WFSerializationType": "WFTextTokenString"}},
+                 ]}, "WFSerializationType": "WFDictionaryFieldValue"}}},
         ],
     }
+    return plistlib.dumps(shortcut, fmt=plistlib.FMT_XML)
 
-    data = plistlib.dumps(shortcut, fmt=plistlib.FMT_XML)
+
+@app.get("/setup/save-to-icloud")
+async def save_shortcut_to_icloud():
+    """Save the shortcut to iCloud Drive and open Finder there."""
+    import subprocess, os
+    from fastapi.responses import HTMLResponse as HR
+    icloud_path = os.path.expanduser("~/Library/Mobile Documents/com~apple~CloudDocs")
+    if not os.path.isdir(icloud_path):
+        return HR("<p style='font-family:sans-serif;color:#f85149'>iCloud Drive not found. Make sure iCloud Drive is enabled in System Settings → Apple ID → iCloud.</p>")
+    dest = os.path.join(icloud_path, "LifeManager.shortcut")
+    with open(dest, "wb") as f:
+        f.write(_build_shortcut_bytes())
+    subprocess.run(["open", icloud_path])
+    return HR("""<html><head><meta charset='UTF-8'><style>
+      body{font-family:sans-serif;background:#0d1117;color:#f0f6fc;display:flex;align-items:center;
+           justify-content:center;min-height:100vh;margin:0;flex-direction:column;gap:1rem;}
+      p{color:#8b949e;} a{color:#58a6ff;}
+    </style></head><body>
+    <h2 style='color:#3fb950'>✅ Saved to iCloud Drive!</h2>
+    <p>Finder opened. On your iPhone: open <strong>Files → iCloud Drive → LifeManager.shortcut</strong></p>
+    <a href='/setup/ios'>← Back to setup</a>
+    </body></html>""")
+
+
+@app.get("/setup/save-to-desktop")
+async def save_shortcut_to_desktop():
+    """Save the shortcut to the Mac Desktop and reveal it in Finder."""
+    import subprocess, os
+    from fastapi.responses import HTMLResponse as HR
+    dest = os.path.expanduser("~/Desktop/LifeManager.shortcut")
+    with open(dest, "wb") as f:
+        f.write(_build_shortcut_bytes())
+    subprocess.run(["open", "-R", dest])  # Reveal in Finder
+    return HR("""<html><head><meta charset='UTF-8'><style>
+      body{font-family:sans-serif;background:#0d1117;color:#f0f6fc;display:flex;align-items:center;
+           justify-content:center;min-height:100vh;margin:0;flex-direction:column;gap:1rem;}
+      p{color:#8b949e;} a{color:#58a6ff;}
+    </style></head><body>
+    <h2 style='color:#3fb950'>✅ Saved to Desktop!</h2>
+    <p>Finder opened with the file selected.<br>Right-click it → <strong>Share → AirDrop</strong> → select your iPhone.</p>
+    <a href='/setup/ios'>← Back to setup</a>
+    </body></html>""")
+
+
+@app.get("/setup/shortcut/download")
+async def download_shortcut():
+    from fastapi.responses import Response
     return Response(
-        content=data,
+        content=_build_shortcut_bytes(),
         media_type="application/octet-stream",
         headers={"Content-Disposition": 'attachment; filename="LifeManager.shortcut"'},
     )
