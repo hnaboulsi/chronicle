@@ -134,6 +134,11 @@ async def receive_ios_telemetry(data: iOSTelemetry, background_tasks: Background
 async def get_state(db: Session = Depends(get_db)):
     agent_logic.ensure_default_settings(db)
     states = agent_logic.get_all_states(db)
+    try:
+        polling_interval_seconds = int(agent_logic.get_state(db, "polling_interval_seconds", "60"))
+    except Exception:
+        polling_interval_seconds = 60
+    mac_online_threshold_seconds = max(300, polling_interval_seconds * 2 + 30)
     last_ping_str = states.get("last_mac_ping", "")
     last_ios_ping_str = states.get("last_ios_ping", "")
     last_mac_ping_age_seconds = None
@@ -142,7 +147,7 @@ async def get_state(db: Session = Depends(get_db)):
         try:
             last_ping = datetime.fromisoformat(last_ping_str)
             last_mac_ping_age_seconds = int((datetime.utcnow() - last_ping).total_seconds())
-            states["mac_online"] = last_mac_ping_age_seconds < 300
+            states["mac_online"] = last_mac_ping_age_seconds <= mac_online_threshold_seconds
         except Exception:
             states["mac_online"] = False
     else:
@@ -154,6 +159,8 @@ async def get_state(db: Session = Depends(get_db)):
         except Exception:
             pass
     states["backend_target_url"] = _get_backend_url()
+    states["polling_interval_seconds"] = polling_interval_seconds
+    states["mac_online_threshold_seconds"] = mac_online_threshold_seconds
     states["last_mac_ping_age_seconds"] = last_mac_ping_age_seconds
     states["last_ios_ping_age_seconds"] = last_ios_ping_age_seconds
     states["ios_recent_ping"] = (last_ios_ping_age_seconds is not None and last_ios_ping_age_seconds < 7200)
