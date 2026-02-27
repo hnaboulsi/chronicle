@@ -23,7 +23,19 @@ sys.path.insert(0, _here)
 import tracker
 import notifier
 
-BACKEND_URL = "http://localhost:8000"
+# Backend URL — override by writing a URL to ~/.config/life-manager/backend.url
+# e.g.  echo "http://100.x.x.x:8000" > ~/.config/life-manager/backend.url
+_CONFIG_FILE = os.path.expanduser("~/.config/life-manager/backend.url")
+def _load_backend_url() -> str:
+    if os.path.isfile(_CONFIG_FILE):
+        url = open(_CONFIG_FILE).read().strip()
+        if url:
+            return url.rstrip("/")
+    return os.environ.get("LIFE_MANAGER_BACKEND", "http://localhost:8000")
+
+BACKEND_URL = _load_backend_url()
+_USING_REMOTE = not BACKEND_URL.startswith("http://localhost") and not BACKEND_URL.startswith("http://127.")
+
 BACKEND_DIR = os.path.normpath(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "backend")
 )
@@ -71,7 +83,7 @@ class LifeManagerApp(rumps.App):
         self._tracker_loop()
 
     def _start_backend(self):
-        """Launch the FastAPI backend if it's not already running."""
+        """Launch the FastAPI backend if it's not already running (local only)."""
         # Already up?
         try:
             requests.get(f"{BACKEND_URL}/api/settings", timeout=2.0)
@@ -80,7 +92,13 @@ class LifeManagerApp(rumps.App):
         except Exception:
             pass
 
-        # Spawn it
+        # If pointed at a remote backend, don't try to spawn locally
+        if _USING_REMOTE:
+            self.backend_item.title = "⚙️  Backend: Offline ❌"
+            print(f"Remote backend at {BACKEND_URL} is unreachable.")
+            return
+
+        # Spawn local backend
         try:
             self._backend_proc = subprocess.Popen(
                 [BACKEND_PYTHON, "main.py"],
