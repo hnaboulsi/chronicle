@@ -1,22 +1,25 @@
+import logging
 from typing import Optional
 import os
 import json
 from dotenv import load_dotenv
 from google import genai
 
+log = logging.getLogger("life_manager.llm")
+
 # Load environment variables (e.g., GEMINI_API_KEY) from .env file
 load_dotenv()
 
 api_key = os.getenv("GEMINI_API_KEY")
 if not api_key:
-    print("WARNING: GEMINI_API_KEY environment variable not set. Please provide it in a .env file or environment.")
+    log.warning("GEMINI_API_KEY environment variable not set.")
 
 # Initialize the Gemini client (it automatically uses GEMINI_API_KEY from the env)
 try:
     client = genai.Client()
 except Exception as e:
     client = None
-    print(f"Failed to initialize Gemini client: {e}")
+    log.error("Failed to initialize Gemini client: %s", e)
 
 async def ask_gemini(prompt: str, context: Optional[str] = None) -> str:
     """
@@ -36,7 +39,7 @@ async def ask_gemini(prompt: str, context: Optional[str] = None) -> str:
         )
         return response.text.strip()
     except Exception as e:
-        print(f"Error calling Gemini: {e}")
+        log.error("Error calling Gemini: %s", e)
         return ""
 
 async def check_if_vague(app_name: str, window_title: str) -> bool:
@@ -127,7 +130,7 @@ async def classify_activity_context(recent_activities: list, user_self_report: s
             "summary": result.get("summary", "")
         }
     except Exception as e:
-        print(f"Error classifying activity: {e}")
+        log.error("Error classifying activity: %s", e)
         return {"category": "unknown", "summary": ""}
 
 
@@ -171,7 +174,7 @@ async def generate_hourly_summary(logs: list, hour_start: str) -> dict:
             "productivity_score": result.get("productivity_score")
         }
     except Exception as e:
-        print(f"Error generating hourly summary: {e}")
+        log.error("Error generating hourly summary: %s", e)
         return {"summary": "Could not generate summary.", "productivity_score": None}
 
 

@@ -1,9 +1,13 @@
+import logging
+from zoneinfo import ZoneInfo
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 from models import AgentState, ActivityLog, MacTelemetry, iOSTelemetry, HourlySummary
 import llm_client
 import calendar_sync
 from datetime import datetime, timedelta
+
+log = logging.getLogger("life_manager")
 
 # Categories that go on the calendar automatically
 PRODUCTIVE_CATEGORIES = {"studying", "working", "creative"}
@@ -18,6 +22,7 @@ DEFAULTS = {
     "classification_interval_seconds": "1800",
     "llm_daily_cap": "30",
     "sleep_source": "iphone_only",
+    "user_timezone": "America/Los_Angeles",
 }
 
 
@@ -116,7 +121,7 @@ def clear_pending_prompt(db: Session):
 def update_context_with_reply(reply: str, db: Session):
     """Store the user's self-reported activity and log it."""
     set_state(db, "user_self_report", reply)
-    print(f"User self-reported: {reply}")
+    log.info("User self-reported: %s", reply)
 
 
 def get_recent_mac_logs(db: Session, limit: int = 20) -> list:
@@ -173,7 +178,7 @@ def _close_session_to_calendar(db: Session, new_category: str, now: datetime):
         if should_log:
             calendar_sync.create_session_event(session_cat, session_summary, session_start, now)
     except Exception as e:
-        print(f"Calendar session close error: {e}")
+        log.error("Calendar session close error: %s", e)
 
     # Clear session state
     set_state(db, "session_category", "")
@@ -195,7 +200,7 @@ def _maybe_start_session(db: Session, category: str, summary: str, now: datetime
     set_state(db, "session_category", category)
     set_state(db, "session_start", now.isoformat())
     set_state(db, "session_summary", summary)
-    print(f"Session started: {category} — {summary}")
+    log.info("Session started: %s — %s", category, summary)
 
 
 async def _generate_and_store_hourly_summary(db: Session, now: datetime):
@@ -215,15 +220,42 @@ async def _generate_and_store_hourly_summary(db: Session, now: datetime):
     )
     db.add(summary)
     db.commit()
-    print(f"Hourly summary stored for {hour_label}")
+    log.info("Hourly summary stored for %s", hour_label)
 
 
-async def process_mac_telemetry(data: MacTelemetry, db: Session, background_tasks=None):
+async def process_mac_telemetry(data: MacTelemetry, db: Session):
     now = datetime.utcnow()
     ensure_default_settings(db)
 
     # Heartbeat — lets dashboard detect if tracker is actually running
+    prev_mac_ping_str = get_state(db, "last_mac_ping")
     set_state(db, "last_mac_ping", now.isoformat())
+
+    # Check-in: if Mac was offline for 15+ min and user hasn't checked in, ask
+    if prev_mac_ping_str and not get_state(db, "pending_checkin"):
+        try:
+            prev_ping = datetime.fromisoformat(prev_mac_ping_str)
+            offline_seconds = (now - prev_ping).total_seconds()
+            last_checkin_str = get_state(db, "last_user_checkin")
+            checkin_stale = True
+            if last_checkin_str:
+                try:
+                    last_ci = datetime.fromisoformat(last_checkin_str)
+                    checkin_stale = (now - last_ci).total_seconds() > 1800
+                except Exception:
+                    pass
+            if offline_seconds > 900 and checkin_stale:
+                location = get_state(db, "current_location")
+                if location:
+                    guess = _guess_activity(location, "", now, db)
+                    msg = f"Welcome back! You were at {location}. {guess} — what were you up to?"
+                else:
+                    msg = "Welcome back! What have you been up to?"
+                set_state(db, "pending_checkin", msg)
+                set_state(db, "checkin_guess", "")
+                log.info("Mac return check-in: %s", msg)
+        except Exception:
+            pass
 
     # Rule 1 — Idle check (30 min idle → prompt)
     if data.idle_time_seconds > 60 * 30:
@@ -262,7 +294,7 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session, background_task
 
         set_state(db, "current_activity_category", new_category)
         set_state(db, "current_activity_summary", new_summary)
-        print(f"Activity classified: {new_category} — {new_summary}")
+        log.info("Activity classified: %s — %s", new_category, new_summary)
 
         # Study mode enforcement: distracted while supposed to be studying → call out
         study_mode = get_state(db, "study_mode")
@@ -282,15 +314,14 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session, background_task
             set_state(db, "callout_category", "")
             set_state(db, "callout_summary", "")
 
-    # Rule 3 — Hourly summary auto-trigger
-    if background_tasks is not None:
-        last_summary_str = get_state(db, "last_hourly_summary")
-        last_summary = datetime.fromisoformat(last_summary_str) if last_summary_str else datetime.min
-        summaries_enabled = get_state(db, "hourly_summaries_enabled", DEFAULTS["hourly_summaries_enabled"]) == "true"
-        if summaries_enabled and (now - last_summary).total_seconds() > 1800 and can_use_llm(db, now):
-            set_state(db, "last_hourly_summary", now.isoformat())
-            register_llm_call(db, now)
-            background_tasks.add_task(_generate_and_store_hourly_summary, db, now)
+    # Rule 3 — Hourly summary auto-trigger (runs inline since we're already in a background task)
+    last_summary_str = get_state(db, "last_hourly_summary")
+    last_summary = datetime.fromisoformat(last_summary_str) if last_summary_str else datetime.min
+    summaries_enabled = get_state(db, "hourly_summaries_enabled", DEFAULTS["hourly_summaries_enabled"]) == "true"
+    if summaries_enabled and (now - last_summary).total_seconds() > 1800 and can_use_llm(db, now):
+        set_state(db, "last_hourly_summary", now.isoformat())
+        register_llm_call(db, now)
+        await _generate_and_store_hourly_summary(db, now)
 
     # Rule 4 — Calendar setup (ensure calendar exists, run once)
     if not get_state(db, "calendar_initialized"):
@@ -298,7 +329,48 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session, background_task
             calendar_sync.ensure_life_manager_calendar()
             set_state(db, "calendar_initialized", "true")
         except Exception as e:
-            print(f"Calendar init error: {e}")
+            log.error("Calendar init error: %s", e)
+
+
+def _guess_activity(location: str, prev_location: str, now: datetime, db: Session) -> str:
+    """Guess what the user is doing based on location, time, and history."""
+    loc = location.lower()
+    tz_name = get_state(db, "user_timezone", DEFAULTS["user_timezone"])
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        tz = ZoneInfo("America/Los_Angeles")
+    local_hour = now.replace(tzinfo=ZoneInfo("UTC")).astimezone(tz).hour
+
+    # Known location patterns
+    study_places = {"library", "vlsb", "evans", "moffitt", "doe", "soda", "cory", "class", "lecture", "campus"}
+    food_places = {"student union", "crossroads", "cafe", "restaurant", "dining", "golden bear", "grab"}
+    gym_places = {"gym", "rsf", "rec center", "fitness"}
+    home_words = {"home", "apartment", "dorm", "residence"}
+
+    if any(p in loc for p in study_places):
+        return "I think you're about to study"
+    if any(p in loc for p in food_places):
+        return "I think you stopped for food"
+    if any(p in loc for p in gym_places):
+        return "I think you're working out"
+    if any(p in loc for p in home_words):
+        if local_hour >= 20:
+            return "I think you're winding down for the night"
+        return "I think you're back home"
+
+    # Time-based guessing
+    if 7 <= local_hour <= 9:
+        return "Starting your morning"
+    if 11 <= local_hour <= 13:
+        return "Maybe grabbing lunch"
+    if local_hour >= 22:
+        return "Looks like you're heading home"
+
+    # Generic
+    if prev_location:
+        return f"You came from {prev_location}"
+    return "What are you up to?"
 
 
 async def process_ios_telemetry(data: iOSTelemetry, db: Session):
@@ -345,7 +417,7 @@ async def process_ios_telemetry(data: iOSTelemetry, db: Session):
                     if duration_min >= 3:  # Only log walks 3+ minutes
                         calendar_sync.create_walk_event(walk_from, walk_to, walk_start, now)
                 except Exception as e:
-                    print(f"Walk calendar error: {e}")
+                    log.error("Walk calendar error: %s", e)
             set_state(db, "walk_start", "")
         set_state(db, "is_walking", "false")
 
@@ -362,7 +434,7 @@ async def process_ios_telemetry(data: iOSTelemetry, db: Session):
                 if duration_min >= 10:  # Only log visits 10+ minutes
                     calendar_sync.create_location_event(prev_location, arrival_dt, now)
             except Exception as e:
-                print(f"Location calendar error: {e}")
+                log.error("Location calendar error: %s", e)
         # Start tracking new location
         set_state(db, "current_location", current_location)
         set_state(db, "location_arrival", now.isoformat())
@@ -374,9 +446,35 @@ async def process_ios_telemetry(data: iOSTelemetry, db: Session):
         if data.location_label:  # Only clear if we have a definitive location
             set_state(db, "study_mode", "inactive")
 
-    # Sleep detection
-    hour = now.hour
-    local_hour = (hour - 8) % 24
+    # Smart check-in: when location changes, guess what user is doing and ask
+    if current_location and current_location != prev_location and current_location not in ("charging_trigger", "walking_trigger"):
+        last_checkin_str = get_state(db, "last_user_checkin")
+        needs_checkin = True
+        if last_checkin_str:
+            try:
+                last_checkin = datetime.fromisoformat(last_checkin_str)
+                # Don't ask if user checked in within last 15 minutes
+                if (now - last_checkin).total_seconds() < 900:
+                    needs_checkin = False
+            except Exception:
+                pass
+
+        if needs_checkin and not get_state(db, "pending_checkin"):
+            # Build a guess based on location and time
+            guess = _guess_activity(current_location, prev_location, now, db)
+            if guess:
+                checkin_msg = f"Looks like you're at {current_location}. {guess} — is that right?"
+                set_state(db, "pending_checkin", checkin_msg)
+                set_state(db, "checkin_guess", guess)
+                log.info("Check-in generated: %s", checkin_msg)
+
+    # Sleep detection (timezone-aware)
+    tz_name = get_state(db, "user_timezone", DEFAULTS["user_timezone"])
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        tz = ZoneInfo("America/Los_Angeles")
+    local_hour = now.replace(tzinfo=ZoneInfo("UTC")).astimezone(tz).hour
     if local_hour >= 22 or local_hour <= 4:
         if data.is_charging and data.activity_type == "Stationary":
             set_state(db, "user_asleep", "true")

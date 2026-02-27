@@ -3,26 +3,78 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Life Manager Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Life Manager</title>
+    <meta name="description" content="AI-powered personal productivity tracker">
+    <meta name="theme-color" content="#0d1117">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Life Manager">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
     <link rel="stylesheet" href="style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 
 <body>
-    <div class="dashboard-container">
+    <!-- Onboarding Overlay -->
+    <div id="onboarding-overlay" class="onboarding-overlay hidden">
+        <div class="onboarding-card glass-panel">
+            <div class="onboarding-step" id="onboard-step-1">
+                <div class="onboard-icon">🧠</div>
+                <h2>Welcome to Life Manager</h2>
+                <p>Your AI-powered personal productivity tracker. It learns what you're doing, logs your day to your calendar, and helps you stay focused.</p>
+                <button class="btn-primary" onclick="nextOnboardStep(2)">Get Started</button>
+            </div>
+            <div class="onboarding-step hidden" id="onboard-step-2">
+                <div class="onboard-icon">💻</div>
+                <h2>Mac Tracker</h2>
+                <p id="onboard-mac-status">Checking if Mac tracker is connected...</p>
+                <button class="btn-primary" onclick="nextOnboardStep(3)">Next</button>
+            </div>
+            <div class="onboarding-step hidden" id="onboard-step-3">
+                <div class="onboard-icon">📱</div>
+                <h2>iPhone Setup</h2>
+                <p>Set up iPhone shortcuts to track your location, walks, and charging status.</p>
+                <a href="/setup/ios" class="btn-primary" target="_blank">Open iPhone Setup</a>
+                <button class="btn-secondary" onclick="nextOnboardStep(4)">Skip for now</button>
+            </div>
+            <div class="onboarding-step hidden" id="onboard-step-4">
+                <div class="onboard-icon">🌍</div>
+                <h2>Your Timezone</h2>
+                <p>We detected: <strong id="onboard-tz">America/Los_Angeles</strong></p>
+                <button class="btn-primary" onclick="completeOnboarding()">Looks right — finish setup</button>
+                <button class="btn-secondary" onclick="openSettings(); completeOnboarding()">Change timezone</button>
+            </div>
+        </div>
+    </div>
 
+    <div class="dashboard-container" id="main-dashboard">
         <!-- Header -->
         <header class="glass-header">
             <div class="header-left">
                 <div class="pulse-ring" id="tracking-pulse"></div>
                 <h1>Life Manager <span class="badge" id="tracking-badge">Live</span></h1>
             </div>
-            <div class="header-right" style="display: flex; align-items: center; gap: 1rem;">
-                <button id="toggle-tracking-btn" class="toggle-btn active">Tracking: ON</button>
+            <div class="header-right">
+                <button id="toggle-tracking-btn" class="toggle-btn active" title="Toggle tracking">Tracking: ON</button>
+                <button id="settings-btn" class="icon-btn" title="Settings">⚙</button>
                 <div class="datetime-display" id="clock">Loading...</div>
             </div>
         </header>
+
+        <!-- Check-In Banner (proactive — agent asks you) -->
+        <div id="checkin-banner" class="checkin-banner hidden">
+            <div class="checkin-content">
+                <span class="checkin-icon">🧠</span>
+                <span id="checkin-message">What are you up to?</span>
+            </div>
+            <div class="checkin-actions">
+                <button id="checkin-confirm" class="checkin-btn-confirm">That's right</button>
+                <input type="text" id="checkin-correction" placeholder="Actually I'm..." class="checkin-input" />
+                <button id="checkin-send" class="checkin-btn-send">Send</button>
+            </div>
+        </div>
 
         <!-- Call-Out Banner -->
         <div id="callout-banner" class="callout-banner hidden">
@@ -34,56 +86,96 @@
             </div>
         </div>
 
+        <!-- Quick Chat Bar -->
+        <div class="chat-bar glass-panel">
+            <input type="text" id="chat-input" class="chat-input" placeholder="Tell me what you're doing or where you're headed..." />
+            <button id="chat-send" class="chat-send-btn">Send</button>
+        </div>
+        <div id="chat-reply" class="chat-reply hidden">
+            <span id="chat-reply-text"></span>
+        </div>
+
         <!-- Current States -->
         <section class="device-states">
             <div class="state-card glass-panel" id="card-mac">
-                <div class="card-icon mac-icon">💻</div>
+                <div class="card-icon">💻</div>
                 <div class="card-content">
-                    <h3>MacBook M4</h3>
-                    <p class="status-value" id="mac-status">Tracking active...</p>
-                    <p class="sub-text" id="mac-detail">Waiting for telemetry...</p>
+                    <h3>MacBook</h3>
+                    <p class="status-value" id="mac-status">Waiting...</p>
+                    <p class="sub-text" id="mac-detail">Connecting to tracker</p>
                 </div>
             </div>
-
             <div class="state-card glass-panel" id="card-ios">
-                <div class="card-icon ios-icon">📱</div>
+                <div class="card-icon">📱</div>
                 <div class="card-content">
                     <h3>iPhone</h3>
-                    <p class="status-value" id="ios-status">Waiting for webhook...</p>
-                    <p class="sub-text" id="ios-detail">Unknown location</p>
+                    <p class="status-value" id="ios-status">Waiting...</p>
+                    <p class="sub-text" id="ios-detail">No location data yet</p>
                 </div>
             </div>
-
             <div class="state-card glass-panel" id="card-mode">
-                <div class="card-icon mode-icon">🎯</div>
+                <div class="card-icon">🎯</div>
                 <div class="card-content">
                     <h3>Focus Mode</h3>
                     <p class="status-value" id="focus-status">Inactive</p>
-                    <p class="sub-text" id="focus-detail">Study mode off</p>
+                    <p class="sub-text" id="focus-detail">Normal mode</p>
                 </div>
             </div>
-
             <div class="state-card glass-panel" id="card-activity">
                 <div class="card-icon">🧠</div>
                 <div class="card-content">
                     <h3>AI Reading</h3>
                     <p class="status-value" id="activity-category">Analyzing...</p>
-                    <p class="sub-text" id="activity-summary">—</p>
+                    <p class="sub-text" id="activity-summary">&mdash;</p>
                 </div>
+            </div>
+        </section>
+
+        <!-- Daily Stats -->
+        <section class="stats-row">
+            <div class="stat-card glass-panel">
+                <div class="stat-number" id="stat-active">0h 0m</div>
+                <div class="stat-label">Active Today</div>
+            </div>
+            <div class="stat-card glass-panel">
+                <div class="stat-number stat-highlight" id="stat-productive">0%</div>
+                <div class="stat-label">Productive</div>
+            </div>
+            <div class="stat-card glass-panel">
+                <div class="stat-number" id="stat-steps">0</div>
+                <div class="stat-label">Steps</div>
+            </div>
+            <div class="stat-card glass-panel">
+                <div class="stat-number" id="stat-llm">0/30</div>
+                <div class="stat-label">AI Budget</div>
+            </div>
+        </section>
+
+        <!-- Productivity Breakdown -->
+        <section class="analytics-section glass-panel">
+            <div class="feed-header">
+                <h2>Today's Breakdown</h2>
+            </div>
+            <div id="analytics-chart" class="analytics-chart">
+                <p class="empty-state">Collecting data...</p>
             </div>
         </section>
 
         <!-- Activity Feed -->
         <section class="activity-feed glass-panel">
             <div class="feed-header">
-                <h2>Live Activity Log</h2>
+                <h2>Live Activity</h2>
                 <div class="controls-container">
-                    <div class="slider-group">
-                        <label for="polling-slider" id="polling-label">Check every: 1m</label>
-                        <input type="range" id="polling-slider" class="styled-slider" min="1" max="60" value="1"
-                            step="1">
+                    <div class="interval-pills" id="interval-pills">
+                        <button class="interval-pill active" data-val="1">1m</button>
+                        <button class="interval-pill" data-val="5">5m</button>
+                        <button class="interval-pill" data-val="15">15m</button>
+                        <button class="interval-pill" data-val="30">30m</button>
                     </div>
-                    <button id="refresh-btn" class="icon-btn">↻</button>
+                    <!-- Hidden slider for compatibility -->
+                    <input type="range" id="polling-slider" style="display:none" min="1" max="60" value="1" step="1">
+                    <span id="polling-label" style="display:none">Every 1m</span>
+                    <button id="refresh-btn" class="icon-btn" title="Refresh">↻</button>
                 </div>
             </div>
             <div class="table-container">
@@ -92,13 +184,11 @@
                         <tr>
                             <th>Time</th>
                             <th>Device</th>
-                            <th>Activity / App</th>
-                            <th>Context / Tab</th>
+                            <th>Activity</th>
+                            <th>Context</th>
                         </tr>
                     </thead>
-                    <tbody id="logs-body">
-                        <!-- Filled by JS -->
-                    </tbody>
+                    <tbody id="logs-body"></tbody>
                 </table>
             </div>
         </section>
@@ -109,24 +199,125 @@
                 <h2>Hourly Recaps</h2>
             </div>
             <div id="summaries-list">
-                <p style="color:var(--text-secondary);padding:1rem">No summaries yet — they generate automatically each hour.</p>
+                <p class="empty-state">No summaries yet — they generate each hour.</p>
             </div>
         </section>
 
-        <!-- AI Summary Modal -->
-        <div id="summary-modal" class="modal-overlay hidden">
-            <div class="modal-content glass-panel">
-                <div class="modal-header">
-                    <h3>✨ AI Activity Summary</h3>
-                    <button id="close-modal-btn" class="icon-btn">&times;</button>
+        <!-- Footer -->
+        <footer class="app-footer">
+            <span>Life Manager v1.0</span>
+            <a href="/api/export?days=30" class="footer-link">Export CSV</a>
+            <a href="/setup/ios" class="footer-link">iPhone Setup</a>
+        </footer>
+    </div>
+
+    <!-- Settings Drawer -->
+    <div id="settings-backdrop" class="settings-backdrop hidden" onclick="closeSettings()"></div>
+    <aside id="settings-drawer" class="settings-drawer glass-panel hidden">
+        <div class="settings-header">
+            <h2>Settings</h2>
+            <button class="icon-btn" onclick="closeSettings()">&times;</button>
+        </div>
+        <div class="settings-body">
+            <div class="settings-section">
+                <h3>General</h3>
+                <div class="setting-row">
+                    <label>Tracking</label>
+                    <label class="switch">
+                        <input type="checkbox" id="setting-tracking" checked>
+                        <span class="switch-slider"></span>
+                    </label>
                 </div>
-                <div class="modal-body">
-                    <p id="summary-text">Loading insights...</p>
+                <div class="setting-row">
+                    <label>Polling Interval</label>
+                    <select id="setting-polling">
+                        <option value="60">1 minute</option>
+                        <option value="120">2 minutes</option>
+                        <option value="300">5 minutes</option>
+                        <option value="600">10 minutes</option>
+                        <option value="1800">30 minutes</option>
+                        <option value="3600">60 minutes</option>
+                    </select>
+                </div>
+                <div class="setting-row">
+                    <label>Timezone</label>
+                    <select id="setting-timezone"></select>
                 </div>
             </div>
+            <div class="settings-section">
+                <h3>AI & Budget</h3>
+                <div class="setting-row">
+                    <label>LLM Mode</label>
+                    <select id="setting-llm-mode">
+                        <option value="ultra_save">Ultra Save</option>
+                        <option value="balanced">Balanced</option>
+                        <option value="quality">Quality</option>
+                    </select>
+                </div>
+                <div class="setting-row">
+                    <label>Daily AI Cap</label>
+                    <input type="number" id="setting-llm-cap" min="1" max="500" value="30" class="setting-input">
+                </div>
+                <div class="setting-row">
+                    <label>Classification Interval</label>
+                    <select id="setting-class-interval">
+                        <option value="300">5 minutes</option>
+                        <option value="600">10 minutes</option>
+                        <option value="1800">30 minutes</option>
+                        <option value="3600">60 minutes</option>
+                    </select>
+                </div>
+                <div class="setting-row">
+                    <label>Hourly Summaries</label>
+                    <label class="switch">
+                        <input type="checkbox" id="setting-hourly">
+                        <span class="switch-slider"></span>
+                    </label>
+                </div>
+            </div>
+            <div class="settings-section">
+                <h3>Service</h3>
+                <div class="setting-row">
+                    <label>Backend</label>
+                    <span id="setting-health" class="setting-value">Checking...</span>
+                </div>
+                <div class="setting-row">
+                    <label>iOS Setup</label>
+                    <a href="/setup/ios" class="setting-link" target="_blank">Open Setup</a>
+                </div>
+            </div>
+            <button class="btn-primary settings-save" id="settings-save-btn">Save Settings</button>
         </div>
+    </aside>
 
+    <!-- AI Summary Modal -->
+    <div id="summary-modal" class="modal-overlay hidden">
+        <div class="modal-content glass-panel">
+            <div class="modal-header">
+                <h3>AI Activity Summary</h3>
+                <button id="close-modal-btn" class="icon-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="summary-text">Loading insights...</p>
+            </div>
+        </div>
     </div>
+
+    <!-- Mobile Bottom Nav -->
+    <nav class="mobile-nav">
+        <button class="mobile-nav-item active" data-view="dashboard" onclick="switchView('dashboard')">
+            <span class="nav-icon">📊</span>
+            <span class="nav-label">Dashboard</span>
+        </button>
+        <button class="mobile-nav-item" data-view="activity" onclick="switchView('activity')">
+            <span class="nav-icon">📋</span>
+            <span class="nav-label">Activity</span>
+        </button>
+        <button class="mobile-nav-item" data-view="settings" onclick="switchView('settings'); openSettings()">
+            <span class="nav-icon">⚙</span>
+            <span class="nav-label">Settings</span>
+        </button>
+    </nav>
 
     <script src="script.js"></script>
 </body>
