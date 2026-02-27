@@ -267,11 +267,51 @@ async function fetchHourlySummaries() {
     }
 }
 
+// Call-Out Banner
+const calloutBanner = document.getElementById('callout-banner');
+const calloutMessage = document.getElementById('callout-message');
+const calloutReply = document.getElementById('callout-reply');
+const calloutSubmit = document.getElementById('callout-submit');
+const calloutDismiss = document.getElementById('callout-dismiss');
+
+async function fetchCallout() {
+    try {
+        const res = await fetch(`${API_BASE}/api/callout`);
+        const data = await res.json();
+        if (data.callout) {
+            calloutMessage.innerText = data.callout;
+            calloutBanner.classList.remove('hidden');
+        } else {
+            calloutBanner.classList.add('hidden');
+        }
+    } catch (err) { /* silent */ }
+}
+
+calloutSubmit.addEventListener('click', async () => {
+    const reply = calloutReply.value.trim();
+    if (!reply) return;
+    await fetch(`${API_BASE}/api/prompt-reply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reply })
+    });
+    await fetch(`${API_BASE}/api/callout/dismiss`, { method: 'POST' });
+    calloutBanner.classList.add('hidden');
+    calloutReply.value = '';
+});
+
+calloutDismiss.addEventListener('click', async () => {
+    await fetch(`${API_BASE}/api/callout/dismiss`, { method: 'POST' });
+    calloutBanner.classList.add('hidden');
+});
+
 // Event Listeners and Poll
-refreshBtn.addEventListener('click', () => { fetchData(); fetchHourlySummaries(); });
+refreshBtn.addEventListener('click', () => { fetchData(); fetchHourlySummaries(); fetchCallout(); });
 
 // Setup
 fetchSettings();
 fetchData();
 fetchHourlySummaries();
+fetchCallout();
 currentPollIntervalId = setInterval(() => { fetchData(); fetchHourlySummaries(); }, 5000);
+setInterval(fetchCallout, 30000);
