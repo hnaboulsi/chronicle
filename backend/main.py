@@ -333,9 +333,10 @@ async def ios_setup_status(db: Session = Depends(get_db)):
     states = await get_state(db)
     last_ios_ping_age = states.get("last_ios_ping_age_seconds")
     checklist = [
-        {"id": "arrive_location", "label": "Arrive at study location automation", "configured": last_ios_ping_age is not None},
-        {"id": "walking", "label": "Walking activity automation", "configured": last_ios_ping_age is not None},
-        {"id": "charging_stationary", "label": "Charging + stationary sleep automation", "configured": last_ios_ping_age is not None},
+        {"id": "periodic_ping", "label": "Time-of-day ping automation", "configured": states.get("seen_periodic_automation") == "true"},
+        {"id": "arrive_location", "label": "Arrive location automation", "configured": states.get("seen_arrive_automation") == "true"},
+        {"id": "walking", "label": "Walking automation", "configured": states.get("seen_walking_automation") == "true"},
+        {"id": "charging_stationary", "label": "Charging on/off automations", "configured": states.get("seen_charging_automation") == "true"},
     ]
     return {
         "ios_recent_ping": states.get("ios_recent_ping", False),
@@ -385,9 +386,19 @@ async def ios_setup_page():
 <h2>Method A — Download on Mac, AirDrop to iPhone</h2>
 <div class="step">
   <div class="step-num">Step 1 — On your Mac (open this page in Safari/Chrome)</div>
-  <p>Click below to download the shortcut file to your Mac.</p>
-  <a class="action-btn" href="/setup/shortcut/download">Download LifeManager.shortcut →</a>
-  <p class="note">Then right-click the downloaded file → <strong>Share → AirDrop</strong> → select your iPhone → tap Accept → Add Shortcut.</p>
+  <p>Download and import all 5 shortcuts (AirDrop each file to your iPhone and tap <strong>Add Shortcut</strong>):</p>
+  <p>
+    <a class="action-btn" href="/setup/shortcut/download?kind=gps">Download GPS Ping</a>
+    <a class="action-btn" href="/setup/shortcut/download?kind=arrive">Download Arrive</a>
+  </p>
+  <p>
+    <a class="action-btn" href="/setup/shortcut/download?kind=walking">Download Walking</a>
+    <a class="action-btn" href="/setup/shortcut/download?kind=charge_on">Download Charging On</a>
+  </p>
+  <p>
+    <a class="action-btn" href="/setup/shortcut/download?kind=charge_off">Download Charging Off</a>
+  </p>
+  <p class="note">If AirDrop feels annoying, use iCloud Drive and open the files from the iPhone Files app.</p>
 </div>
 
 <hr class="divider" style="{local_only}">
@@ -408,16 +419,15 @@ async def ios_setup_page():
 
 <hr class="divider">
 
-<h2>Step 2 — Set up the silent automation</h2>
+<h2>Step 2 — Create all automations (Run Shortcut only)</h2>
 <div class="step">
   <div class="step-num">In the Shortcuts app on iPhone</div>
-  <p>1. Tap the <strong>Automation</strong> tab → tap <strong>+</strong><br>
-     2. Choose <strong>Time of Day</strong> → set interval to <strong>every 30 minutes</strong><br>
-     3. Under "Do" → tap <strong>New Blank Automation</strong><br>
-     4. Add action: <strong>Run Shortcut</strong> → select <strong>Life Manager GPS</strong><br>
-     5. Toggle <strong>off</strong> "Ask Before Running" → tap "Don't Ask"<br>
-     6. Toggle <strong>off</strong> "Notify When Run"</p>
-  <p class="note">Done — it will run silently every 30 minutes. You'll never see it.</p>
+  <p><strong>Automation 1:</strong> Time of Day (every 30 min) → Run Shortcut <strong>Life Manager GPS</strong></p>
+  <p><strong>Automation 2:</strong> Arrive (Library/campus) → Run Shortcut <strong>Life Manager Arrive</strong></p>
+  <p><strong>Automation 3:</strong> Workout: Walking starts → Run Shortcut <strong>Life Manager Walking</strong></p>
+  <p><strong>Automation 4:</strong> Charger connected → Run Shortcut <strong>Life Manager Charging On</strong></p>
+  <p><strong>Automation 5:</strong> Charger disconnected → Run Shortcut <strong>Life Manager Charging Off</strong></p>
+  <p class="note">For each automation: turn <strong>off</strong> Ask Before Running and Notify When Run.</p>
 </div>
 
 <h2>Your backend URL</h2>
@@ -427,50 +437,102 @@ async def ios_setup_page():
 <h2>Test it</h2>
 <div class="step">
   <div class="step-num">Verify</div>
-  <p>Open Shortcuts → find <strong>Life Manager GPS</strong> → tap play ▶. Then check the <a href="/" style="color:#58a6ff">dashboard</a> — the iPhone card should update within seconds.</p>
+  <p>Run each imported shortcut once manually in Shortcuts, then check <a href="/api/ios-setup-status" style="color:#58a6ff">/api/ios-setup-status</a>. All checklist items should become configured.</p>
 </div>
 </body>
 </html>"""
 
 
-def _build_shortcut_bytes() -> bytes:
-    """Generate the LifeManager.shortcut plist bytes with the backend URL embedded."""
-    import plistlib, uuid
+def _build_shortcut_bytes(kind: str = "gps") -> bytes:
+    """Generate shortcut bytes for all iOS automation types."""
+    import plistlib
+    import uuid
 
+    kind = (kind or "gps").lower()
+    templates = {
+        "gps": {"name": "Life Manager GPS", "activity": "ios_ping", "is_charging": None},
+        "arrive": {"name": "Life Manager Arrive", "activity": "Arrive", "is_charging": "false"},
+        "walking": {"name": "Life Manager Walking", "activity": "Walking", "is_charging": "false"},
+        "charge_on": {"name": "Life Manager Charging On", "activity": "Stationary", "is_charging": "true"},
+        "charge_off": {"name": "Life Manager Charging Off", "activity": "Stationary", "is_charging": "false"},
+    }
+    if kind not in templates:
+        raise ValueError(f"Unknown shortcut kind: {kind}")
+
+    cfg = templates[kind]
     backend_url = _get_backend_url() + "/api/ios-telemetry"
     loc_uuid = str(uuid.uuid4()).upper()
     city_uuid = str(uuid.uuid4()).upper()
     post_uuid = str(uuid.uuid4()).upper()
 
+    def _dict_item(key: str, value_obj: dict) -> dict:
+        return {
+            "WFItemType": 0,
+            "WFKey": {"Value": {"string": key}, "WFSerializationType": "WFTextTokenString"},
+            "WFValue": value_obj,
+        }
+
+    payload_items = [
+        _dict_item(
+            "location_label",
+            {
+                "Value": {
+                    "attachmentsByRange": {"{0, 1}": {"Type": "ActionOutput", "OutputName": "CityName", "OutputUUID": city_uuid}},
+                    "string": "\ufffc",
+                },
+                "WFSerializationType": "WFTextTokenString",
+            },
+        ),
+        _dict_item(
+            "activity_type",
+            {"Value": {"string": cfg["activity"]}, "WFSerializationType": "WFTextTokenString"},
+        ),
+    ]
+    if cfg["is_charging"] is not None:
+        payload_items.append(
+            _dict_item(
+                "is_charging",
+                {"Value": {"string": cfg["is_charging"]}, "WFSerializationType": "WFTextTokenString"},
+            )
+        )
+
     shortcut = {
         "WFWorkflowMinimumClientVersion": 900,
         "WFWorkflowMinimumClientVersionString": "900",
-        "WFWorkflowName": "Life Manager GPS",
+        "WFWorkflowName": cfg["name"],
         "WFWorkflowTypes": [],
         "WFWorkflowIcon": {"WFWorkflowIconGlyphNumber": 59511, "WFWorkflowIconStartColor": 4275765759},
         "WFWorkflowActions": [
-            {"WFWorkflowActionIdentifier": "is.workflow.actions.location",
-             "WFWorkflowActionParameters": {"CustomOutputName": "MyLocation", "UUID": loc_uuid}},
-            {"WFWorkflowActionIdentifier": "is.workflow.actions.address",
-             "WFWorkflowActionParameters": {
-                 "WFAddressField": "City",
-                 "WFInput": {"Value": {"Type": "ActionOutput", "OutputName": "MyLocation", "OutputUUID": loc_uuid},
-                             "WFSerializationType": "WFTextTokenAttachment"},
-                 "CustomOutputName": "CityName", "UUID": city_uuid}},
-            {"WFWorkflowActionIdentifier": "is.workflow.actions.downloadurl",
-             "WFWorkflowActionParameters": {
-                 "WFURL": backend_url, "WFHTTPMethod": "POST",
-                 "WFHTTPBodyType": "Json", "ShowHeaders": False, "UUID": post_uuid,
-                 "WFRequestVariable": {"Value": {"WFDictionaryFieldValueItems": [
-                     {"WFItemType": 0,
-                      "WFKey": {"Value": {"string": "location_label"}, "WFSerializationType": "WFTextTokenString"},
-                      "WFValue": {"Value": {"attachmentsByRange": {"{0, 1}": {"Type": "ActionOutput",
-                                  "OutputName": "CityName", "OutputUUID": city_uuid}}, "string": "\ufffc"},
-                                  "WFSerializationType": "WFTextTokenString"}},
-                     {"WFItemType": 0,
-                      "WFKey": {"Value": {"string": "activity_type"}, "WFSerializationType": "WFTextTokenString"},
-                      "WFValue": {"Value": {"string": "ios_ping"}, "WFSerializationType": "WFTextTokenString"}},
-                 ]}, "WFSerializationType": "WFDictionaryFieldValue"}}},
+            {
+                "WFWorkflowActionIdentifier": "is.workflow.actions.location",
+                "WFWorkflowActionParameters": {"CustomOutputName": "MyLocation", "UUID": loc_uuid},
+            },
+            {
+                "WFWorkflowActionIdentifier": "is.workflow.actions.address",
+                "WFWorkflowActionParameters": {
+                    "WFAddressField": "City",
+                    "WFInput": {
+                        "Value": {"Type": "ActionOutput", "OutputName": "MyLocation", "OutputUUID": loc_uuid},
+                        "WFSerializationType": "WFTextTokenAttachment",
+                    },
+                    "CustomOutputName": "CityName",
+                    "UUID": city_uuid,
+                },
+            },
+            {
+                "WFWorkflowActionIdentifier": "is.workflow.actions.downloadurl",
+                "WFWorkflowActionParameters": {
+                    "WFURL": backend_url,
+                    "WFHTTPMethod": "POST",
+                    "WFHTTPBodyType": "Json",
+                    "ShowHeaders": False,
+                    "UUID": post_uuid,
+                    "WFRequestVariable": {
+                        "Value": {"WFDictionaryFieldValueItems": payload_items},
+                        "WFSerializationType": "WFDictionaryFieldValue",
+                    },
+                },
+            },
         ],
     }
     return plistlib.dumps(shortcut, fmt=plistlib.FMT_XML)
@@ -520,12 +582,17 @@ async def save_shortcut_to_desktop():
 
 
 @app.get("/setup/shortcut/download")
-async def download_shortcut():
+async def download_shortcut(kind: str = "gps"):
     from fastapi.responses import Response
+    filename = f"LifeManager-{kind}.shortcut"
+    try:
+        shortcut_bytes = _build_shortcut_bytes(kind)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid shortcut kind")
     return Response(
-        content=_build_shortcut_bytes(),
+        content=shortcut_bytes,
         media_type="application/octet-stream",
-        headers={"Content-Disposition": 'attachment; filename="LifeManager.shortcut"'},
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
