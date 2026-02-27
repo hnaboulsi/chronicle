@@ -23,8 +23,25 @@ logging.basicConfig(
 )
 log = logging.getLogger("life_manager")
 
-# Create tables
+# Create tables (new tables only; doesn't ALTER existing ones)
 Base.metadata.create_all(bind=engine)
+
+# Lightweight column migrations — add missing columns to existing tables
+def _run_migrations():
+    with engine.connect() as conn:
+        dialect = engine.dialect.name
+        try:
+            if dialect == "postgresql":
+                conn.execute(text("ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS battery_pct INTEGER"))
+            else:  # sqlite doesn't support IF NOT EXISTS on ALTER
+                cols = [r[1] for r in conn.execute(text("PRAGMA table_info(activity_logs)"))]
+                if "battery_pct" not in cols:
+                    conn.execute(text("ALTER TABLE activity_logs ADD COLUMN battery_pct INTEGER"))
+            conn.commit()
+        except Exception:
+            pass  # column may already exist in some SQLite versions
+
+_run_migrations()
 
 app = FastAPI(title="Life-Manager Agent API")
 _STARTED_AT = datetime.utcnow()
