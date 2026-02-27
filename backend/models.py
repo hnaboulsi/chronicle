@@ -16,6 +16,9 @@ class ActivityLog(Base):
     is_idle = Column(Boolean, default=False)
     location_label = Column(String, nullable=True) # e.g. "Library", "Home"
     activity_type = Column(String, nullable=True) # e.g. "Walking", "Stationary"
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    steps_today = Column(Integer, nullable=True)
 
 class AgentState(Base):
     __tablename__ = "agent_states"
@@ -43,6 +46,9 @@ class HourlySummary(Base):
 
 class iOSTelemetry(BaseModel):
     location_label: Optional[str] = None
-    activity_type: Optional[str] = None # "Walking", "Stationary", etc.
+    activity_type: Optional[str] = None  # "Walking", "Stationary", etc.
     battery_level: Optional[float] = None
     is_charging: Optional[bool] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    steps_today: Optional[int] = None
