@@ -44,7 +44,8 @@ PLIST
 # ── Launcher script ──────────────────────────────────────────────────────────
 cat > "${APP_BUNDLE}/Contents/MacOS/LifeManager" << LAUNCHER
 #!/bin/bash
-exec "${PYTHON}" "${SCRIPT_DIR}/menubar_app.py"
+exec "${PYTHON}" "${SCRIPT_DIR}/menubar_app.py" \
+    >> /tmp/lifemanager_app.out 2>> /tmp/lifemanager_app.err
 LAUNCHER
 chmod +x "${APP_BUNDLE}/Contents/MacOS/LifeManager"
 

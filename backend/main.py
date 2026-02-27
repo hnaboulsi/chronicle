@@ -149,6 +149,12 @@ async def receive_mac_telemetry(data: MacTelemetry, background_tasks: Background
 
 @app.post("/api/ios-telemetry")
 async def receive_ios_telemetry(data: iOSTelemetry, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    # Normalize battery: iOS Shortcuts sends 0-100, convert to int percentage
+    batt_pct = None
+    if data.battery_level is not None:
+        raw = float(data.battery_level)
+        batt_pct = int(raw) if raw > 1 else int(raw * 100)
+
     log_entry = ActivityLog(
         device="ios",
         location_label=data.location_label,
@@ -156,6 +162,7 @@ async def receive_ios_telemetry(data: iOSTelemetry, background_tasks: Background
         latitude=data.latitude,
         longitude=data.longitude,
         steps_today=data.steps_today,
+        battery_pct=batt_pct,
     )
     db.add(log_entry)
     db.commit()
@@ -703,7 +710,7 @@ def _sign_shortcut_bytes(unsigned_bytes: bytes, name: str = "shortcut") -> bytes
 
     Returns signed bytes on macOS, or the original unsigned bytes on Linux/Railway.
     """
-    import shutil, tempfile
+    import shutil, tempfile, subprocess
     if not shutil.which("shortcuts"):
         log.warning("shortcuts CLI not found (not macOS?) — returning unsigned")
         return unsigned_bytes
@@ -786,6 +793,7 @@ def _build_shortcut_bytes(kind: str = "gps", sign: bool = True) -> bytes:
     backend_url = _get_backend_url() + "/api/ios-telemetry"
     post_uuid = str(uuid.uuid4()).upper()
     loc_uuid = str(uuid.uuid4()).upper()
+    batt_uuid = str(uuid.uuid4()).upper()
 
     def _dict_item(key: str, value_obj: dict) -> dict:
         return {
@@ -794,19 +802,26 @@ def _build_shortcut_bytes(kind: str = "gps", sign: bool = True) -> bytes:
             "WFValue": value_obj,
         }
 
-    if cfg["use_location_action"]:
-        location_value = {
+    def _action_ref(output_name: str, output_uuid: str) -> dict:
+        """Reference to a previous action's output as a text token."""
+        return {
             "Value": {
-                "attachmentsByRange": {"{0, 1}": {"Type": "ActionOutput", "OutputName": "MyLocation", "OutputUUID": loc_uuid}},
+                "attachmentsByRange": {"{0, 1}": {"Type": "ActionOutput", "OutputName": output_name, "OutputUUID": output_uuid}},
                 "string": "\ufffc",
             },
             "WFSerializationType": "WFTextTokenString",
         }
+
+    if cfg["use_location_action"]:
+        location_value = _action_ref("MyLocation", loc_uuid)
     else:
         location_value = {
             "Value": {"string": cfg["location_label"]},
             "WFSerializationType": "WFTextTokenString",
         }
+
+    # Battery level token (output from the battery action below)
+    battery_value = _action_ref("BatteryLevel", batt_uuid)
 
     payload_items = [
         _dict_item("location_label", location_value),
@@ -814,6 +829,7 @@ def _build_shortcut_bytes(kind: str = "gps", sign: bool = True) -> bytes:
             "activity_type",
             {"Value": {"string": cfg["activity"]}, "WFSerializationType": "WFTextTokenString"},
         ),
+        _dict_item("battery_level", battery_value),
     ]
     if cfg["is_charging"] is not None:
         payload_items.append(
@@ -824,6 +840,11 @@ def _build_shortcut_bytes(kind: str = "gps", sign: bool = True) -> bytes:
         )
 
     actions = []
+    # Get battery level (available on all devices, no permission needed)
+    actions.append({
+        "WFWorkflowActionIdentifier": "is.workflow.actions.getbatterylevel",
+        "WFWorkflowActionParameters": {"CustomOutputName": "BatteryLevel", "UUID": batt_uuid},
+    })
     if cfg["use_location_action"]:
         actions.append(
             {
@@ -922,7 +943,7 @@ async def download_shortcut(kind: str = "gps"):
 @app.get("/setup/shortcut/sign-all")
 async def sign_all_shortcuts():
     """Download, sign, and save all 5 shortcuts to Desktop — macOS only."""
-    import os, shutil
+    import os, shutil, subprocess
     from fastapi.responses import HTMLResponse as HR
     if not shutil.which("shortcuts"):
         return HR("<p style='font-family:sans-serif;color:#f85149'>This endpoint only works when the backend is running locally on macOS.</p>")
@@ -1075,6 +1096,8 @@ async def event_stream(db: Session = Depends(get_db)):
                             "is_idle": l.is_idle,
                             "location_label": l.location_label,
                             "activity_type": l.activity_type,
+                            "steps_today": l.steps_today,
+                            "battery_pct": l.battery_pct,
                         }
                         for l in logs
                     ]
