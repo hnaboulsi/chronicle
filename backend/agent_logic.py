@@ -17,10 +17,10 @@ DISTRACTED_CATEGORIES = {"entertainment", "social_media", "gaming"}
 MIN_SESSION_MINUTES = 10
 DEFAULTS = {
     "backend_mode": "railway_primary",
-    "llm_mode": "ultra_save",
-    "hourly_summaries_enabled": "false",
-    "classification_interval_seconds": "1800",
-    "llm_daily_cap": "30",
+    "llm_mode": "balanced",
+    "hourly_summaries_enabled": "true",
+    "classification_interval_seconds": "300",
+    "llm_daily_cap": "200",
     "sleep_source": "iphone_only",
     "user_timezone": "America/Los_Angeles",
 }
