@@ -4,8 +4,11 @@ Apple Calendar auto-syncs to Google Calendar if Google is added in
 System Settings > Internet Accounts.
 """
 
+import logging
 import subprocess
 import datetime
+
+log = logging.getLogger("life_manager.calendar")
 
 CALENDAR_NAME = "Life Manager"
 
@@ -48,9 +51,9 @@ def create_event(title: str, start_dt: datetime.datetime, end_dt: datetime.datet
     '''
     try:
         _run_applescript(script)
-        print(f"Calendar event created: {title} ({start_dt.strftime('%H:%M')}-{end_dt.strftime('%H:%M')})")
+        log.info("Calendar event created: %s (%s-%s)", title, start_dt.strftime('%H:%M'), end_dt.strftime('%H:%M'))
     except Exception as e:
-        print(f"Calendar error: {e}")
+        log.error("Calendar error: %s", e)
 
 
 def create_session_event(category: str, summary: str, start_dt: datetime.datetime, end_dt: datetime.datetime):
@@ -127,5 +130,5 @@ def get_first_event_tomorrow() -> str:
         result = subprocess.run(["osascript", "-e", applescript], capture_output=True, text=True, check=True)
         return result.stdout.strip() or "No upcoming events found tomorrow."
     except Exception as e:
-        print(f"Error querying Apple Calendar: {e}")
+        log.error("Error querying Apple Calendar: %s", e)
         return "Error accessing Calendar"

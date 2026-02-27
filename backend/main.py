@@ -1,17 +1,27 @@
+import logging
+import os
+import base64
+import secrets
+from datetime import datetime, timedelta
+from typing import Dict, Any
+
 from fastapi import FastAPI, Depends, BackgroundTasks, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, Response
 from sqlalchemy.orm import Session
-from sqlalchemy import desc, text
-from database import engine, Base, get_db
+from sqlalchemy import desc, text, func
+from database import engine, Base, get_db, SessionLocal
 import models
 from models import ActivityLog, HourlySummary, MacTelemetry, iOSTelemetry
 import agent_logic
-from typing import Dict, Any
-import os
-import base64
-import secrets
-from datetime import datetime
+
+# Logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+log = logging.getLogger("life_manager")
 
 # Create tables
 Base.metadata.create_all(bind=engine)
@@ -20,7 +30,7 @@ app = FastAPI(title="Life-Manager Agent API")
 _STARTED_AT = datetime.utcnow()
 
 # Telemetry endpoints are called by Mac tracker and iPhone shortcut — no auth needed
-_NO_AUTH_PATHS = {"/api/mac-telemetry", "/api/ios-telemetry"}
+_NO_AUTH_PATHS = {"/api/mac-telemetry", "/api/ios-telemetry", "/api/healthz"}
 
 # Brute-force protection: track failed attempts per IP
 # { ip: {"count": int, "blocked_until": float} }
@@ -47,7 +57,7 @@ def _record_failure(ip: str):
     entry["count"] += 1
     if entry["count"] >= _MAX_FAILURES:
         entry["blocked_until"] = time.time() + _BLOCK_SECONDS
-        print(f"Auth: IP {ip} blocked for 15 min after {entry['count']} failures")
+        log.warning("Auth: IP %s blocked for 15 min after %d failures", ip, entry['count'])
 
 
 def _clear_failures(ip: str):
@@ -97,6 +107,30 @@ app.mount("/dashboard", StaticFiles(directory=frontend_path, html=True), name="f
 async def redirect_to_dashboard():
     return RedirectResponse(url="/dashboard/index.html")
 
+def _bg_process_mac(data: MacTelemetry):
+    """Run mac telemetry processing with its own DB session."""
+    db = SessionLocal()
+    try:
+        import asyncio
+        asyncio.run(agent_logic.process_mac_telemetry(data, db))
+    except Exception as e:
+        log.error("Background mac telemetry error: %s", e)
+    finally:
+        db.close()
+
+
+def _bg_process_ios(data: iOSTelemetry):
+    """Run ios telemetry processing with its own DB session."""
+    db = SessionLocal()
+    try:
+        import asyncio
+        asyncio.run(agent_logic.process_ios_telemetry(data, db))
+    except Exception as e:
+        log.error("Background ios telemetry error: %s", e)
+    finally:
+        db.close()
+
+
 @app.post("/api/mac-telemetry")
 async def receive_mac_telemetry(data: MacTelemetry, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     log_entry = ActivityLog(
@@ -107,8 +141,8 @@ async def receive_mac_telemetry(data: MacTelemetry, background_tasks: Background
     )
     db.add(log_entry)
     db.commit()
-    
-    background_tasks.add_task(agent_logic.process_mac_telemetry, data, db, background_tasks)
+
+    background_tasks.add_task(_bg_process_mac, data)
     pending_prompt = agent_logic.get_pending_prompt(db)
     return {"status": "ok", "prompt": pending_prompt}
 
@@ -126,7 +160,7 @@ async def receive_ios_telemetry(data: iOSTelemetry, background_tasks: Background
     db.add(log_entry)
     db.commit()
 
-    background_tasks.add_task(agent_logic.process_ios_telemetry, data, db)
+    background_tasks.add_task(_bg_process_ios, data)
     return {"status": "ok"}
 
 
@@ -191,6 +225,7 @@ async def get_settings(db: Session = Depends(get_db)):
         "hourly_summaries_enabled": agent_logic.get_state(db, "hourly_summaries_enabled", "false").lower() == "true",
         "classification_interval_seconds": int(agent_logic.get_state(db, "classification_interval_seconds", "1800")),
         "llm_daily_cap": int(agent_logic.get_state(db, "llm_daily_cap", "30")),
+        "user_timezone": agent_logic.get_state(db, "user_timezone", "America/Los_Angeles"),
     }
 
 @app.post("/api/settings")
@@ -218,6 +253,14 @@ async def update_settings(payload: Dict[str, Any], db: Session = Depends(get_db)
             agent_logic.set_state(db, "llm_daily_cap", str(val))
         except Exception:
             raise HTTPException(status_code=400, detail="llm_daily_cap must be an integer >= 1")
+    if "user_timezone" in payload:
+        from zoneinfo import ZoneInfo
+        tz_name = str(payload["user_timezone"])
+        try:
+            ZoneInfo(tz_name)  # validate
+            agent_logic.set_state(db, "user_timezone", tz_name)
+        except Exception:
+            raise HTTPException(status_code=400, detail=f"Invalid timezone: {tz_name}")
     return {"status": "updated"}
 
 @app.get("/api/logs")
@@ -227,21 +270,21 @@ async def get_logs(limit: int = 50, db: Session = Depends(get_db)):
 
 @app.get("/api/summary/{log_id}")
 async def get_log_summary(log_id: int, db: Session = Depends(get_db)):
-    log = db.query(ActivityLog).filter(ActivityLog.id == log_id).first()
-    if not log:
+    entry = db.query(ActivityLog).filter(ActivityLog.id == log_id).first()
+    if not entry:
         raise HTTPException(status_code=404, detail="Log not found")
-        
-    if log.device == "mac":
-        app = log.app_name or "Unknown App"
-        title = log.window_title or "Unknown Title"
+
+    if entry.device == "mac":
+        app_name = entry.app_name or "Unknown App"
+        title = entry.window_title or "Unknown Title"
         import llm_client
         if not agent_logic.can_use_llm(db):
             return {"summary": "AI budget reached; summary generation is temporarily disabled today."}
         agent_logic.register_llm_call(db)
-        summary = await llm_client.generate_activity_summary(app, title)
+        summary = await llm_client.generate_activity_summary(app_name, title)
         return {"summary": summary}
     else:
-        return {"summary": f"User was {log.activity_type} near {log.location_label}."}
+        return {"summary": f"User was {entry.activity_type} near {entry.location_label}."}
 
 @app.get("/api/hourly-summaries")
 async def get_hourly_summaries(limit: int = 5, db: Session = Depends(get_db)):
@@ -289,6 +332,147 @@ async def dismiss_callout(db: Session = Depends(get_db)):
     agent_logic.set_state(db, "callout_category", "")
     agent_logic.set_state(db, "callout_summary", "")
     return {"status": "dismissed"}
+
+
+@app.post("/api/chat")
+async def chat_message(payload: Dict[str, Any], db: Session = Depends(get_db)):
+    """Handle user chat messages — tell the agent what you're doing or where you're going."""
+    message = (payload.get("message") or "").strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="Message is required")
+
+    now = datetime.utcnow()
+    agent_logic.ensure_default_settings(db)
+
+    # Store the user's message as self-report
+    agent_logic.set_state(db, "user_self_report", message)
+    agent_logic.set_state(db, "last_user_checkin", now.isoformat())
+
+    # Clear any pending check-in since user proactively told us
+    agent_logic.set_state(db, "pending_checkin", "")
+    agent_logic.set_state(db, "pending_prompt", "")
+
+    # Build context for the LLM to understand and respond
+    states = agent_logic.get_all_states(db)
+    location = states.get("current_location", "")
+    activity_cat = states.get("current_activity_category", "unknown")
+    is_walking = states.get("is_walking") == "true"
+
+    context_parts = []
+    if location:
+        context_parts.append(f"Current location: {location}")
+    if activity_cat and activity_cat != "unknown":
+        context_parts.append(f"Current detected activity: {activity_cat}")
+    if is_walking:
+        context_parts.append("Currently walking")
+
+    recent_logs = agent_logic.get_recent_mac_logs(db, limit=5)
+    if recent_logs:
+        apps = ", ".join(set(l.get("app_name", "") for l in recent_logs if l.get("app_name")))
+        if apps:
+            context_parts.append(f"Recent apps: {apps}")
+
+    context_str = "; ".join(context_parts) if context_parts else "No recent context"
+
+    # Use LLM to generate a smart response if budget allows
+    if agent_logic.can_use_llm(db, now):
+        agent_logic.register_llm_call(db, now)
+        import llm_client
+        prompt = (
+            f"You are Life Manager, a personal productivity AI. The user just told you:\n"
+            f'"{message}"\n\n'
+            f"Context: {context_str}\n\n"
+            "Respond in 1-2 short sentences. Be friendly, acknowledge what they said, and confirm you're tracking it. "
+            "If they mentioned going somewhere, note that you'll track the location. "
+            "If they said what they're doing, confirm the activity category. Keep it conversational and brief."
+        )
+        reply = await llm_client.ask_gemini(prompt)
+        if not reply:
+            reply = f"Got it! I'll track that."
+    else:
+        reply = f"Got it — noted! I'll factor that into your activity tracking."
+
+    # Try to extract activity intent from the message using heuristics
+    msg_lower = message.lower()
+    if any(w in msg_lower for w in ["going to", "headed to", "walking to", "heading to"]):
+        # Extract destination
+        for prefix in ["going to ", "headed to ", "walking to ", "heading to "]:
+            if prefix in msg_lower:
+                dest = message[msg_lower.index(prefix) + len(prefix):].strip().rstrip(".")
+                if dest:
+                    agent_logic.set_state(db, "user_stated_destination", dest)
+                    break
+
+    if any(w in msg_lower for w in ["studying", "homework", "class", "lecture"]):
+        agent_logic.set_state(db, "current_activity_category", "studying")
+        agent_logic.set_state(db, "current_activity_summary", message[:80])
+    elif any(w in msg_lower for w in ["working", "coding", "meeting", "email"]):
+        agent_logic.set_state(db, "current_activity_category", "working")
+        agent_logic.set_state(db, "current_activity_summary", message[:80])
+    elif any(w in msg_lower for w in ["gym", "workout", "exercise", "running"]):
+        agent_logic.set_state(db, "current_activity_category", "break")
+        agent_logic.set_state(db, "current_activity_summary", message[:80])
+
+    # Store in chat history
+    history_key = f"chat_history:{now.strftime('%Y-%m-%d')}"
+    import json
+    existing = agent_logic.get_state(db, history_key, "[]")
+    try:
+        history = json.loads(existing)
+    except Exception:
+        history = []
+    history.append({"time": now.strftime("%H:%M"), "user": message, "reply": reply})
+    # Keep last 20 messages per day
+    if len(history) > 20:
+        history = history[-20:]
+    agent_logic.set_state(db, history_key, json.dumps(history))
+
+    return {"reply": reply, "activity_updated": True}
+
+
+@app.get("/api/chat/history")
+async def chat_history(db: Session = Depends(get_db)):
+    """Get today's chat history."""
+    import json
+    now = datetime.utcnow()
+    history_key = f"chat_history:{now.strftime('%Y-%m-%d')}"
+    existing = agent_logic.get_state(db, history_key, "[]")
+    try:
+        history = json.loads(existing)
+    except Exception:
+        history = []
+    return {"messages": history}
+
+
+@app.get("/api/checkin")
+async def get_checkin(db: Session = Depends(get_db)):
+    """Check if there's a pending check-in question for the user."""
+    checkin = agent_logic.get_state(db, "pending_checkin")
+    guess = agent_logic.get_state(db, "checkin_guess")
+    if not checkin:
+        return {"checkin": None}
+    return {"checkin": checkin, "guess": guess}
+
+
+@app.post("/api/checkin/confirm")
+async def confirm_checkin(payload: Dict[str, Any], db: Session = Depends(get_db)):
+    """User confirms or corrects the check-in guess."""
+    confirmed = payload.get("confirmed", False)
+    correction = (payload.get("correction") or "").strip()
+    now = datetime.utcnow()
+
+    if confirmed:
+        # Use the guess as the activity
+        guess = agent_logic.get_state(db, "checkin_guess")
+        if guess:
+            agent_logic.set_state(db, "user_self_report", guess)
+    elif correction:
+        agent_logic.set_state(db, "user_self_report", correction)
+
+    agent_logic.set_state(db, "pending_checkin", "")
+    agent_logic.set_state(db, "checkin_guess", "")
+    agent_logic.set_state(db, "last_user_checkin", now.isoformat())
+    return {"status": "ok"}
 
 
 @app.get("/api/healthz")
@@ -631,6 +815,142 @@ async def download_shortcut(kind: str = "gps"):
         media_type="application/octet-stream",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@app.get("/api/analytics/today")
+async def analytics_today(db: Session = Depends(get_db)):
+    """Daily analytics: time per category, productivity %, steps, LLM usage."""
+    now = datetime.utcnow()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # Get all mac logs from today
+    logs = (
+        db.query(ActivityLog)
+        .filter(ActivityLog.device == "mac", ActivityLog.timestamp >= today_start)
+        .order_by(ActivityLog.timestamp)
+        .all()
+    )
+
+    # Compute time per category using log intervals
+    states = agent_logic.get_all_states(db)
+    polling_secs = max(60, int(states.get("polling_interval_seconds", "60")))
+    category_minutes = {}
+    total_active_minutes = 0
+    for entry in logs:
+        if entry.is_idle:
+            continue
+        cat = "unknown"
+        # Classify each log entry using heuristics (no LLM to save budget)
+        text_data = f"{(entry.app_name or '').lower()} {(entry.window_title or '').lower()}"
+        for needles, result in [
+            (["instagram", "twitter", "x.com", "tiktok", "snapchat", "discord"], "social_media"),
+            (["youtube", "netflix", "reddit", "spotify", "hulu"], "entertainment"),
+            (["steam", "epic", "game"], "gaming"),
+            (["canvas", "gradescope", "homework", "lecture", "course", "quiz"], "studying"),
+            (["figma", "photoshop", "premiere", "final cut", "design"], "creative"),
+            (["vscode", "pycharm", "cursor", "terminal", "github", "slack", "notion"], "working"),
+        ]:
+            if any(n in text_data for n in needles):
+                cat = result
+                break
+        else:
+            cat = "break"
+        interval_min = polling_secs / 60
+        category_minutes[cat] = category_minutes.get(cat, 0) + interval_min
+        total_active_minutes += interval_min
+
+    productive_cats = {"studying", "working", "creative"}
+    productive_minutes = sum(category_minutes.get(c, 0) for c in productive_cats)
+    productive_pct = round((productive_minutes / total_active_minutes * 100) if total_active_minutes > 0 else 0)
+
+    # Steps
+    steps = states.get("steps_today", "0")
+
+    # LLM usage
+    llm_stats = agent_logic.llm_usage_snapshot(db, now)
+
+    return {
+        "category_minutes": category_minutes,
+        "total_active_minutes": round(total_active_minutes),
+        "productive_minutes": round(productive_minutes),
+        "productive_pct": productive_pct,
+        "steps_today": int(steps) if steps else 0,
+        "llm_used": llm_stats["daily_used"],
+        "llm_cap": llm_stats["daily_cap"],
+        "log_count": len(logs),
+    }
+
+
+@app.get("/api/export")
+async def export_data(days: int = 30, db: Session = Depends(get_db)):
+    """Export activity logs as CSV."""
+    import csv
+    import io
+    since = datetime.utcnow() - timedelta(days=min(days, 365))
+    logs = (
+        db.query(ActivityLog)
+        .filter(ActivityLog.timestamp >= since)
+        .order_by(ActivityLog.timestamp)
+        .all()
+    )
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["timestamp", "device", "app_name", "window_title", "is_idle", "location_label", "activity_type", "steps_today"])
+    for entry in logs:
+        writer.writerow([
+            entry.timestamp.isoformat() if entry.timestamp else "",
+            entry.device, entry.app_name, entry.window_title,
+            entry.is_idle, entry.location_label, entry.activity_type, entry.steps_today,
+        ])
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=life-manager-export-{days}d.csv"},
+    )
+
+
+@app.get("/api/stream")
+async def event_stream(db: Session = Depends(get_db)):
+    """Server-Sent Events stream for real-time dashboard updates.
+    Pushes every 5s and auto-closes after 5 minutes to conserve Railway resources.
+    Client should reconnect automatically (EventSource handles this)."""
+    import asyncio
+    import time as _time
+    from starlette.responses import StreamingResponse
+
+    async def generate():
+        start = _time.time()
+        max_duration = 300  # 5 minutes then close — client reconnects
+        while _time.time() - start < max_duration:
+            try:
+                fresh_db = SessionLocal()
+                try:
+                    states = agent_logic.get_all_states(fresh_db)
+                    logs = fresh_db.query(ActivityLog).order_by(desc(ActivityLog.timestamp)).limit(15).all()
+                    logs_data = [
+                        {
+                            "id": l.id,
+                            "timestamp": l.timestamp.isoformat() if l.timestamp else "",
+                            "device": l.device,
+                            "app_name": l.app_name,
+                            "window_title": l.window_title,
+                            "is_idle": l.is_idle,
+                            "location_label": l.location_label,
+                            "activity_type": l.activity_type,
+                        }
+                        for l in logs
+                    ]
+                    import json
+                    payload = json.dumps({"states": states, "logs": logs_data})
+                    yield f"data: {payload}\n\n"
+                finally:
+                    fresh_db.close()
+            except Exception as e:
+                log.error("SSE stream error: %s", e)
+                yield f"data: {{}}\n\n"
+            await asyncio.sleep(5)
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 def _get_backend_url() -> str:

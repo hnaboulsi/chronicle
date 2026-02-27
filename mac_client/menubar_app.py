@@ -95,60 +95,24 @@ if auth:
 
 
 class StatusWindow:
+    """Show status via a native macOS dialog (tkinter crashes rumps on macOS)."""
+
     def __init__(self, app):
         self.app = app
-        self.root = None
-        self.labels = {}
-        self._thread = None
 
     def start(self):
-        if self._thread and self._thread.is_alive():
-            return
-        self._thread = threading.Thread(target=self._run, daemon=True)
-        self._thread.start()
-
-    def _run(self):
-        try:
-            import tkinter as tk
-        except Exception:
-            return
-
-        self.root = tk.Tk()
-        self.root.title("Life Manager Status")
-        self.root.geometry("440x220")
-
-        frame = tk.Frame(self.root, padx=12, pady=12)
-        frame.pack(fill="both", expand=True)
-
-        self.labels["backend"] = tk.Label(frame, text="Backend: Starting...", anchor="w")
-        self.labels["backend"].pack(fill="x")
-        self.labels["tracking"] = tk.Label(frame, text="Tracking: —", anchor="w")
-        self.labels["tracking"].pack(fill="x")
-        self.labels["last_send"] = tk.Label(frame, text="Last telemetry send: never", anchor="w")
-        self.labels["last_send"].pack(fill="x")
-        self.labels["sleep"] = tk.Label(frame, text="Sleep detection: waiting for iPhone pings", anchor="w")
-        self.labels["sleep"].pack(fill="x")
-
-        btns = tk.Frame(frame, pady=10)
-        btns.pack(fill="x")
-        tk.Button(btns, text="Open Dashboard", command=self.app.open_dashboard_url).pack(side="left")
-        tk.Button(btns, text="Restart Menu Icon", command=self.app.restart_agent).pack(side="left", padx=8)
-        tk.Button(btns, text="Quit + Relaunch", command=self.app.quit_and_relaunch).pack(side="left")
-
-        self._tick()
-        self.root.mainloop()
-
-    def _tick(self):
-        try:
-            status = self.app.last_status
-            self.labels["backend"].config(text=f"Backend: {status.get('backend', 'Unknown')}")
-            self.labels["tracking"].config(text=f"Tracking: {status.get('tracking', 'Unknown')}")
-            self.labels["last_send"].config(text=f"Last telemetry send: {status.get('last_send', 'never')}")
-            self.labels["sleep"].config(text=f"Sleep detection: {status.get('sleep_note', 'waiting for iPhone pings')}")
-        except Exception:
-            pass
-        if self.root:
-            self.root.after(3000, self._tick)
+        status = self.app.last_status
+        lines = [
+            f"Backend: {status.get('backend', 'Unknown')}",
+            f"Tracking: {status.get('tracking', 'Unknown')}",
+            f"Last telemetry: {status.get('last_send', 'never')}",
+            f"Sleep detection: {status.get('sleep_note', 'waiting for iPhone pings')}",
+        ]
+        rumps.alert(
+            title="Life Manager Status",
+            message="\n".join(lines),
+            ok="OK",
+        )
 
 
 class LifeManagerApp(rumps.App):
