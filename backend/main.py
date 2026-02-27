@@ -1,6 +1,6 @@
-from fastapi import FastAPI, Depends, BackgroundTasks, HTTPException
+from fastapi import FastAPI, Depends, BackgroundTasks, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from database import engine, Base, get_db
@@ -9,11 +9,42 @@ from models import ActivityLog, HourlySummary, MacTelemetry, iOSTelemetry
 import agent_logic
 from typing import Dict, Any
 import os
+import base64
+import secrets
 
 # Create tables
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Life-Manager Agent API")
+
+# Telemetry endpoints are called by Mac tracker and iPhone shortcut — no auth needed
+_NO_AUTH_PATHS = {"/api/mac-telemetry", "/api/ios-telemetry"}
+
+@app.middleware("http")
+async def basic_auth_middleware(request: Request, call_next):
+    if request.url.path in _NO_AUTH_PATHS:
+        return await call_next(request)
+
+    username = os.environ.get("DASHBOARD_USER", "admin")
+    password = os.environ.get("DASHBOARD_PASS", "")
+    if not password:
+        return await call_next(request)  # No password set — open (local dev)
+
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Basic "):
+        try:
+            decoded = base64.b64decode(auth[6:]).decode("utf-8")
+            u, _, p = decoded.partition(":")
+            if secrets.compare_digest(u, username) and secrets.compare_digest(p, password):
+                return await call_next(request)
+        except Exception:
+            pass
+
+    return Response(
+        content="Unauthorized",
+        status_code=401,
+        headers={"WWW-Authenticate": 'Basic realm="Life Manager"'},
+    )
 
 # Serve frontend static files
 from fastapi.responses import RedirectResponse
