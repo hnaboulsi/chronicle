@@ -2,21 +2,37 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <!-- Unique identifier for launchd -->
     <key>Label</key>
     <string>com.naboulsi.lifemanager</string>
+
+    <!-- What to run: the menu bar app (which also starts the backend) -->
     <key>ProgramArguments</key>
     <array>
         <string>/Users/naboulsi/life-manager-agent/mac_client/venv/bin/python</string>
         <string>/Users/naboulsi/life-manager-agent/mac_client/menubar_app.py</string>
     </array>
+
+    <!-- Working directory -->
     <key>WorkingDirectory</key>
     <string>/Users/naboulsi/life-manager-agent/mac_client</string>
+
+    <!-- Launch on login -->
     <key>RunAtLoad</key>
     <true/>
+
+    <!-- Restart on crash, but NOT after a clean quit (so Quit from menu bar works) -->
     <key>KeepAlive</key>
-    <true/>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <!-- Required for menu bar / GUI apps (needs access to screen) -->
     <key>LimitLoadToSessionType</key>
     <string>Aqua</string>
+
+    <!-- Logs -->
     <key>StandardOutPath</key>
     <string>/tmp/lifemanager.out</string>
     <key>StandardErrorPath</key>
