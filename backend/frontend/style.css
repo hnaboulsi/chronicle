@@ -402,6 +402,47 @@ tr:hover td {
     }
 }
 
+/* Hourly Summary Cards */
+.hourly-summaries {
+    padding: 1.5rem;
+}
+
+.summary-card {
+    padding: 1rem;
+    border-bottom: 1px solid var(--glass-border);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: baseline;
+}
+
+.summary-card:last-child {
+    border-bottom: none;
+}
+
+.summary-card p {
+    width: 100%;
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+    line-height: 1.5;
+    margin-top: 0.25rem;
+}
+
+.summary-time {
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.summary-score {
+    margin-left: auto;
+    background: rgba(88, 166, 255, 0.1);
+    color: var(--accent);
+    padding: 0.1rem 0.6rem;
+    border-radius: 10px;
+    font-size: 0.8rem;
+    border: 1px solid rgba(88, 166, 255, 0.2);
+}
+
 @media (max-width: 768px) {
     .device-states {
         grid-template-columns: 1fr;

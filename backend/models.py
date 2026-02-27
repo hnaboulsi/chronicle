@@ -31,6 +31,16 @@ class MacTelemetry(BaseModel):
     window_title: str
     idle_time_seconds: int
 
+class HourlySummary(Base):
+    __tablename__ = "hourly_summaries"
+
+    id = Column(Integer, primary_key=True, index=True)
+    hour_start = Column(DateTime, nullable=False, index=True)  # top of the hour (UTC)
+    summary_text = Column(String, nullable=False)
+    productivity_score = Column(Float, nullable=True)  # 0.0–10.0
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
 class iOSTelemetry(BaseModel):
     location_label: Optional[str] = None
     activity_type: Optional[str] = None # "Walking", "Stationary", etc.

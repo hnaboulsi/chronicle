@@ -65,6 +65,30 @@ To track location and motion without a custom Swift app, use the built-in **Appl
 
 When you arrive at the Library, your iPhone will secretly ping your backend. The backend will update `Study Mode`, and the Mac Client will notice the state change and mute your Mac notifications via AppleScript!
 
+## Future Roadmap
+
+### Self-Hosted LLM via Mistral + Ollama (Planned)
+
+The goal is to replace Gemini API calls with a fully local, unlimited LLM running on the Windows laptop:
+
+1. Install Ollama on the Windows laptop and pull Mistral: `ollama run mistral`
+2. Ollama exposes a local API at `http://localhost:11434`
+3. Make it reachable from the Mac/backend using one of:
+   - **Same local network:** Use the laptop's LAN IP (e.g., `http://192.168.x.x:11434`)
+   - **Tailscale (recommended):** Install Tailscale on both machines — gives a stable private IP that works across networks
+   - **ngrok:** Quick tunnel for testing: `ngrok http 11434`
+4. In `backend/llm_client.py`, replace `client.models.generate_content(model='gemini-...')` with an HTTP POST to `http://<laptop-ip>:11434/api/generate` using the Ollama JSON format
+5. Benefits: no rate limits, no API costs, full data privacy
+
+### Mobile-Responsive Dashboard (Planned)
+
+The current dashboard is desktop-only. Future work:
+- Add CSS breakpoints at 600px for mobile layout
+- Stack header vertically on small screens
+- Hide the Device column in the activity table to save space
+- Increase button touch targets to 44px minimum
+- Reduce `backdrop-filter` blur on mobile for performance
+
 ## GitHub Sync
 
 To push this codebase to a private repo and sync it between your Mac and 3050 server:

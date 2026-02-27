@@ -52,6 +52,15 @@
                     <p class="sub-text" id="focus-detail">Study mode off</p>
                 </div>
             </div>
+
+            <div class="state-card glass-panel" id="card-activity">
+                <div class="card-icon">🧠</div>
+                <div class="card-content">
+                    <h3>AI Reading</h3>
+                    <p class="status-value" id="activity-category">Analyzing...</p>
+                    <p class="sub-text" id="activity-summary">—</p>
+                </div>
+            </div>
         </section>
 
         <!-- Activity Feed -->
@@ -81,6 +90,16 @@
                         <!-- Filled by JS -->
                     </tbody>
                 </table>
+            </div>
+        </section>
+
+        <!-- Hourly Recaps -->
+        <section class="hourly-summaries glass-panel">
+            <div class="feed-header">
+                <h2>Hourly Recaps</h2>
+            </div>
+            <div id="summaries-list">
+                <p style="color:var(--text-secondary);padding:1rem">No summaries yet — they generate automatically each hour.</p>
             </div>
         </section>
 

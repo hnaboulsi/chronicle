@@ -1,5 +1,6 @@
 from typing import Optional
 import os
+import json
 from dotenv import load_dotenv
 from google import genai
 
@@ -65,6 +66,105 @@ async def generate_activity_summary(app_name: str, window_title: str) -> str:
         "Write a 1-2 sentence fun, conversational summary of what they were likely doing. Keep it very conversational and direct."
     )
     return await ask_gemini(prompt)
+
+async def classify_activity_context(recent_activities: list) -> dict:
+    """
+    Classifies what the user is doing based on a list of recent app/tab entries.
+    Uses gemini-2.5-flash-lite to conserve API quota.
+    Returns: {"category": "studying", "summary": "CS 70 problem sets"}
+    """
+    if not recent_activities:
+        return {"category": "unknown", "summary": ""}
+
+    lines = []
+    for a in recent_activities:
+        app = a.get("app_name", "Unknown")
+        title = a.get("window_title", "") or ""
+        lines.append(f"- {app}: {title[:80]}")
+    activity_text = "\n".join(lines)
+
+    prompt = (
+        "You are analyzing a user's recent computer activity to understand what they are doing.\n\n"
+        f"Recent apps and tabs (newest last):\n{activity_text}\n\n"
+        "Classify the user's current activity as ONE of these categories:\n"
+        "studying, working, entertainment, social_media, gaming, creative, break, idle, unknown\n\n"
+        "Rules:\n"
+        "- studying: course websites, textbooks, ChatGPT for homework, lecture notes, Canvas/Gradescope\n"
+        "- working: code editor, Notion/docs, email, Slack, professional tasks\n"
+        "- entertainment: YouTube, Netflix, Reddit, sports, news, music\n"
+        "- social_media: Instagram, Twitter/X, TikTok, Snapchat, iMessage\n"
+        "- gaming: any game\n"
+        "- creative: design tools, video editing, writing for fun\n"
+        "- break: brief idle, system settings, nothing meaningful\n"
+        "- idle: Mac was idle/locked\n\n"
+        "Also write a short 5-8 word description of what they're doing.\n\n"
+        'Respond ONLY with valid JSON, no markdown: {"category": "...", "summary": "..."}'
+    )
+
+    try:
+        response = client.models.generate_content(
+            model='gemini-2.5-flash-lite-preview-06-17',
+            contents=prompt,
+        )
+        text = response.text.strip()
+        # Strip markdown code fences if present
+        if text.startswith("```"):
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+        result = json.loads(text)
+        return {
+            "category": result.get("category", "unknown"),
+            "summary": result.get("summary", "")
+        }
+    except Exception as e:
+        print(f"Error classifying activity: {e}")
+        return {"category": "unknown", "summary": ""}
+
+
+async def generate_hourly_summary(logs: list, hour_start: str) -> dict:
+    """
+    Generates a narrative summary of the past hour's activity.
+    Uses gemini-2.5-flash for better reasoning quality.
+    Returns: {"summary": "...", "productivity_score": 7.5}
+    """
+    if not logs:
+        return {"summary": "No activity recorded this hour.", "productivity_score": None}
+
+    lines = []
+    for a in logs:
+        app = a.get("app_name", "Unknown")
+        title = a.get("window_title", "") or ""
+        lines.append(f"- {app}: {title[:80]}")
+    activity_text = "\n".join(lines)
+
+    prompt = (
+        f"You are a personal productivity assistant. Here is what the user did on their Mac during the hour starting at {hour_start}:\n\n"
+        f"{activity_text}\n\n"
+        "Write a 2-3 sentence conversational summary of what they worked on and how focused they seemed. "
+        "Then give a productivity score from 0 to 10 (10 = extremely focused, 0 = completely distracted).\n\n"
+        'Respond ONLY with valid JSON, no markdown: {"summary": "...", "productivity_score": 7.5}'
+    )
+
+    try:
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt,
+        )
+        text = response.text.strip()
+        if text.startswith("```"):
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+        result = json.loads(text)
+        return {
+            "summary": result.get("summary", ""),
+            "productivity_score": result.get("productivity_score")
+        }
+    except Exception as e:
+        print(f"Error generating hourly summary: {e}")
+        return {"summary": "Could not generate summary.", "productivity_score": None}
+
 
 async def generate_daily_recap(logs_summary: str) -> str:
     prompt = (
