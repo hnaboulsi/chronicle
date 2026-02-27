@@ -19,6 +19,7 @@ class ActivityLog(Base):
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
     steps_today = Column(Integer, nullable=True)
+    battery_pct = Column(Integer, nullable=True)  # 0-100, iOS only
 
 class AgentState(Base):
     __tablename__ = "agent_states"

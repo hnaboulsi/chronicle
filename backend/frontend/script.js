@@ -113,13 +113,15 @@ function updateUI(logs, states) {
     const latestIos = logs.find(l => l.device === 'ios');
     if (latestIos) {
         iosStatus.textContent = latestIos.location_label || 'Connected';
-        iosDetail.textContent = latestIos.activity_type || 'Tracking';
+        iosStatus.style.color = 'var(--success)';
+        const battStr = latestIos.battery_pct != null ? ` · 🔋${latestIos.battery_pct}%` : '';
+        iosDetail.textContent = (latestIos.activity_type || 'Tracking') + battStr;
+        iosDetail.style.color = 'var(--text-secondary)';
     } else {
-        iosStatus.textContent = states.is_walking === 'true' ? 'Walking' : 'No data';
-        iosDetail.textContent = states.ios_recent_ping ? 'Connected' : 'Not set up';
-        if (!states.ios_recent_ping) {
-            iosDetail.style.color = 'var(--text-tertiary)';
-        }
+        iosStatus.textContent = states.ios_recent_ping ? 'Connected' : 'Idle';
+        iosStatus.style.color = states.ios_recent_ping ? 'var(--success)' : 'var(--text-tertiary)';
+        iosDetail.textContent = states.ios_recent_ping ? 'Tracking location' : 'No pings received';
+        iosDetail.style.color = 'var(--text-tertiary)';
     }
 
     // Focus Mode
@@ -578,6 +580,29 @@ checkinCorrection.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') checkinSend.click();
 });
 
+// ── iOS Shortcuts Setup Check ──
+async function checkIosSetupStatus() {
+    try {
+        const r = await fetch(`${API}/api/ios-setup-status`);
+        if (!r.ok) return;
+        const d = await r.json();
+        const unconfigured = (d.checklist || []).filter(item => !item.configured);
+        const cardIos = document.getElementById('card-ios');
+        // Remove any existing warning
+        const existing = document.getElementById('ios-setup-warning');
+        if (existing) existing.remove();
+        if (unconfigured.length > 0 && !d.ios_recent_ping) {
+            // Show warning badge on iPhone card
+            const warning = document.createElement('div');
+            warning.id = 'ios-setup-warning';
+            warning.style.cssText = 'margin-top:0.5rem;padding:0.4rem 0.7rem;background:rgba(210,153,34,0.15);border:1px solid rgba(210,153,34,0.4);border-radius:8px;font-size:0.75rem;color:#d29922;cursor:pointer;';
+            warning.innerHTML = `⚠ ${unconfigured.length} shortcut${unconfigured.length > 1 ? 's' : ''} not set up — <u>tap to fix</u>`;
+            warning.onclick = () => window.open('/setup/ios', '_blank');
+            cardIos.appendChild(warning);
+        }
+    } catch {}
+}
+
 // ── Setup ──
 populateTimezones();
 initSettings();
@@ -587,6 +612,7 @@ fetchAnalytics();
 fetchHourlySummaries();
 fetchCallout();
 fetchCheckin();
+checkIosSetupStatus();
 
 if (!localStorage.getItem('lm_onboarded')) checkOnboarding();
 
@@ -598,6 +624,7 @@ setInterval(() => {
 setInterval(fetchCallout, 30000);
 setInterval(fetchAnalytics, 30000);
 setInterval(fetchCheckin, 15000);
+setInterval(checkIosSetupStatus, 120000); // re-check every 2 min
 
 // ── Service Worker ──
 if ('serviceWorker' in navigator) {

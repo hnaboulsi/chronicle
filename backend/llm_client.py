@@ -56,17 +56,18 @@ async def check_if_vague(app_name: str, window_title: str) -> bool:
 
 async def generate_prompt(app_name: str, window_title: str) -> str:
     prompt = (
-        f"The user has been using the app '{app_name}' with the window title '{window_title}' for a while. "
-        "Generate a short, friendly question asking if they are doing something else (like cooking or cleaning) "
-        "or if they got distracted. Keep it under 15 words."
+        f"The user has been on '{app_name}' ({window_title}) for a while. "
+        "Write a short, direct check-in question — are they still working or did they step away? "
+        "Under 12 words. No jokes. Professional tone."
     )
     return await ask_gemini(prompt)
 
 async def generate_activity_summary(app_name: str, window_title: str) -> str:
     prompt = (
-        "You are a helpful AI assistant. The user clicked on a log entry to ask for an AI summary of what they were doing. "
-        f"They were using the app '{app_name}' with the window title/URL '{window_title}'. "
-        "Write a 1-2 sentence fun, conversational summary of what they were likely doing. Keep it very conversational and direct."
+        "You are a focused productivity assistant. The user clicked a log entry to understand what they were doing. "
+        f"App: '{app_name}' | Window/URL: '{window_title}'. "
+        "Write 1-2 sentences describing what they were likely working on. "
+        "Be direct and work-focused. No jokes, no filler. If it looks like a break or distraction, say so plainly."
     )
     return await ask_gemini(prompt)
 
@@ -151,10 +152,11 @@ async def generate_hourly_summary(logs: list, hour_start: str) -> dict:
     activity_text = "\n".join(lines)
 
     prompt = (
-        f"You are a personal productivity assistant. Here is what the user did on their Mac during the hour starting at {hour_start}:\n\n"
+        f"You are a productivity analyst. Here is what the user did on their Mac during the hour starting at {hour_start}:\n\n"
         f"{activity_text}\n\n"
-        "Write a 2-3 sentence conversational summary of what they worked on and how focused they seemed. "
-        "Then give a productivity score from 0 to 10 (10 = extremely focused, 0 = completely distracted).\n\n"
+        "Write a 2-3 sentence summary: what they worked on, how focused they were, and whether time was well spent. "
+        "Be direct and professional — no jokes or filler phrases. "
+        "Then give a productivity score 0-10 (10 = fully focused on meaningful work, 0 = completely off-task).\n\n"
         'Respond ONLY with valid JSON, no markdown: {"summary": "...", "productivity_score": 7.5}'
     )
 
