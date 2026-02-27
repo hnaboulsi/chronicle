@@ -19,6 +19,17 @@ import threading
 import requests
 import subprocess
 
+_CATEGORY_ICONS = {
+    "studying":      "📚",
+    "working":       "💼",
+    "entertainment": "🎬",
+    "social_media":  "📲",
+    "gaming":        "🎮",
+    "creative":      "🎨",
+    "break":         "☕",
+    "idle":          "💤",
+}
+
 sys.path.insert(0, _here)
 import tracker
 import notifier
@@ -49,6 +60,7 @@ class LifeManagerApp(rumps.App):
         self.tracking_enabled = True
         self._stop_event = threading.Event()
         self._backend_proc = None
+        self._last_notified_callout = ""
 
         # --- Status items (non-clickable info lines) ---
         self.backend_item = rumps.MenuItem("⚙️  Backend: Starting...")
@@ -72,8 +84,9 @@ class LifeManagerApp(rumps.App):
         # Start backend + tracker in a background thread
         threading.Thread(target=self._startup, daemon=True).start()
 
-        # Refresh status display every 30 s
+        # Refresh status display every 30 s; check callouts every 5 min
         rumps.Timer(self._refresh_status, 30).start()
+        rumps.Timer(self._check_callout, 300).start()
 
     # ------------------------------------------------------------------ #
     #  Startup: launch backend, then begin tracker loop
@@ -211,6 +224,30 @@ class LifeManagerApp(rumps.App):
         except Exception:
             self.backend_item.title = "⚙️  Backend: Offline ❌"
 
+        # Update menu bar icon with current detected activity
+        try:
+            state_resp = requests.get(f"{BACKEND_URL}/api/state", timeout=2.0)
+            if state_resp.ok:
+                cat = state_resp.json().get("current_activity_category", "")
+                self.title = _CATEGORY_ICONS.get(cat, "🧠")
+        except Exception:
+            pass
+
+    def _check_callout(self, _):
+        """Send a macOS notification if the AI detected a distraction."""
+        try:
+            resp = requests.get(f"{BACKEND_URL}/api/callout", timeout=2.0)
+            if resp.ok:
+                data = resp.json()
+                callout = data.get("callout")
+                if callout and callout != self._last_notified_callout:
+                    self._last_notified_callout = callout
+                    notifier.notify(callout, "Life Manager")
+                elif not callout:
+                    self._last_notified_callout = ""
+        except Exception:
+            pass
+
     def toggle_tracking(self, _):
         new_state = not self.tracking_enabled
         try:
@@ -228,7 +265,7 @@ class LifeManagerApp(rumps.App):
             pass
 
     def open_dashboard(self, _):
-        subprocess.Popen(["open", "http://localhost:8000"])
+        subprocess.Popen(["open", f"{BACKEND_URL}/dashboard/index.html"])
 
     def quit_app(self, _):
         """Clean quit: stop tracker loop and shut down the backend."""

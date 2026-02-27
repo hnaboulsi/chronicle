@@ -42,13 +42,19 @@ async function fetchData() {
 }
 
 function updateUI(logs, states) {
-    // 1. Update Mac Card (Find latest Mac log)
+    // 1. Update Mac Card
     const latestMac = logs.find(l => l.device === 'mac');
-    if (latestMac) {
+    const macOnline = states.mac_online === true;
+    if (!macOnline) {
+        macStatus.innerText = "Tracker Offline";
+        macStatus.style.color = "var(--danger)";
+        macDetail.innerText = "Start Life Manager on your Mac";
+        macDetail.style.color = "var(--danger)";
+    } else if (latestMac) {
         macStatus.innerText = latestMac.app_name || 'Unknown App';
+        macStatus.style.color = "var(--text-primary)";
         macDetail.innerText = latestMac.is_idle ? "⚠️ Idle > 30 mins" : "Active";
-        if (latestMac.is_idle) macDetail.style.color = "var(--warning)";
-        else macDetail.style.color = "var(--text-secondary)";
+        macDetail.style.color = latestMac.is_idle ? "var(--warning)" : "var(--text-secondary)";
     }
 
     // 2. Update iOS Card

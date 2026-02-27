@@ -130,7 +130,18 @@ async def receive_ios_telemetry(data: iOSTelemetry, background_tasks: Background
 
 @app.get("/api/state")
 async def get_state(db: Session = Depends(get_db)):
-    return agent_logic.get_all_states(db)
+    from datetime import datetime
+    states = agent_logic.get_all_states(db)
+    last_ping_str = states.get("last_mac_ping", "")
+    if last_ping_str:
+        try:
+            last_ping = datetime.fromisoformat(last_ping_str)
+            states["mac_online"] = (datetime.utcnow() - last_ping).total_seconds() < 300
+        except Exception:
+            states["mac_online"] = False
+    else:
+        states["mac_online"] = False
+    return states
 
 @app.get("/api/settings")
 async def get_settings(db: Session = Depends(get_db)):

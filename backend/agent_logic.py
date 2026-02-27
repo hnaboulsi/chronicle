@@ -47,7 +47,7 @@ def update_context_with_reply(reply: str, db: Session):
     print(f"User self-reported: {reply}")
 
 
-def get_recent_mac_logs(db: Session, limit: int = 10) -> list:
+def get_recent_mac_logs(db: Session, limit: int = 20) -> list:
     logs = (
         db.query(ActivityLog)
         .filter(ActivityLog.device == "mac")
@@ -55,7 +55,14 @@ def get_recent_mac_logs(db: Session, limit: int = 10) -> list:
         .limit(limit)
         .all()
     )
-    return [{"app_name": l.app_name, "window_title": l.window_title} for l in reversed(logs)]
+    return [
+        {
+            "app_name": l.app_name,
+            "window_title": l.window_title,
+            "time": l.timestamp.strftime("%H:%M") if l.timestamp else "",
+        }
+        for l in reversed(logs)
+    ]
 
 
 def get_mac_logs_for_hour(db: Session, since: datetime) -> list:
@@ -142,6 +149,9 @@ async def _generate_and_store_hourly_summary(db: Session, now: datetime):
 async def process_mac_telemetry(data: MacTelemetry, db: Session, background_tasks=None):
     now = datetime.utcnow()
 
+    # Heartbeat — lets dashboard detect if tracker is actually running
+    set_state(db, "last_mac_ping", now.isoformat())
+
     # Rule 1 — Idle check (30 min idle → prompt)
     if data.idle_time_seconds > 60 * 30:
         if not get_state(db, "pending_prompt"):
@@ -152,11 +162,12 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session, background_task
     last_check_str = get_state(db, "last_vagueness_check")
     last_check = datetime.fromisoformat(last_check_str) if last_check_str else datetime.min
 
-    if (now - last_check).total_seconds() > 60 * 30:
+    if (now - last_check).total_seconds() > 60 * 15:
         set_state(db, "last_vagueness_check", now.isoformat())
 
-        recent = get_recent_mac_logs(db, limit=10)
-        result = await llm_client.classify_activity_context(recent)
+        recent = get_recent_mac_logs(db, limit=20)
+        user_self_report = get_state(db, "user_self_report")
+        result = await llm_client.classify_activity_context(recent, user_self_report)
         new_category = result["category"]
         new_summary = result["summary"]
 

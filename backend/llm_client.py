@@ -67,7 +67,7 @@ async def generate_activity_summary(app_name: str, window_title: str) -> str:
     )
     return await ask_gemini(prompt)
 
-async def classify_activity_context(recent_activities: list) -> dict:
+async def classify_activity_context(recent_activities: list, user_self_report: str = "") -> dict:
     """
     Classifies what the user is doing based on a list of recent app/tab entries.
     Uses gemini-2.5-flash-lite to conserve API quota.
@@ -80,25 +80,34 @@ async def classify_activity_context(recent_activities: list) -> dict:
     for a in recent_activities:
         app = a.get("app_name", "Unknown")
         title = a.get("window_title", "") or ""
-        lines.append(f"- {app}: {title[:80]}")
+        time = a.get("time", "")
+        prefix = f"[{time}] " if time else ""
+        lines.append(f"{prefix}{app}: {title[:80]}")
     activity_text = "\n".join(lines)
 
+    self_report_section = f'\nUser said they are doing: "{user_self_report}"\n' if user_self_report else ""
+
     prompt = (
-        "You are analyzing a user's recent computer activity to understand what they are doing.\n\n"
-        f"Recent apps and tabs (newest last):\n{activity_text}\n\n"
-        "Classify the user's current activity as ONE of these categories:\n"
-        "studying, working, entertainment, social_media, gaming, creative, break, idle, unknown\n\n"
-        "Rules:\n"
-        "- studying: course websites, textbooks, ChatGPT for homework, lecture notes, Canvas/Gradescope\n"
-        "- working: code editor, Notion/docs, email, Slack, professional tasks\n"
-        "- entertainment: YouTube, Netflix, Reddit, sports, news, music\n"
-        "- social_media: Instagram, Twitter/X, TikTok, Snapchat, iMessage\n"
+        "You are analyzing a user's recent Mac activity to understand what they are working on right now.\n\n"
+        f"Activity log (oldest → newest):\n{activity_text}\n"
+        f"{self_report_section}\n"
+        "Instructions:\n"
+        "- Look at the PATTERN across all entries, not just the most recent one\n"
+        "- If a window title is vague ('Untitled', 'New Tab'), infer from the app and surrounding entries\n"
+        "- A Google Doc titled 'Untitled' next to a course website = studying\n"
+        "- A Google Doc titled 'Untitled' next to Figma = creative work\n"
+        "- If the user told you what they're doing, trust that over the logs\n\n"
+        "Classify as ONE of: studying, working, entertainment, social_media, gaming, creative, break, idle, unknown\n\n"
+        "- studying: course sites, textbooks, homework helpers, Canvas/Gradescope, lecture notes\n"
+        "- working: code editor, Notion, email, Slack, terminal, professional tasks\n"
+        "- entertainment: YouTube, Netflix, Reddit, sports, music, general browsing\n"
+        "- social_media: Instagram, Twitter/X, TikTok, Snapchat, messaging\n"
         "- gaming: any game\n"
-        "- creative: design tools, video editing, writing for fun\n"
-        "- break: brief idle, system settings, nothing meaningful\n"
-        "- idle: Mac was idle/locked\n\n"
-        "Also write a short 5-8 word description of what they're doing.\n\n"
-        'Respond ONLY with valid JSON, no markdown: {"category": "...", "summary": "..."}'
+        "- creative: design, video editing, writing for fun\n"
+        "- break: brief idle, settings, nothing meaningful\n"
+        "- idle: Mac was idle or locked\n\n"
+        "Write a specific 5-8 word description of what they appear to be doing.\n\n"
+        'Respond ONLY with valid JSON: {"category": "...", "summary": "..."}'
     )
 
     try:
