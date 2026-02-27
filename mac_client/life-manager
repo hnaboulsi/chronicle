@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CMD="${1:-doctor}"
+CFG_DIR="$HOME/.config/life-manager"
+PLIST="$HOME/Library/LaunchAgents/com.naboulsi.lifemanager.plist"
+URL_FILE="$CFG_DIR/backend.url"
+AUTH_FILE="$CFG_DIR/auth"
+
+pass() { echo "PASS: $1"; }
+fail() { echo "FAIL: $1"; }
+warn() { echo "WARN: $1"; }
+
+doctor() {
+  if [[ -f "$PLIST" ]]; then
+    pass "LaunchAgent plist exists"
+  else
+    fail "LaunchAgent plist missing"
+  fi
+
+  if launchctl list | grep -q "com.naboulsi.lifemanager"; then
+    pass "LaunchAgent loaded"
+  else
+    fail "LaunchAgent not loaded"
+  fi
+
+  if [[ -f "$URL_FILE" ]]; then
+    URL="$(cat "$URL_FILE")"
+    pass "Backend URL configured: $URL"
+  else
+    fail "Backend URL not configured"
+    URL=""
+  fi
+
+  CURL_AUTH_ARGS=()
+  if [[ -f "$AUTH_FILE" ]]; then
+    AUTH="$(cat "$AUTH_FILE")"
+    CURL_AUTH_ARGS=(-u "$AUTH")
+  fi
+
+  if [[ -n "$URL" ]]; then
+    if curl -fsS "${CURL_AUTH_ARGS[@]}" "$URL/api/healthz" >/dev/null; then
+      pass "Backend reachable"
+    else
+      fail "Backend unreachable"
+    fi
+
+    if [[ -f "$AUTH_FILE" ]]; then
+      if curl -fsS -u "$AUTH" "$URL/api/healthz" >/dev/null; then
+        pass "Auth works"
+      else
+        warn "Auth file exists but auth check failed"
+      fi
+    else
+      warn "No auth file configured"
+    fi
+  fi
+
+  if tccutil check Accessibility com.apple.Terminal >/dev/null 2>&1; then
+    pass "Accessibility check command available"
+  else
+    warn "Cannot verify Accessibility permission automatically"
+  fi
+
+  if [[ -n "$URL" ]]; then
+    STATE_JSON="$(curl -fsS "${CURL_AUTH_ARGS[@]}" "$URL/api/state" 2>/dev/null || true)"
+    if [[ -n "$STATE_JSON" ]]; then
+      MAC_AGE="$(echo "$STATE_JSON" | grep -o '"last_mac_ping_age_seconds":[[:space:]]*[^,}]*' | head -n1 | sed 's/.*: *//')"
+      IOS_AGE="$(echo "$STATE_JSON" | grep -o '"last_ios_ping_age_seconds":[[:space:]]*[^,}]*' | head -n1 | sed 's/.*: *//')"
+      echo "INFO: last_mac_ping_age_seconds=$MAC_AGE"
+      echo "INFO: last_ios_ping_age_seconds=$IOS_AGE"
+    else
+      warn "Could not read /api/state"
+    fi
+  fi
+}
+
+case "$CMD" in
+  doctor) doctor ;;
+  *) echo "Usage: $0 doctor"; exit 1 ;;
+esac

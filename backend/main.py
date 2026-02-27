@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, BackgroundTasks, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, Response
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, text
 from database import engine, Base, get_db
 import models
 from models import ActivityLog, HourlySummary, MacTelemetry, iOSTelemetry
@@ -11,11 +11,13 @@ from typing import Dict, Any
 import os
 import base64
 import secrets
+from datetime import datetime
 
 # Create tables
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Life-Manager Agent API")
+_STARTED_AT = datetime.utcnow()
 
 # Telemetry endpoints are called by Mac tracker and iPhone shortcut — no auth needed
 _NO_AUTH_PATHS = {"/api/mac-telemetry", "/api/ios-telemetry"}
@@ -130,34 +132,85 @@ async def receive_ios_telemetry(data: iOSTelemetry, background_tasks: Background
 
 @app.get("/api/state")
 async def get_state(db: Session = Depends(get_db)):
-    from datetime import datetime
+    agent_logic.ensure_default_settings(db)
     states = agent_logic.get_all_states(db)
     last_ping_str = states.get("last_mac_ping", "")
+    last_ios_ping_str = states.get("last_ios_ping", "")
+    last_mac_ping_age_seconds = None
+    last_ios_ping_age_seconds = None
     if last_ping_str:
         try:
             last_ping = datetime.fromisoformat(last_ping_str)
-            states["mac_online"] = (datetime.utcnow() - last_ping).total_seconds() < 300
+            last_mac_ping_age_seconds = int((datetime.utcnow() - last_ping).total_seconds())
+            states["mac_online"] = last_mac_ping_age_seconds < 300
         except Exception:
             states["mac_online"] = False
     else:
         states["mac_online"] = False
+    if last_ios_ping_str:
+        try:
+            ios_ping = datetime.fromisoformat(last_ios_ping_str)
+            last_ios_ping_age_seconds = int((datetime.utcnow() - ios_ping).total_seconds())
+        except Exception:
+            pass
+    states["backend_target_url"] = _get_backend_url()
+    states["last_mac_ping_age_seconds"] = last_mac_ping_age_seconds
+    states["last_ios_ping_age_seconds"] = last_ios_ping_age_seconds
+    states["ios_recent_ping"] = (last_ios_ping_age_seconds is not None and last_ios_ping_age_seconds < 7200)
+    states["sleep_source"] = agent_logic.get_state(db, "sleep_source", "iphone_only")
+    states["sleep_status_note"] = (
+        "Sleep detection inactive until iPhone automation pings."
+        if not states["ios_recent_ping"] else
+        "Sleep detection active from iPhone telemetry."
+    )
+    if states["mac_online"]:
+        states["service_health"] = "ok"
+    elif last_mac_ping_age_seconds is not None:
+        states["service_health"] = "degraded"
+    else:
+        states["service_health"] = "offline"
     return states
 
 @app.get("/api/settings")
 async def get_settings(db: Session = Depends(get_db)):
+    agent_logic.ensure_default_settings(db)
     polling_str = agent_logic.get_state(db, "polling_interval_seconds", "60")
     tracking_enabled_str = agent_logic.get_state(db, "tracking_enabled", "true")
     return {
         "polling_interval_seconds": int(polling_str),
-        "tracking_enabled": tracking_enabled_str.lower() == "true"
+        "tracking_enabled": tracking_enabled_str.lower() == "true",
+        "backend_mode": agent_logic.get_state(db, "backend_mode", "railway_primary"),
+        "llm_mode": agent_logic.get_state(db, "llm_mode", "ultra_save"),
+        "hourly_summaries_enabled": agent_logic.get_state(db, "hourly_summaries_enabled", "false").lower() == "true",
+        "classification_interval_seconds": int(agent_logic.get_state(db, "classification_interval_seconds", "1800")),
+        "llm_daily_cap": int(agent_logic.get_state(db, "llm_daily_cap", "30")),
     }
 
 @app.post("/api/settings")
 async def update_settings(payload: Dict[str, Any], db: Session = Depends(get_db)):
+    agent_logic.ensure_default_settings(db)
     if "polling_interval_seconds" in payload:
         agent_logic.set_state(db, "polling_interval_seconds", str(payload["polling_interval_seconds"]))
     if "tracking_enabled" in payload:
         agent_logic.set_state(db, "tracking_enabled", str(payload["tracking_enabled"]).lower())
+    if "backend_mode" in payload and payload["backend_mode"] in {"railway_primary", "local_primary", "hybrid_auto"}:
+        agent_logic.set_state(db, "backend_mode", payload["backend_mode"])
+    if "llm_mode" in payload and payload["llm_mode"] in {"ultra_save", "balanced", "quality"}:
+        agent_logic.set_state(db, "llm_mode", payload["llm_mode"])
+    if "hourly_summaries_enabled" in payload:
+        agent_logic.set_state(db, "hourly_summaries_enabled", str(bool(payload["hourly_summaries_enabled"])).lower())
+    if "classification_interval_seconds" in payload:
+        try:
+            val = max(300, int(payload["classification_interval_seconds"]))
+            agent_logic.set_state(db, "classification_interval_seconds", str(val))
+        except Exception:
+            raise HTTPException(status_code=400, detail="classification_interval_seconds must be an integer >= 300")
+    if "llm_daily_cap" in payload:
+        try:
+            val = max(1, int(payload["llm_daily_cap"]))
+            agent_logic.set_state(db, "llm_daily_cap", str(val))
+        except Exception:
+            raise HTTPException(status_code=400, detail="llm_daily_cap must be an integer >= 1")
     return {"status": "updated"}
 
 @app.get("/api/logs")
@@ -175,6 +228,9 @@ async def get_log_summary(log_id: int, db: Session = Depends(get_db)):
         app = log.app_name or "Unknown App"
         title = log.window_title or "Unknown Title"
         import llm_client
+        if not agent_logic.can_use_llm(db):
+            return {"summary": "AI budget reached; summary generation is temporarily disabled today."}
+        agent_logic.register_llm_call(db)
         summary = await llm_client.generate_activity_summary(app, title)
         return {"summary": summary}
     else:
@@ -226,6 +282,68 @@ async def dismiss_callout(db: Session = Depends(get_db)):
     agent_logic.set_state(db, "callout_category", "")
     agent_logic.set_state(db, "callout_summary", "")
     return {"status": "dismissed"}
+
+
+@app.get("/api/healthz")
+async def healthz(db: Session = Depends(get_db)):
+    agent_logic.ensure_default_settings(db)
+    db_ok = True
+    db_error = ""
+    try:
+        db.execute(text("SELECT 1"))
+    except Exception as e:
+        db_ok = False
+        db_error = str(e)
+
+    now = datetime.utcnow()
+    states = agent_logic.get_all_states(db)
+    llm_stats = agent_logic.llm_usage_snapshot(db, now)
+    llm_configured = bool(os.environ.get("GEMINI_API_KEY"))
+
+    return {
+        "status": "ok" if db_ok else "degraded",
+        "started_at": _STARTED_AT.isoformat(),
+        "uptime_seconds": int((now - _STARTED_AT).total_seconds()),
+        "backend_url": _get_backend_url(),
+        "database": {
+            "ok": db_ok,
+            "dialect": engine.url.get_backend_name(),
+            "error": db_error,
+        },
+        "auth": {
+            "enabled": bool(os.environ.get("DASHBOARD_PASS", "")),
+            "user": os.environ.get("DASHBOARD_USER", "admin"),
+        },
+        "llm": {
+            "configured": llm_configured,
+            "daily_used": llm_stats["daily_used"],
+            "daily_remaining": llm_stats["daily_remaining"],
+            "daily_cap": llm_stats["daily_cap"],
+            "mode": states.get("llm_mode", "ultra_save"),
+        },
+        "telemetry": {
+            "last_mac_ping": states.get("last_mac_ping", ""),
+            "last_ios_ping": states.get("last_ios_ping", ""),
+        },
+    }
+
+
+@app.get("/api/ios-setup-status")
+async def ios_setup_status(db: Session = Depends(get_db)):
+    states = await get_state(db)
+    last_ios_ping_age = states.get("last_ios_ping_age_seconds")
+    checklist = [
+        {"id": "arrive_location", "label": "Arrive at study location automation", "configured": last_ios_ping_age is not None},
+        {"id": "walking", "label": "Walking activity automation", "configured": last_ios_ping_age is not None},
+        {"id": "charging_stationary", "label": "Charging + stationary sleep automation", "configured": last_ios_ping_age is not None},
+    ]
+    return {
+        "ios_recent_ping": states.get("ios_recent_ping", False),
+        "last_ios_ping_age_seconds": last_ios_ping_age,
+        "sleep_source": states.get("sleep_source", "iphone_only"),
+        "sleep_status_note": states.get("sleep_status_note", ""),
+        "checklist": checklist,
+    }
 
 
 @app.get("/setup/ios", response_class=HTMLResponse)
@@ -431,4 +549,3 @@ def _get_backend_url() -> str:
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-

@@ -64,6 +64,7 @@ function updateUI(logs, states) {
         iosDetail.innerText = latestIos.activity_type || 'Unknown Activity';
     } else {
         iosStatus.innerText = states.is_walking === "true" ? "Walking" : "Idle";
+        iosDetail.innerText = states.sleep_status_note || "Sleep detection inactive until iPhone automation pings.";
     }
 
     // 3. Update Focus Mode
@@ -71,6 +72,9 @@ function updateUI(logs, states) {
     focusStatus.innerText = isStudyMode ? "Active" : "Inactive";
     focusStatus.style.color = isStudyMode ? "var(--warning)" : "var(--text-primary)";
     focusDetail.innerText = isStudyMode ? "Notifications Silenced" : "Normal mode";
+    if (states.service_health && states.service_health !== "ok") {
+        focusDetail.innerText = `Service health: ${states.service_health}`;
+    }
 
     // 4. Update AI Reading card
     const categoryLabels = {
@@ -209,6 +213,10 @@ async function fetchSettings() {
 
         if (data.tracking_enabled !== undefined) {
             updateTrackingUI(data.tracking_enabled);
+        }
+        const h2 = document.querySelector('.hourly-summaries h2');
+        if (h2 && data.hourly_summaries_enabled === false) {
+            h2.innerText = "Hourly Recaps (disabled in ultra-save mode)";
         }
     } catch (err) {
         console.error("Error fetching settings:", err);
