@@ -149,16 +149,13 @@ async def dismiss_callout(db: Session = Depends(get_db)):
 
 @app.get("/setup/ios", response_class=HTMLResponse)
 async def ios_setup_page():
-    import socket
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        local_ip = s.getsockname()[0]
-        s.close()
-    except Exception:
-        local_ip = "localhost"
+    backend_url = _get_backend_url()
+    is_remote = backend_url.startswith("https://")
+    network_note = "Works from any network worldwide." if is_remote else "iPhone must be on the same WiFi network as your Mac."
 
-    backend_url = f"http://{local_ip}:8000"
+    remote_only = "" if is_remote else "display:none"
+    local_only = "display:none" if is_remote else ""
+
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -179,44 +176,40 @@ async def ios_setup_page():
   .action-btn:hover {{ background: #79b8ff; }}
   .note {{ font-size: 0.85rem; color: #8b949e; margin-top: 0.75rem; }}
   .divider {{ border: none; border-top: 1px solid rgba(255,255,255,0.08); margin: 2rem 0; }}
+  .badge-remote {{ background: rgba(63,185,80,0.15); color: #3fb950; border: 1px solid rgba(63,185,80,0.3); border-radius: 6px; padding: 0.2rem 0.6rem; font-size: 0.8rem; font-weight: 600; margin-left: 0.5rem; }}
 </style>
 </head>
 <body>
-<h1>📱 iPhone Setup</h1>
-<p>iOS blocks shortcuts imported from the browser. Use one of these two methods instead — both take under 2 minutes.</p>
+<h1>📱 iPhone Setup <span class="badge-remote" style="{remote_only}">☁️ Cloud</span></h1>
+<p>iOS blocks shortcuts imported from the browser. Use one of these methods instead — takes under 2 minutes.</p>
 
-<h2>Method A — iCloud Drive (easiest, no cables)</h2>
+<h2>Method A — Download on Mac, AirDrop to iPhone</h2>
+<div class="step">
+  <div class="step-num">Step 1 — On your Mac (open this page in Safari/Chrome)</div>
+  <p>Click below to download the shortcut file to your Mac.</p>
+  <a class="action-btn" href="/setup/shortcut/download">Download LifeManager.shortcut →</a>
+  <p class="note">Then right-click the downloaded file → <strong>Share → AirDrop</strong> → select your iPhone → tap Accept → Add Shortcut.</p>
+</div>
+
+<hr class="divider" style="{local_only}">
+
+<div style="{local_only}">
+<h2>Method B — iCloud Drive (no cables, local only)</h2>
 <div class="step">
   <div class="step-num">Step 1 — On your Mac</div>
   <p>Click the button below. It saves <strong>LifeManager.shortcut</strong> to your iCloud Drive and opens Finder there.</p>
   <a class="action-btn" href="/setup/save-to-icloud">Save to iCloud Drive →</a>
-  <p class="note">Requires iCloud Drive to be enabled on your Mac (System Settings → Apple ID → iCloud → iCloud Drive).</p>
+  <p class="note">Requires iCloud Drive enabled in System Settings → Apple ID → iCloud.</p>
 </div>
 <div class="step">
   <div class="step-num">Step 2 — On your iPhone</div>
-  <p>1. Open the <strong>Files</strong> app → tap <strong>iCloud Drive</strong><br>
-     2. Find <strong>LifeManager.shortcut</strong> and tap it<br>
-     3. Tap <strong>Add Shortcut</strong> when Shortcuts opens</p>
+  <p>Open <strong>Files</strong> app → tap <strong>iCloud Drive</strong> → find <strong>LifeManager.shortcut</strong> → tap it → <strong>Add Shortcut</strong>.</p>
+</div>
 </div>
 
 <hr class="divider">
 
-<h2>Method B — AirDrop</h2>
-<div class="step">
-  <div class="step-num">Step 1 — On your Mac</div>
-  <p>Click below to save the shortcut to your Desktop, then Finder will open with it selected.</p>
-  <a class="action-btn" href="/setup/save-to-desktop">Save to Desktop →</a>
-</div>
-<div class="step">
-  <div class="step-num">Step 2 — AirDrop from Finder</div>
-  <p>1. Right-click <strong>LifeManager.shortcut</strong> in Finder<br>
-     2. Tap <strong>Share</strong> → <strong>AirDrop</strong> → select your iPhone<br>
-     3. On iPhone, tap <strong>Accept</strong> → <strong>Add Shortcut</strong></p>
-</div>
-
-<hr class="divider">
-
-<h2>Step 3 — Set up the silent automation (both methods)</h2>
+<h2>Step 2 — Set up the silent automation</h2>
 <div class="step">
   <div class="step-num">In the Shortcuts app on iPhone</div>
   <p>1. Tap the <strong>Automation</strong> tab → tap <strong>+</strong><br>
@@ -230,7 +223,7 @@ async def ios_setup_page():
 
 <h2>Your backend URL</h2>
 <div class="url-box">{backend_url}</div>
-<p class="note">iPhone must be on the same WiFi network as your Mac.</p>
+<p class="note">{network_note}</p>
 
 <h2>Test it</h2>
 <div class="step">
@@ -242,17 +235,10 @@ async def ios_setup_page():
 
 
 def _build_shortcut_bytes() -> bytes:
-    """Generate the LifeManager.shortcut plist bytes with the current local IP embedded."""
-    import plistlib, uuid, socket
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        local_ip = s.getsockname()[0]
-        s.close()
-    except Exception:
-        local_ip = "localhost"
+    """Generate the LifeManager.shortcut plist bytes with the backend URL embedded."""
+    import plistlib, uuid
 
-    backend_url = f"http://{local_ip}:8000/api/ios-telemetry"
+    backend_url = _get_backend_url() + "/api/ios-telemetry"
     loc_uuid = str(uuid.uuid4()).upper()
     city_uuid = str(uuid.uuid4()).upper()
     post_uuid = str(uuid.uuid4()).upper()
@@ -342,6 +328,23 @@ async def download_shortcut():
         media_type="application/octet-stream",
         headers={"Content-Disposition": 'attachment; filename="LifeManager.shortcut"'},
     )
+
+
+def _get_backend_url() -> str:
+    """Return the public-facing backend URL (Railway HTTPS or local IP)."""
+    railway_domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN") or os.environ.get("RAILWAY_STATIC_URL")
+    if railway_domain:
+        domain = railway_domain.replace("https://", "").replace("http://", "").rstrip("/")
+        return f"https://{domain}"
+    try:
+        import socket
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        local_ip = s.getsockname()[0]
+        s.close()
+        return f"http://{local_ip}:8000"
+    except Exception:
+        return "http://localhost:8000"
 
 
 if __name__ == "__main__":
