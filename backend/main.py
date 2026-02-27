@@ -20,6 +20,38 @@ app = FastAPI(title="Life-Manager Agent API")
 # Telemetry endpoints are called by Mac tracker and iPhone shortcut — no auth needed
 _NO_AUTH_PATHS = {"/api/mac-telemetry", "/api/ios-telemetry"}
 
+# Brute-force protection: track failed attempts per IP
+# { ip: {"count": int, "blocked_until": float} }
+_failed_attempts: dict = {}
+_MAX_FAILURES = 5
+_BLOCK_SECONDS = 900  # 15 minutes
+
+
+def _is_blocked(ip: str) -> bool:
+    import time
+    entry = _failed_attempts.get(ip)
+    if not entry:
+        return False
+    if time.time() < entry.get("blocked_until", 0):
+        return True
+    # Block expired — clear it
+    _failed_attempts.pop(ip, None)
+    return False
+
+
+def _record_failure(ip: str):
+    import time
+    entry = _failed_attempts.setdefault(ip, {"count": 0, "blocked_until": 0})
+    entry["count"] += 1
+    if entry["count"] >= _MAX_FAILURES:
+        entry["blocked_until"] = time.time() + _BLOCK_SECONDS
+        print(f"Auth: IP {ip} blocked for 15 min after {entry['count']} failures")
+
+
+def _clear_failures(ip: str):
+    _failed_attempts.pop(ip, None)
+
+
 @app.middleware("http")
 async def basic_auth_middleware(request: Request, call_next):
     if request.url.path in _NO_AUTH_PATHS:
@@ -30,16 +62,23 @@ async def basic_auth_middleware(request: Request, call_next):
     if not password:
         return await call_next(request)  # No password set — open (local dev)
 
+    client_ip = request.client.host if request.client else "unknown"
+
+    if _is_blocked(client_ip):
+        return Response(content="Too many failed attempts. Try again in 15 minutes.", status_code=429)
+
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Basic "):
         try:
             decoded = base64.b64decode(auth[6:]).decode("utf-8")
             u, _, p = decoded.partition(":")
             if secrets.compare_digest(u, username) and secrets.compare_digest(p, password):
+                _clear_failures(client_ip)
                 return await call_next(request)
         except Exception:
             pass
 
+    _record_failure(client_ip)
     return Response(
         content="Unauthorized",
         status_code=401,
