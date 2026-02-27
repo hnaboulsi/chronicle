@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from database import engine, Base, get_db
 import models
-from models import ActivityLog, MacTelemetry, iOSTelemetry
+from models import ActivityLog, HourlySummary, MacTelemetry, iOSTelemetry
 import agent_logic
 from typing import Dict, Any
 import os
@@ -36,7 +36,7 @@ async def receive_mac_telemetry(data: MacTelemetry, background_tasks: Background
     db.add(log_entry)
     db.commit()
     
-    background_tasks.add_task(agent_logic.process_mac_telemetry, data, db)
+    background_tasks.add_task(agent_logic.process_mac_telemetry, data, db, background_tasks)
     pending_prompt = agent_logic.get_pending_prompt(db)
     return {"status": "ok", "prompt": pending_prompt}
 
@@ -95,6 +95,20 @@ async def get_log_summary(log_id: int, db: Session = Depends(get_db)):
         return {"summary": summary}
     else:
         return {"summary": f"User was {log.activity_type} near {log.location_label}."}
+
+@app.get("/api/hourly-summaries")
+async def get_hourly_summaries(limit: int = 5, db: Session = Depends(get_db)):
+    summaries = db.query(HourlySummary).order_by(desc(HourlySummary.hour_start)).limit(limit).all()
+    return [
+        {
+            "id": s.id,
+            "hour_start": s.hour_start,
+            "summary_text": s.summary_text,
+            "productivity_score": s.productivity_score,
+        }
+        for s in summaries
+    ]
+
 
 @app.post("/api/prompt-reply")
 async def handle_prompt_reply(payload: Dict[str, Any], db: Session = Depends(get_db)):

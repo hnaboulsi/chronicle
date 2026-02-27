@@ -137,8 +137,8 @@ def main():
                 tracking_enabled = True # failsafe
 
             if not tracking_enabled:
-                print(f"Tracking is DISABLED. Sleeping for {poll_interval}s...")
-                time.sleep(poll_interval)
+                print("Tracking is DISABLED. Sleeping for 5 min...")
+                time.sleep(300)
                 continue
 
             idle_time = get_idle_time()

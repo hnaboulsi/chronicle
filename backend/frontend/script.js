@@ -8,6 +8,8 @@ const iosStatus = document.getElementById('ios-status');
 const iosDetail = document.getElementById('ios-detail');
 const focusStatus = document.getElementById('focus-status');
 const focusDetail = document.getElementById('focus-detail');
+const activityCategory = document.getElementById('activity-category');
+const activitySummary = document.getElementById('activity-summary');
 const logsBody = document.getElementById('logs-body');
 const refreshBtn = document.getElementById('refresh-btn');
 
@@ -64,7 +66,26 @@ function updateUI(logs, states) {
     focusStatus.style.color = isStudyMode ? "var(--warning)" : "var(--text-primary)";
     focusDetail.innerText = isStudyMode ? "Notifications Silenced" : "Normal mode";
 
-    // 4. Update Logs Table
+    // 4. Update AI Reading card
+    const categoryLabels = {
+        studying: "📚 Studying",
+        working: "💼 Working",
+        entertainment: "🎬 Entertainment",
+        social_media: "📲 Social Media",
+        gaming: "🎮 Gaming",
+        creative: "🎨 Creative",
+        break: "☕ Break",
+        idle: "💤 Idle",
+        unknown: "🔍 Analyzing...",
+    };
+    const cat = states.current_activity_category || "unknown";
+    activityCategory.innerText = categoryLabels[cat] || cat;
+    activitySummary.innerText = states.current_activity_summary || "—";
+    const isProductive = ["studying", "working", "creative"].includes(cat);
+    const isDistracted = ["entertainment", "social_media", "gaming"].includes(cat);
+    activityCategory.style.color = isProductive ? "var(--success)" : isDistracted ? "var(--danger)" : "var(--text-primary)";
+
+    // 5. Update Logs Table
     logsBody.innerHTML = '';
     logs.forEach((log, index) => {
         const tr = document.createElement('tr');
@@ -79,7 +100,7 @@ function updateUI(logs, states) {
         let activityText = "";
         let contextText = "";
 
-        if (isMac) {
+        if (isMac) {  // eslint-disable-line
             activityText = log.app_name;
             // Safari/Chrome now send "Tab Name - URL"
             let titleText = log.window_title;
@@ -102,7 +123,7 @@ function updateUI(logs, states) {
             <td>${contextText}</td>
         `;
 
-        tr.onclick = () => openSummaryModal(log.id, isMac);
+        tr.onclick = () => openSummaryModal(log.id);
         logsBody.appendChild(tr);
     });
 }
@@ -193,7 +214,7 @@ const modalOverlay = document.getElementById('summary-modal');
 const closeModalBtn = document.getElementById('close-modal-btn');
 const summaryText = document.getElementById('summary-text');
 
-async function openSummaryModal(logId, isMac) {
+async function openSummaryModal(logId) {
     modalOverlay.classList.remove('hidden');
     summaryText.innerHTML = '<span class="pulse-ring" style="display:inline-block; margin-right:10px"></span> Generating AI insights...';
 
@@ -219,10 +240,38 @@ modalOverlay.addEventListener('click', (e) => {
     }
 });
 
+// Hourly Summaries
+async function fetchHourlySummaries() {
+    try {
+        const res = await fetch(`${API_BASE}/api/hourly-summaries?limit=4`);
+        const data = await res.json();
+        const list = document.getElementById('summaries-list');
+        if (!data.length) {
+            list.innerHTML = '<p style="color:var(--text-secondary);padding:1rem">No summaries yet — they generate automatically each hour.</p>';
+            return;
+        }
+        list.innerHTML = data.map(s => {
+            let timeStr = s.hour_start;
+            if (!timeStr.endsWith('Z')) timeStr += 'Z';
+            const time = new Date(timeStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const score = s.productivity_score != null ? s.productivity_score.toFixed(1) : '—';
+            return `
+                <div class="summary-card">
+                    <span class="summary-time">${time}</span>
+                    <span class="summary-score">${score}/10</span>
+                    <p>${s.summary_text}</p>
+                </div>`;
+        }).join('');
+    } catch (err) {
+        console.error("Error fetching hourly summaries:", err);
+    }
+}
+
 // Event Listeners and Poll
-refreshBtn.addEventListener('click', fetchData);
+refreshBtn.addEventListener('click', () => { fetchData(); fetchHourlySummaries(); });
 
 // Setup
 fetchSettings();
 fetchData();
-currentPollIntervalId = setInterval(fetchData, 5000); // Dashboard still refreshes table every 5s
+fetchHourlySummaries();
+currentPollIntervalId = setInterval(() => { fetchData(); fetchHourlySummaries(); }, 5000);
