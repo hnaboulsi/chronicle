@@ -34,6 +34,7 @@ class MacTelemetry(BaseModel):
     app_name: str
     window_title: str
     idle_time_seconds: int
+    recent_history: Optional[list] = None
 
 class HourlySummary(Base):
     __tablename__ = "hourly_summaries"

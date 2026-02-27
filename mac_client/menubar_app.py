@@ -199,12 +199,18 @@ class LifeManagerApp(rumps.App):
                 idle_time = tracker.get_idle_time()
                 app_name = tracker.get_active_app()
                 window_title = tracker.get_window_title(app_name)
+                recent_history = []
+                try:
+                    recent_history = tracker.get_recent_chrome_history(minutes=15)
+                except Exception:
+                    pass
                 resp = session.post(
                     f"{BACKEND_URL}/api/mac-telemetry",
                     json={
                         "app_name": app_name,
                         "window_title": window_title,
                         "idle_time_seconds": idle_time,
+                        "recent_history": recent_history if recent_history else None,
                     },
                     timeout=3,
                 )

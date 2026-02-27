@@ -83,7 +83,7 @@ def _clear_failures(ip: str):
 
 @app.middleware("http")
 async def basic_auth_middleware(request: Request, call_next):
-    if request.url.path in _NO_AUTH_PATHS:
+    if request.url.path in _NO_AUTH_PATHS or request.url.path.startswith("/setup/"):
         return await call_next(request)
 
     username = os.environ.get("DASHBOARD_USER", "admin")
@@ -562,6 +562,116 @@ async def ios_setup_status(db: Session = Depends(get_db)):
     }
 
 
+@app.get("/setup/mac", response_class=HTMLResponse)
+async def mac_setup_page():
+    backend_url = _get_backend_url()
+    is_remote = backend_url.startswith("https://")
+    remote_only = "" if is_remote else "display:none"
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mac Setup — Life Manager</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+<style>
+  body {{ font-family: 'Inter', sans-serif; background: #0d1117; color: #f0f6fc; padding: 2rem; max-width: 600px; margin: 0 auto; }}
+  h1 {{ font-size: 1.5rem; margin-bottom: 0.5rem; }}
+  h2 {{ font-size: 1.1rem; color: #58a6ff; margin: 2rem 0 0.75rem; }}
+  p {{ color: #8b949e; line-height: 1.6; }}
+  .step {{ background: rgba(22,27,34,0.8); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 1.25rem; margin: 1rem 0; }}
+  .step-num {{ font-size: 0.75rem; color: #58a6ff; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.5rem; }}
+  code {{ background: rgba(88,166,255,0.1); color: #58a6ff; padding: 0.2rem 0.5rem; border-radius: 6px; font-size: 0.9rem; font-family: monospace; }}
+  .action-btn {{ display: inline-block; text-align: center; background: #58a6ff; color: #000; padding: 0.75rem 1.5rem; border-radius: 10px; font-weight: 600; text-decoration: none; font-size: 1rem; border: none; cursor: pointer; }}
+  .action-btn:hover {{ background: #79b8ff; }}
+  .note {{ font-size: 0.85rem; color: #8b949e; margin-top: 0.75rem; }}
+  .divider {{ border: none; border-top: 1px solid rgba(255,255,255,0.08); margin: 2rem 0; }}
+  .badge-remote {{ background: rgba(63,185,80,0.15); color: #3fb950; border: 1px solid rgba(63,185,80,0.3); border-radius: 6px; padding: 0.2rem 0.6rem; font-size: 0.8rem; font-weight: 600; margin-left: 0.5rem; }}
+  .cmd-box {{ background: #161b22; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 1rem 1rem 1rem 1rem; font-family: 'SF Mono', 'Menlo', monospace; font-size: 0.85rem; color: #e6edf3; overflow-x: auto; white-space: pre-wrap; word-break: break-all; position: relative; margin: 0.75rem 0; line-height: 1.6; }}
+  pre.cmd {{ background: #161b22; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 1rem; overflow-x: auto; font-size: 0.85rem; color: #c9d1d9; white-space: pre-wrap; word-break: break-all; position: relative; }}
+  pre.cmd .copy-btn {{ position: absolute; top: 0.5rem; right: 0.5rem; background: rgba(88,166,255,0.2); color: #58a6ff; border: 1px solid rgba(88,166,255,0.3); border-radius: 6px; padding: 0.25rem 0.5rem; font-size: 0.75rem; cursor: pointer; font-family: 'Inter', sans-serif; }}
+  pre.cmd .copy-btn:hover {{ background: rgba(88,166,255,0.4); }}
+  .checklist li {{ color: #8b949e; margin: 0.4rem 0; }}
+  .checklist li span {{ color: #3fb950; margin-right: 0.5rem; }}
+</style>
+<script>
+function copyCmd(btn) {{
+  const pre = btn.closest('pre');
+  const clone = pre.cloneNode(true);
+  clone.querySelectorAll('button').forEach(b => b.remove());
+  const text = clone.textContent.trim();
+  navigator.clipboard.writeText(text).then(() => {{
+    btn.textContent = 'Copied!';
+    btn.style.color = '#3fb950';
+    setTimeout(() => {{ btn.textContent = 'Copy'; btn.style.color = ''; }}, 2000);
+  }}).catch(() => {{
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+    btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = 'Copy', 2000);
+  }});
+}}
+</script>
+</head>
+<body>
+<h1>💻 Mac Tracker Setup <span class="badge-remote" style="{remote_only}">☁️ Cloud</span></h1>
+<p>Install the Life Manager menu bar tracker on your Mac — takes about 2 minutes.</p>
+
+<h2>Prerequisites</h2>
+<div class="step">
+  <ul class="checklist">
+    <li><span>→</span>macOS 12 Monterey or later</li>
+    <li><span>→</span>Python 3.10+ &nbsp;<code>python3 --version</code></li>
+    <li><span>→</span>Git &nbsp;<code>git --version</code></li>
+  </ul>
+  <p class="note">Python and Git come pre-installed on modern Macs. If missing: <code>xcode-select --install</code></p>
+</div>
+
+<h2>Step 1 — Install (one command)</h2>
+<div class="step">
+  <div class="step-num">Paste this into Terminal and press Enter</div>
+  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>git clone https://github.com/naboulsi/life-manager-agent.git ~/life-manager-agent 2>/dev/null || git -C ~/life-manager-agent pull && cd ~/life-manager-agent && bash mac_client/install_and_enable_mac_client.sh "{backend_url}"</pre>
+  <p class="note">This clones the repo, creates a Python venv, installs dependencies, and registers the LaunchAgent to auto-start at login.</p>
+</div>
+
+<h2>Step 2 — Configure authentication</h2>
+<div class="step" style="{remote_only}">
+  <div class="step-num">Set your dashboard password so the tracker can authenticate</div>
+  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>echo "admin:YOUR_PASSWORD" > ~/.config/life-manager/auth</pre>
+  <p class="note">Replace <code>YOUR_PASSWORD</code> with your actual dashboard password. The tracker uses HTTP Basic Auth to send data securely.</p>
+</div>
+<div class="step" style="{'display:none' if is_remote else ''}">
+  <p>Auth not required for local setup — the tracker connects directly to <code>localhost:8000</code>.</p>
+</div>
+
+<h2>Step 3 — Start the tracker</h2>
+<div class="step">
+  <div class="step-num">Launch it now (it auto-starts on future logins)</div>
+  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>open -a "Life Manager" || launchctl load ~/Library/LaunchAgents/com.naboulsi.lifemanager.plist</pre>
+  <p class="note">You should see a 🧠 icon appear in your menu bar. If you don't see it, check System Settings → Privacy &amp; Security → Accessibility and allow Life Manager.</p>
+</div>
+
+<hr class="divider">
+
+<h2>Verify</h2>
+<div class="step">
+  <div class="step-num">Check that data is arriving</div>
+  <p>Go back to the <a href="/" style="color:#58a6ff">dashboard</a> — the Mac card should show <strong>Active</strong> within 60 seconds. The 🧠 menu bar icon should appear on your Mac.</p>
+</div>
+
+<h2>Troubleshooting</h2>
+<div class="step">
+  <p><strong>Menu bar icon not showing?</strong> macOS may have hidden it. Check the overflow menu (≫ icon, far right of menu bar).</p>
+  <p><strong>Backend offline error?</strong> Check your backend URL is correct: <code>cat ~/.config/life-manager/backend.url</code></p>
+  <p><strong>Auth errors?</strong> Check your password: <code>cat ~/.config/life-manager/auth</code></p>
+  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>tail -50 ~/.local/state/life-manager/menubar.err.log</pre>
+</div>
+</body>
+</html>"""
+
+
 @app.get("/setup/ios", response_class=HTMLResponse)
 async def ios_setup_page():
     import shutil as _shutil
@@ -644,6 +754,12 @@ function copyCmd(btn) {{
     <span style="{auto_signed_badge}" class="badge-signed">✅ Auto-signed</span>
     <span style="{signing_section_display}" class="badge-signed" style="background:rgba(210,153,34,0.15);color:#d29922;border-color:rgba(210,153,34,0.3);">⚠️ Requires signing — see Step 2</span>
   </p>
+  <p style="margin: 0.75rem 0 1rem; font-size:0.88rem; line-height:1.7;">
+    <strong style="color:#f0f6fc;">GPS Ping</strong> <span style="color:#8b949e;">— Runs every 15 min, sends your location &amp; battery level.</span><br>
+    <strong style="color:#f0f6fc;">Arrive</strong> <span style="color:#8b949e;">— Triggers when you reach a saved location (home, campus).</span><br>
+    <strong style="color:#f0f6fc;">Walking</strong> <span style="color:#8b949e;">— Fires when your phone detects a walking workout.</span><br>
+    <strong style="color:#f0f6fc;">Charging On/Off</strong> <span style="color:#8b949e;">— Logs when you plug in/unplug (used for sleep detection).</span>
+  </p>
   <p style="margin-top:1rem">
     <a class="action-btn" href="/setup/shortcut/download?kind=gps">⬇ GPS Ping</a>&nbsp;
     <a class="action-btn" href="/setup/shortcut/download?kind=arrive">⬇ Arrive</a>&nbsp;
@@ -653,7 +769,6 @@ function copyCmd(btn) {{
     <a class="action-btn" href="/setup/shortcut/download?kind=charge_on">⬇ Charging On</a>&nbsp;
     <a class="action-btn" href="/setup/shortcut/download?kind=charge_off">⬇ Charging Off</a>
   </p>
-  <p class="note"><strong>GPS Ping</strong> captures location. All others are event triggers (arrive, walk, charge).</p>
   <!-- One-click sign all — only shows when running locally on Mac -->
   <div style="{sign_all_display}; margin-top:1rem;">
     <a class="action-btn" href="/setup/shortcut/sign-all" style="background:#3fb950;color:#000;">⚡ Download &amp; Sign All to Desktop</a>
@@ -663,28 +778,23 @@ function copyCmd(btn) {{
 
 <!-- ── Step 2: Sign (Railway only) ─────────────────── -->
 <div style="{signing_section_display}">
-<h2>Step 2 — Sign the shortcuts on your Mac</h2>
+<h2>Step 2 — Download &amp; sign shortcuts on your Mac</h2>
 <div class="signing-note">
-  <strong>⚠️ Required when using Railway:</strong> iOS will not import unsigned shortcuts. Run this one-liner in Terminal to sign all 5 at once.
+  <strong>⚠️ Required when using Railway:</strong> iOS will not import unsigned shortcuts. Run this one-liner in Terminal — it downloads all 5 and signs them in one step.
 </div>
 <div class="step">
-  <div class="step-num">Option A — One-liner in Terminal (recommended)</div>
-  <p>Open <strong>Terminal</strong> on your Mac and paste:</p>
-  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>cd ~/Downloads && for f in LifeManager-gps.shortcut LifeManager-arrive.shortcut LifeManager-walking.shortcut LifeManager-charge_on.shortcut LifeManager-charge_off.shortcut; do shortcuts sign -m anyone -i "$f" -o "${{f%.shortcut}}-signed.shortcut" && mv "${{f%.shortcut}}-signed.shortcut" "$f" && echo "✅ $f"; done && echo "All done!"</pre>
-  <p class="note">This signs the files in-place inside your Downloads folder. No new files — same filenames, now signed.</p>
-</div>
-<div class="step">
-  <div class="step-num">Option B — Sign each file individually</div>
-  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>shortcuts sign -m anyone -i ~/Downloads/LifeManager-gps.shortcut -o ~/Downloads/LifeManager-gps.shortcut</pre>
-  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>shortcuts sign -m anyone -i ~/Downloads/LifeManager-arrive.shortcut -o ~/Downloads/LifeManager-arrive.shortcut</pre>
-  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>shortcuts sign -m anyone -i ~/Downloads/LifeManager-walking.shortcut -o ~/Downloads/LifeManager-walking.shortcut</pre>
-  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>shortcuts sign -m anyone -i ~/Downloads/LifeManager-charge_on.shortcut -o ~/Downloads/LifeManager-charge_on.shortcut</pre>
-  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>shortcuts sign -m anyone -i ~/Downloads/LifeManager-charge_off.shortcut -o ~/Downloads/LifeManager-charge_off.shortcut</pre>
+  <div class="step-num">Open Terminal on your Mac and paste this command</div>
+  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>cd ~/Desktop && for kind in gps arrive walking charge_on charge_off; do
+  curl -s "{backend_url}/setup/shortcut/download?kind=$kind" -o "LifeManager-$kind.shortcut" && \\
+  shortcuts sign -m anyone -i "LifeManager-$kind.shortcut" -o "LifeManager-$kind.shortcut" && \\
+  echo "Signed: $kind"
+done && echo "All 5 shortcuts ready on your Desktop."</pre>
+  <p class="note">This saves 5 signed <code>.shortcut</code> files to your Desktop. Then AirDrop them to your iPhone.</p>
 </div>
 </div>
 
-<!-- ── Step 2/3: Send to iPhone ─────────────────────── -->
-<h2 id="step-send">Step {{'3' if is_remote else '2'}} — Send to iPhone</h2>
+<!-- ── Step 3: Send to iPhone ─────────────────────── -->
+<h2 id="step-send">Step 3 — Send to iPhone</h2>
 <div class="step">
   <div class="step-num">Method A — AirDrop (fastest)</div>
   <p>In Finder, right-click each <code>.shortcut</code> file → <strong>Share → AirDrop</strong> → select your iPhone. Tap <strong>Add Shortcut</strong> for each.</p>
@@ -697,8 +807,8 @@ function copyCmd(btn) {{
 
 <hr class="divider">
 
-<!-- ── Step 3/4: Automations ────────────────────────── -->
-<h2>Step {{'4' if is_remote else '3'}} — Create automations on iPhone</h2>
+<!-- ── Step 4: Automations ────────────────────────── -->
+<h2>Step 4 — Create automations on iPhone</h2>
 <div class="step">
   <div class="step-num">In the Shortcuts app → Automation tab → + New Automation</div>
   <p><strong>1.</strong> <em>Time of Day</em> — every 15 min → Run Shortcut <strong>Life Manager GPS</strong></p>
