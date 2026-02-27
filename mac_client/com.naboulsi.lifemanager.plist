@@ -6,15 +6,17 @@
     <string>com.naboulsi.lifemanager</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/naboulsi/.gemini/antigravity/scratch/life-manager-agent/mac_client/venv/bin/python</string>
-        <string>/Users/naboulsi/.gemini/antigravity/scratch/life-manager-agent/mac_client/tracker.py</string>
+        <string>/Users/naboulsi/life-manager-agent/mac_client/venv/bin/python</string>
+        <string>/Users/naboulsi/life-manager-agent/mac_client/menubar_app.py</string>
     </array>
     <key>WorkingDirectory</key>
-    <string>/Users/naboulsi/.gemini/antigravity/scratch/life-manager-agent/mac_client</string>
+    <string>/Users/naboulsi/life-manager-agent/mac_client</string>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <true/>
+    <key>LimitLoadToSessionType</key>
+    <string>Aqua</string>
     <key>StandardOutPath</key>
     <string>/tmp/lifemanager.out</string>
     <key>StandardErrorPath</key>
