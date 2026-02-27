@@ -89,6 +89,74 @@ def get_window_title(app_name: str) -> str:
     except Exception:
         return ""
 
+def get_recent_chrome_history(minutes: int = 15) -> list:
+    """Read recent Chrome history for richer activity context.
+
+    Chrome locks its History SQLite DB while running, so we copy it first.
+    Returns list of {domain, title, visited_at} dicts — no full URLs for privacy.
+    """
+    import os, sqlite3, shutil
+    from urllib.parse import urlparse
+    from datetime import datetime, timedelta
+
+    chrome_db = os.path.expanduser(
+        "~/Library/Application Support/Google/Chrome/Default/History"
+    )
+    tmp_db = "/tmp/lm_chrome_history.db"
+
+    if not os.path.exists(chrome_db):
+        return []
+
+    try:
+        shutil.copy2(chrome_db, tmp_db)
+    except Exception:
+        return []
+
+    # Chrome timestamps: microseconds since Jan 1, 1601
+    cutoff_unix = (datetime.utcnow() - timedelta(minutes=minutes)).timestamp()
+    cutoff_chrome = int((cutoff_unix + 11644473600) * 1_000_000)
+
+    results = []
+    try:
+        conn = sqlite3.connect(f"file:{tmp_db}?mode=ro", uri=True)
+        cursor = conn.execute(
+            """
+            SELECT u.url, u.title, v.visit_time
+            FROM visits v
+            JOIN urls u ON v.url = u.id
+            WHERE v.visit_time > ?
+            ORDER BY v.visit_time DESC
+            LIMIT 50
+            """,
+            (cutoff_chrome,),
+        )
+        for url, title, visit_time in cursor:
+            try:
+                parsed = urlparse(url)
+                domain = parsed.netloc
+                if domain.startswith("www."):
+                    domain = domain[4:]
+            except Exception:
+                domain = ""
+            unix_ts = (visit_time / 1_000_000) - 11644473600
+            visited_at = datetime.utcfromtimestamp(unix_ts).isoformat()
+            results.append({
+                "domain": domain,
+                "title": (title or "")[:120],
+                "visited_at": visited_at,
+            })
+        conn.close()
+    except Exception:
+        pass
+    finally:
+        try:
+            os.unlink(tmp_db)
+        except OSError:
+            pass
+
+    return results
+
+
 def send_telemetry(app_name: str, window_title: str, idle_time: int):
     """Sends telemetry data to the backend API."""
     payload = {

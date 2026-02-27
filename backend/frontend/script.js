@@ -443,9 +443,29 @@ async function checkOnboarding() {
         document.getElementById('onboarding-overlay').classList.remove('hidden');
         // Check mac status
         const macOk = states.mac_online === true;
-        document.getElementById('onboard-mac-status').textContent = macOk
-            ? 'Mac tracker is connected and sending data.'
-            : 'Mac tracker not detected. Install it from the setup guide.';
+        const macStatusEl = document.getElementById('onboard-mac-status');
+        if (macOk) {
+            macStatusEl.innerHTML = '&#10003; Mac tracker is connected and sending data.';
+        } else {
+            macStatusEl.innerHTML = 'Mac tracker not detected. <a href="/setup/mac" target="_blank" style="color:#58a6ff;text-decoration:underline;">Open Mac Setup Guide &rarr;</a>';
+        }
+        // Check iOS shortcut status
+        try {
+            const iosRes = await fetch(`${API}/api/ios-setup-status`);
+            if (iosRes.ok) {
+                const iosData = await iosRes.json();
+                const configured = (iosData.checklist || []).filter(item => item.configured).length;
+                const total = (iosData.checklist || []).length;
+                const iosStatusEl = document.getElementById('onboard-ios-status');
+                if (iosStatusEl) {
+                    if (configured === total && total > 0) {
+                        iosStatusEl.innerHTML = `&#10003; All ${total} shortcuts configured.`;
+                    } else if (configured > 0) {
+                        iosStatusEl.innerHTML = `${configured}/${total} shortcuts configured.`;
+                    }
+                }
+            }
+        } catch {}
         // Detect timezone
         const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
         document.getElementById('onboard-tz').textContent = tz || 'America/Los_Angeles';

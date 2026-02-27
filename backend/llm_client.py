@@ -71,7 +71,7 @@ async def generate_activity_summary(app_name: str, window_title: str) -> str:
     )
     return await ask_gemini(prompt)
 
-async def classify_activity_context(recent_activities: list, user_self_report: str = "") -> dict:
+async def classify_activity_context(recent_activities: list, user_self_report: str = "", recent_history: list = None) -> dict:
     """
     Classifies what the user is doing based on a list of recent app/tab entries.
     Uses gemini-2.5-flash-lite to conserve API quota.
@@ -91,10 +91,22 @@ async def classify_activity_context(recent_activities: list, user_self_report: s
 
     self_report_section = f'\nUser said they are doing: "{user_self_report}"\n' if user_self_report else ""
 
+    history_section = ""
+    if recent_history:
+        history_lines = []
+        for h in recent_history[:20]:
+            domain = h.get("domain", "")
+            title = h.get("title", "")
+            if domain or title:
+                history_lines.append(f"  - {domain}: {title[:60]}")
+        if history_lines:
+            history_section = "\nRecent browser history (last 15 min):\n" + "\n".join(history_lines) + "\n"
+
     prompt = (
         "You are analyzing a user's recent Mac activity to understand what they are working on right now.\n\n"
         f"Activity log (oldest → newest):\n{activity_text}\n"
-        f"{self_report_section}\n"
+        f"{self_report_section}"
+        f"{history_section}\n"
         "Instructions:\n"
         "- Look at the PATTERN across all entries, not just the most recent one\n"
         "- If a window title is vague ('Untitled', 'New Tab'), infer from the app and surrounding entries\n"
@@ -103,7 +115,7 @@ async def classify_activity_context(recent_activities: list, user_self_report: s
         "- If the user told you what they're doing, trust that over the logs\n\n"
         "Classify as ONE of: studying, working, entertainment, social_media, gaming, creative, break, idle, unknown\n\n"
         "- studying: course sites, textbooks, homework helpers, Canvas/Gradescope, lecture notes\n"
-        "- working: code editor, Notion, email, Slack, terminal, professional tasks\n"
+        "- working: code editor, Notion, email, Slack, terminal, professional tasks, AI tools (Claude, Gemini, ChatGPT, Copilot)\n"
         "- entertainment: YouTube, Netflix, Reddit, sports, music, general browsing\n"
         "- social_media: Instagram, Twitter/X, TikTok, Snapchat, messaging\n"
         "- gaming: any game\n"

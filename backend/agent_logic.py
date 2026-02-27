@@ -84,7 +84,7 @@ def register_llm_call(db: Session, now: datetime | None = None):
     set_state(db, key, str(used + 1))
 
 
-def heuristic_classify_activity(recent_activities: list, idle_time_seconds: int = 0) -> dict:
+def heuristic_classify_activity(recent_activities: list, idle_time_seconds: int = 0, recent_history: list = None) -> dict:
     if idle_time_seconds > 60 * 30:
         return {"category": "idle", "summary": "Away from keyboard"}
     if not recent_activities:
@@ -94,13 +94,22 @@ def heuristic_classify_activity(recent_activities: list, idle_time_seconds: int 
         f"{(a.get('app_name') or '').lower()} {(a.get('window_title') or '').lower()}"
         for a in recent_activities
     )
+    # Enrich with Chrome history domains and titles for richer keyword matching
+    if recent_history:
+        history_text = " ".join(
+            f"{(h.get('domain') or '').lower()} {(h.get('title') or '').lower()}"
+            for h in recent_history
+        )
+        text = f"{text} {history_text}"
     rules = [
         (["instagram", "twitter", "x.com", "tiktok", "snapchat", "discord"], ("social_media", "On social platforms")),
         (["youtube", "netflix", "reddit", "spotify", "hulu"], ("entertainment", "Watching or browsing media")),
         (["steam", "epic", "game"], ("gaming", "Playing a game")),
         (["canvas", "gradescope", "homework", "lecture", "course", "quiz"], ("studying", "Working on school tasks")),
         (["figma", "photoshop", "premiere", "final cut", "design"], ("creative", "Doing creative work")),
-        (["vscode", "pycharm", "cursor", "terminal", "github", "slack", "notion"], ("working", "Doing focused computer work")),
+        (["vscode", "pycharm", "cursor", "terminal", "github", "slack", "notion",
+          "claude", "claude.ai", "anthropic", "gemini.google", "aistudio.google",
+          "chatgpt", "openai", "copilot", "windsurf"], ("working", "Doing focused computer work")),
     ]
     for needles, result in rules:
         if any(n in text for n in needles):
@@ -276,14 +285,15 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session):
 
         recent = get_recent_mac_logs(db, limit=20)
         user_self_report = get_state(db, "user_self_report")
+        history = getattr(data, "recent_history", None)
         low_signal = len(set((r.get("app_name"), r.get("window_title")) for r in recent[-5:])) <= 2
         if low_signal and get_state(db, "llm_mode", DEFAULTS["llm_mode"]) == "ultra_save":
-            result = heuristic_classify_activity(recent, idle_time_seconds=data.idle_time_seconds)
+            result = heuristic_classify_activity(recent, idle_time_seconds=data.idle_time_seconds, recent_history=history)
         elif can_use_llm(db, now):
             register_llm_call(db, now)
-            result = await llm_client.classify_activity_context(recent, user_self_report)
+            result = await llm_client.classify_activity_context(recent, user_self_report, recent_history=history)
         else:
-            result = heuristic_classify_activity(recent, idle_time_seconds=data.idle_time_seconds)
+            result = heuristic_classify_activity(recent, idle_time_seconds=data.idle_time_seconds, recent_history=history)
             result["summary"] = "AI budget reached; using local classification"
         new_category = result["category"]
         new_summary = result["summary"]
