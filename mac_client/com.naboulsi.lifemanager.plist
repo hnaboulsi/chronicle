@@ -36,5 +36,10 @@
     <!-- Aqua session required for GUI / window server access -->
     <key>LimitLoadToSessionType</key>
     <string>Aqua</string>
+
+    <key>StandardOutPath</key>
+    <string>/Users/naboulsi/.local/state/life-manager/menubar.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/naboulsi/.local/state/life-manager/menubar.err.log</string>
 </dict>
 </plist>

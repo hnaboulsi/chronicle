@@ -4,6 +4,7 @@ from models import AgentState, ActivityLog, MacTelemetry, iOSTelemetry, HourlySu
 import llm_client
 import calendar_sync
 from datetime import datetime, timedelta
+import json
 
 # Categories that go on the calendar automatically
 PRODUCTIVE_CATEGORIES = {"studying", "working", "creative"}
@@ -11,6 +12,14 @@ DISTRACTED_CATEGORIES = {"entertainment", "social_media", "gaming"}
 
 # Minimum session length to log to calendar (minutes)
 MIN_SESSION_MINUTES = 10
+DEFAULTS = {
+    "backend_mode": "railway_primary",
+    "llm_mode": "ultra_save",
+    "hourly_summaries_enabled": "false",
+    "classification_interval_seconds": "1800",
+    "llm_daily_cap": "30",
+    "sleep_source": "iphone_only",
+}
 
 
 def get_state(db: Session, key: str, default: str = "") -> str:
@@ -30,6 +39,70 @@ def set_state(db: Session, key: str, value: str):
 def get_all_states(db: Session):
     states = db.query(AgentState).all()
     return {s.key: s.value for s in states}
+
+
+def ensure_default_settings(db: Session):
+    for key, value in DEFAULTS.items():
+        if not get_state(db, key):
+            set_state(db, key, value)
+
+
+def _today_key(now: datetime) -> str:
+    return now.strftime("%Y-%m-%d")
+
+
+def _safe_int(value: str, default: int) -> int:
+    try:
+        return int(value)
+    except Exception:
+        return default
+
+
+def llm_usage_snapshot(db: Session, now: datetime | None = None) -> dict:
+    now = now or datetime.utcnow()
+    cap = _safe_int(get_state(db, "llm_daily_cap", DEFAULTS["llm_daily_cap"]), 30)
+    today = _today_key(now)
+    used_raw = get_state(db, f"llm_calls:{today}", "0")
+    used = _safe_int(used_raw, 0)
+    return {"daily_cap": cap, "daily_used": used, "daily_remaining": max(cap - used, 0)}
+
+
+def can_use_llm(db: Session, now: datetime | None = None) -> bool:
+    snap = llm_usage_snapshot(db, now)
+    return snap["daily_used"] < snap["daily_cap"]
+
+
+def register_llm_call(db: Session, now: datetime | None = None):
+    now = now or datetime.utcnow()
+    today = _today_key(now)
+    key = f"llm_calls:{today}"
+    used = _safe_int(get_state(db, key, "0"), 0)
+    set_state(db, key, str(used + 1))
+
+
+def heuristic_classify_activity(recent_activities: list, idle_time_seconds: int = 0) -> dict:
+    if idle_time_seconds > 60 * 30:
+        return {"category": "idle", "summary": "Away from keyboard"}
+    if not recent_activities:
+        return {"category": "unknown", "summary": "Not enough activity signal"}
+
+    text = " ".join(
+        f"{(a.get('app_name') or '').lower()} {(a.get('window_title') or '').lower()}"
+        for a in recent_activities
+    )
+    rules = [
+        (["instagram", "twitter", "x.com", "tiktok", "snapchat", "discord"], ("social_media", "On social platforms")),
+        (["youtube", "netflix", "reddit", "spotify", "hulu"], ("entertainment", "Watching or browsing media")),
+        (["steam", "epic", "game"], ("gaming", "Playing a game")),
+        (["canvas", "gradescope", "homework", "lecture", "course", "quiz"], ("studying", "Working on school tasks")),
+        (["figma", "photoshop", "premiere", "final cut", "design"], ("creative", "Doing creative work")),
+        (["vscode", "pycharm", "cursor", "terminal", "github", "slack", "notion"], ("working", "Doing focused computer work")),
+    ]
+    for needles, result in rules:
+        if any(n in text for n in needles):
+            return {"category": result[0], "summary": result[1]}
+
+    return {"category": "break", "summary": "General browsing or light activity"}
 
 
 def get_pending_prompt(db: Session) -> str:
@@ -148,6 +221,7 @@ async def _generate_and_store_hourly_summary(db: Session, now: datetime):
 
 async def process_mac_telemetry(data: MacTelemetry, db: Session, background_tasks=None):
     now = datetime.utcnow()
+    ensure_default_settings(db)
 
     # Heartbeat — lets dashboard detect if tracker is actually running
     set_state(db, "last_mac_ping", now.isoformat())
@@ -162,12 +236,24 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session, background_task
     last_check_str = get_state(db, "last_vagueness_check")
     last_check = datetime.fromisoformat(last_check_str) if last_check_str else datetime.min
 
-    if (now - last_check).total_seconds() > 60 * 15:
+    classification_interval = _safe_int(
+        get_state(db, "classification_interval_seconds", DEFAULTS["classification_interval_seconds"]),
+        1800,
+    )
+    if (now - last_check).total_seconds() > classification_interval:
         set_state(db, "last_vagueness_check", now.isoformat())
 
         recent = get_recent_mac_logs(db, limit=20)
         user_self_report = get_state(db, "user_self_report")
-        result = await llm_client.classify_activity_context(recent, user_self_report)
+        low_signal = len(set((r.get("app_name"), r.get("window_title")) for r in recent[-5:])) <= 2
+        if low_signal and get_state(db, "llm_mode", DEFAULTS["llm_mode"]) == "ultra_save":
+            result = heuristic_classify_activity(recent, idle_time_seconds=data.idle_time_seconds)
+        elif can_use_llm(db, now):
+            register_llm_call(db, now)
+            result = await llm_client.classify_activity_context(recent, user_self_report)
+        else:
+            result = heuristic_classify_activity(recent, idle_time_seconds=data.idle_time_seconds)
+            result["summary"] = "AI budget reached; using local classification"
         new_category = result["category"]
         new_summary = result["summary"]
 
@@ -182,7 +268,11 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session, background_task
         # Study mode enforcement: distracted while supposed to be studying → call out
         study_mode = get_state(db, "study_mode")
         if study_mode == "active" and new_category in DISTRACTED_CATEGORIES and not get_state(db, "pending_prompt"):
-            prompt = await llm_client.generate_prompt(data.app_name, data.window_title)
+            if can_use_llm(db, now):
+                register_llm_call(db, now)
+                prompt = await llm_client.generate_prompt(data.app_name, data.window_title)
+            else:
+                prompt = "You seem distracted. Is this still part of your intended task?"
             set_state(db, "pending_prompt", prompt)
 
         # Not studying and not productive → gentle call-out (dashboard will show it)
@@ -197,8 +287,10 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session, background_task
     if background_tasks is not None:
         last_summary_str = get_state(db, "last_hourly_summary")
         last_summary = datetime.fromisoformat(last_summary_str) if last_summary_str else datetime.min
-        if (now - last_summary).total_seconds() > 1800:
+        summaries_enabled = get_state(db, "hourly_summaries_enabled", DEFAULTS["hourly_summaries_enabled"]) == "true"
+        if summaries_enabled and (now - last_summary).total_seconds() > 1800 and can_use_llm(db, now):
             set_state(db, "last_hourly_summary", now.isoformat())
+            register_llm_call(db, now)
             background_tasks.add_task(_generate_and_store_hourly_summary, db, now)
 
     # Rule 4 — Calendar setup (ensure calendar exists, run once)
@@ -212,6 +304,10 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session, background_task
 
 async def process_ios_telemetry(data: iOSTelemetry, db: Session):
     now = datetime.utcnow()
+    ensure_default_settings(db)
+    set_state(db, "last_ios_ping", now.isoformat())
+    set_state(db, "sleep_source", "iphone_only")
+    set_state(db, "sleep_status_note", "Sleep detection uses iPhone automations.")
     is_walking = bool(data.activity_type and "walk" in data.activity_type.lower())
 
     # Store steps if provided
