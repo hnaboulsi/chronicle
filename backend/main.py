@@ -405,6 +405,7 @@ async def ios_setup_page():
   <p>
     <a class="action-btn" href="/setup/shortcut/download?kind=charge_off">Download Charging Off</a>
   </p>
+  <p class="note">Each shortcut now has only 2 actions: <strong>Location</strong> + <strong>POST webhook</strong>.</p>
   <p class="note">If AirDrop feels annoying, use iCloud Drive and open the files from the iPhone Files app.</p>
 </div>
 
@@ -469,7 +470,6 @@ def _build_shortcut_bytes(kind: str = "gps") -> bytes:
     cfg = templates[kind]
     backend_url = _get_backend_url() + "/api/ios-telemetry"
     loc_uuid = str(uuid.uuid4()).upper()
-    city_uuid = str(uuid.uuid4()).upper()
     post_uuid = str(uuid.uuid4()).upper()
 
     def _dict_item(key: str, value_obj: dict) -> dict:
@@ -484,7 +484,7 @@ def _build_shortcut_bytes(kind: str = "gps") -> bytes:
             "location_label",
             {
                 "Value": {
-                    "attachmentsByRange": {"{0, 1}": {"Type": "ActionOutput", "OutputName": "CityName", "OutputUUID": city_uuid}},
+                    "attachmentsByRange": {"{0, 1}": {"Type": "ActionOutput", "OutputName": "MyLocation", "OutputUUID": loc_uuid}},
                     "string": "\ufffc",
                 },
                 "WFSerializationType": "WFTextTokenString",
@@ -513,18 +513,6 @@ def _build_shortcut_bytes(kind: str = "gps") -> bytes:
             {
                 "WFWorkflowActionIdentifier": "is.workflow.actions.location",
                 "WFWorkflowActionParameters": {"CustomOutputName": "MyLocation", "UUID": loc_uuid},
-            },
-            {
-                "WFWorkflowActionIdentifier": "is.workflow.actions.address",
-                "WFWorkflowActionParameters": {
-                    "WFAddressField": "City",
-                    "WFInput": {
-                        "Value": {"Type": "ActionOutput", "OutputName": "MyLocation", "OutputUUID": loc_uuid},
-                        "WFSerializationType": "WFTextTokenAttachment",
-                    },
-                    "CustomOutputName": "CityName",
-                    "UUID": city_uuid,
-                },
             },
             {
                 "WFWorkflowActionIdentifier": "is.workflow.actions.downloadurl",
