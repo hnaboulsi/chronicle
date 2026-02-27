@@ -48,7 +48,13 @@ function updateUI(logs, states) {
     if (!macOnline) {
         macStatus.innerText = "Tracker Offline";
         macStatus.style.color = "var(--danger)";
-        macDetail.innerText = "Start Life Manager on your Mac";
+        if (states.last_mac_ping_age_seconds != null) {
+            const mins = Math.max(1, Math.ceil(states.last_mac_ping_age_seconds / 60));
+            const thresholdMins = Math.ceil((states.mac_online_threshold_seconds || 300) / 60);
+            macDetail.innerText = `Last ping ${mins}m ago (offline after ${thresholdMins}m)`;
+        } else {
+            macDetail.innerText = "Start Life Manager on your Mac";
+        }
         macDetail.style.color = "var(--danger)";
     } else if (latestMac) {
         macStatus.innerText = latestMac.app_name || 'Unknown App';
