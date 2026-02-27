@@ -221,7 +221,7 @@ async def get_state(db: Session = Depends(get_db)):
     states["mac_online_threshold_seconds"] = mac_online_threshold_seconds
     states["last_mac_ping_age_seconds"] = last_mac_ping_age_seconds
     states["last_ios_ping_age_seconds"] = last_ios_ping_age_seconds
-    states["ios_recent_ping"] = (last_ios_ping_age_seconds is not None and last_ios_ping_age_seconds < 7200)
+    states["ios_recent_ping"] = (last_ios_ping_age_seconds is not None and last_ios_ping_age_seconds < 3600)
     states["sleep_source"] = agent_logic.get_state(db, "sleep_source", "iphone_only")
     states["sleep_status_note"] = (
         "Sleep detection inactive until iPhone automation pings."
