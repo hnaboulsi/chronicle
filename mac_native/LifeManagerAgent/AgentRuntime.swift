@@ -74,9 +74,8 @@ final class AgentRuntime {
     }
 
     private var currentPermissionsState: String {
-        if !AXIsProcessTrusted() {
-            return "missing_accessibility"
-        }
+        // Accessibility is best-effort for window titles; not required for core tracking.
+        // The agent will still try to read window titles but silently falls back to app names.
         let status = CalendarSyncEngine.shared.authorizationStatus()
         if status == .denied || status == .restricted {
             return "missing_calendar"
