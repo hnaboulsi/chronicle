@@ -420,19 +420,47 @@ def receive_ios_telemetry(data: iOSTelemetry, background_tasks: BackgroundTasks,
     return {"status": "ok"}
 
 
-@app.post("/api/ios-zone-event")
-def receive_ios_zone_event(data: iOSZoneEvent, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    zone = agent_logic.get_zone(db, data.zone_slug)
-    zone_label = zone.name if zone else data.zone_slug.replace("-", " ").title()
-    log_entry = ActivityLog(
-        device="ios",
-        location_label=zone_label,
-        activity_type=f"Zone {data.transition.title()}",
-        battery_pct=_normalize_battery_level(data.battery_level),
-        steps_today=data.steps_today,
-    )
-    db.add(log_entry)
-    db.commit()
+@app.api_route("/api/ios-zone-event", methods=["GET", "POST"])
+async def receive_ios_zone_event(request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    body_text = ""
+    if request.method == "POST":
+        body_bytes = await request.body()
+        # Rescue iPhone Smart Punctuation curly quotes
+        body_text = body_bytes.decode("utf-8", errors="ignore").replace("“", '"').replace("”", '"').replace("‘", "'").replace("’", "'")
+    
+    zone_slug = request.query_params.get("zone", "") or request.query_params.get("zone_slug", "")
+    transition = request.query_params.get("transition", "")
+    
+    if body_text.strip():
+        import json
+        try:
+            payload = json.loads(body_text)
+            zone_slug = zone_slug or payload.get("zone_slug", "") or payload.get("zone", "")
+            transition = transition or payload.get("transition", "")
+        except json.JSONDecodeError:
+            log.warning("Failed to parse iOS zone event JSON: %s", body_text)
+            
+    if not zone_slug or not transition:
+        return {"status": "error", "reason": "missing zone_slug or transition"}
+        
+    data = iOSZoneEvent(zone_slug=zone_slug, transition=transition.lower())
+    
+    def _run_db():
+        zone = agent_logic.get_zone(db, data.zone_slug)
+        zone_label = zone.name if zone else data.zone_slug.replace("-", " ").title()
+        log_entry = ActivityLog(
+            device="ios",
+            location_label=zone_label,
+            activity_type=f"Zone {data.transition.title()}",
+            battery_pct=_normalize_battery_level(data.battery_level),
+            steps_today=data.steps_today,
+        )
+        db.add(log_entry)
+        db.commit()
+        return zone_label
+
+    loop = asyncio.get_running_loop()
+    zone_label = await loop.run_in_executor(None, _run_db)
     background_tasks.add_task(_bg_process_ios_zone, data)
     return {"status": "ok", "zone": zone_label, "transition": data.transition}
 
@@ -1246,8 +1274,9 @@ done && echo "All 5 shortcuts ready on your Desktop."</pre>
   <p class="note">Create geofences with a radius of about 50-100 meters for: <strong>Anchor House</strong>, <strong>Dwinelle Hall</strong>, <strong>Wheeler Hall</strong>, <strong>VLSB</strong>, and optionally <strong>Doe/Moffitt</strong> and <strong>RSF</strong>.</p>
   <ol style="margin:0.5rem 0 1rem 1.5rem;color:#c9d1d9;line-height:1.8">
     <li>For each zone, create an <strong>Arrive</strong> automation and a <strong>Leave</strong> automation.</li>
-    <li>In each automation, use <strong>Get Contents of URL</strong> to send a <strong>POST</strong> to <code>{backend_url}/api/ios-zone-event</code>.</li>
-    <li>Send JSON like <code>{{"zone_slug":"dwinelle-hall","transition":"enter"}}</code> for arrival and <code>{{"zone_slug":"dwinelle-hall","transition":"exit"}}</code> for leaving.</li>
+    <li>In each automation, use <strong>Get Contents of URL</strong> to fetch exactly this URL, replacing <code>slug</code> with your zone's slug:</li>
+    <pre class="cmd" style="margin-top:0.5rem;"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>{backend_url}/api/ios-zone-event?zone=slug&transition=enter</pre>
+    <li style="margin-top:0.5rem;">For leaving a zone, use <code>transition=exit</code> at the end instead. Because it uses the URL, no JSON typing or Smart Punctuation errors can happen.</li>
     <li>For Dwinelle and Wheeler, optionally add <strong>Set Focus → Class</strong> before the network action. For VLSB or Doe/Moffitt, optionally add <strong>Set Focus → Deep Work</strong>.</li>
     <li>For Anchor House arrival, optionally turn Focus off before the network action.</li>
   </ol>
