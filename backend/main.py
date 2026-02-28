@@ -219,18 +219,17 @@ async def initialize_runtime():
             log.error(msg)
 
     loop = asyncio.get_running_loop()
-    with concurrent.futures.ThreadPoolExecutor() as pool:
-        try:
-            # 20s timeout — Railway's healthcheck allows 30s; we need to be ready in time
-            await asyncio.wait_for(loop.run_in_executor(pool, _init_db_sync), timeout=20.0)
-        except asyncio.TimeoutError:
-            msg = "DB startup timed out after 20s; continuing anyway"
-            _STARTUP_STATUS["startup_errors"].append(msg)
-            log.warning(msg)
-        except Exception as exc:
-            msg = f"Unexpected startup error: {exc}"
-            _STARTUP_STATUS["startup_errors"].append(msg)
-            log.error(msg)
+    try:
+        # 20s timeout — Railway's healthcheck allows 30s; we need to be ready in time
+        await asyncio.wait_for(loop.run_in_executor(None, _init_db_sync), timeout=20.0)
+    except asyncio.TimeoutError:
+        msg = "DB startup timed out after 20s; continuing anyway"
+        _STARTUP_STATUS["startup_errors"].append(msg)
+        log.warning(msg)
+    except Exception as exc:
+        msg = f"DB startup error: {exc}"
+        _STARTUP_STATUS["startup_errors"].append(msg)
+        log.error(msg)
 
 
 
@@ -892,19 +891,20 @@ async def healthz():
             _db.close()
 
     loop = asyncio.get_running_loop()
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-        try:
-            result = await asyncio.wait_for(loop.run_in_executor(pool, _db_check), timeout=8.0)
-            db_ok, db_error, _states, _llm_stats, _ai_provider, pending_calendar_jobs = result
-            if db_ok:
-                states = _states
-                llm_stats = _llm_stats
-                ai_provider = _ai_provider
-                _STARTUP_STATUS["database_ready"] = True
-        except asyncio.TimeoutError:
-            db_error = "DB check timed out (3s)"
-        except Exception as exc:
-            db_error = str(exc)
+    try:
+        result = await asyncio.wait_for(loop.run_in_executor(None, _db_check), timeout=8.0)
+        db_ok, db_error, _states, _llm_stats, _ai_provider, pending_calendar_jobs = result
+        if db_ok:
+            states = _states
+            llm_stats = _llm_stats
+            ai_provider = _ai_provider
+            _STARTUP_STATUS["database_ready"] = True
+    except asyncio.TimeoutError:
+        db_ok = False
+        db_error = "DB check timed out (8s)"
+    except Exception as exc:
+        db_ok = False
+        db_error = str(exc)
 
     startup_errors = list(_STARTUP_STATUS["startup_errors"])
     if db_error:
