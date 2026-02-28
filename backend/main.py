@@ -4,6 +4,7 @@ import os
 import base64
 import subprocess
 import secrets
+import threading
 from datetime import datetime, timedelta
 from typing import Dict, Any
 
@@ -264,25 +265,29 @@ def _bg_process_ios(data: iOSTelemetry):
 
 
 def _bg_process_heartbeat(data: MacHeartbeat):
-    db = SessionLocal()
-    try:
-        import asyncio
-        asyncio.run(agent_logic.process_mac_heartbeat(data, db))
-    except Exception as e:
-        log.error("Background mac heartbeat error: %s", e)
-    finally:
-        db.close()
+    """Run mac heartbeat processing in its own thread + event loop (FastAPI-safe)."""
+    def _run():
+        db = SessionLocal()
+        try:
+            asyncio.run(agent_logic.process_mac_heartbeat(data, db))
+        except Exception as e:
+            log.error("Background mac heartbeat error: %s", e)
+        finally:
+            db.close()
+    threading.Thread(target=_run, daemon=True).start()
 
 
 def _bg_process_ios_zone(data: iOSZoneEvent):
-    db = SessionLocal()
-    try:
-        import asyncio
-        asyncio.run(agent_logic.process_ios_zone_event(data, db))
-    except Exception as e:
-        log.error("Background ios zone event error: %s", e)
-    finally:
-        db.close()
+    """Run iOS zone event processing in its own thread + event loop (FastAPI-safe)."""
+    def _run():
+        db = SessionLocal()
+        try:
+            asyncio.run(agent_logic.process_ios_zone_event(data, db))
+        except Exception as e:
+            log.error("Background ios zone event error: %s", e)
+        finally:
+            db.close()
+    threading.Thread(target=_run, daemon=True).start()
 
 
 @app.post("/api/mac-telemetry")
