@@ -159,9 +159,72 @@ struct iPhoneSetupView: View {
 
                 Divider()
 
+                // Step Counting
+                VStack(alignment: .leading, spacing: Spacing.lg) {
+                    SectionHeaderLabel("Step 3 — Step Counting (Optional)", icon: "figure.walk.circle.fill", color: .green)
+
+                    Text("Send daily step count to Vero automatically every hour using an iOS Shortcut automation.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+
+                    if let backendURL = model.store.backendURL {
+                        let telemetryURL = backendURL.absoluteString + "/api/ios-telemetry"
+
+                        VStack(alignment: .leading, spacing: Spacing.sm) {
+                            Text("How to set up:")
+                                .font(.caption.weight(.semibold))
+
+                            VStack(alignment: .leading, spacing: Spacing.xs) {
+                                ForEach([
+                                    "1. Open the Shortcuts app → tap + to create a new shortcut",
+                                    "2. Add \"Get My Health Samples\" → Category: Activity, Type: Steps, Period: Today",
+                                    "3. Add \"Calculate Statistics\" → Sum",
+                                    "4. Add \"Get Contents of URL\":",
+                                    "   • URL: (see below)",
+                                    "   • Method: POST",
+                                    "   • Body: JSON → add key \"steps_today\" = Statistics Result",
+                                    "5. Save as \"Vero Steps\"",
+                                    "6. Go to Automation → New → Time of Day → Every Hour",
+                                    "7. Action: Run Shortcut → Vero Steps → turn off Ask Before Running",
+                                ], id: \.self) { step in
+                                    Text(step)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+
+                            VStack(alignment: .leading, spacing: Spacing.xs) {
+                                Text("POST URL (tap to copy):")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                HStack {
+                                    Text(telemetryURL)
+                                        .font(.system(.caption, design: .monospaced))
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                        .foregroundStyle(.blue)
+                                    Button(action: {
+                                        NSPasteboard.general.clearContents()
+                                        NSPasteboard.general.setString(telemetryURL, forType: .string)
+                                    }) {
+                                        Image(systemName: "doc.on.doc")
+                                            .font(.caption)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                        .padding(Spacing.md)
+                        .background(.gray.opacity(0.05))
+                        .cornerRadius(8)
+                    }
+                }
+
+                Divider()
+
                 // Full Setup Guide
                 VStack(alignment: .leading, spacing: Spacing.lg) {
-                    SectionHeaderLabel("Step 3 — More Information", icon: "book.circle.fill", color: .indigo)
+                    SectionHeaderLabel("Step 4 — More Information", icon: "book.circle.fill", color: .indigo)
 
                     if let backendURL = model.store.backendURL {
                         Button(action: {

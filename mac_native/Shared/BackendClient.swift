@@ -195,4 +195,8 @@ final class BackendClient {
     func replyToPrompt(_ reply: String) async throws {
         _ = try await perform(try request(path: "api/prompt-reply", method: "POST", jsonBody: ["reply": reply]))
     }
+
+    func sendChat(_ message: String) async throws {
+        _ = try await perform(try request(path: "api/chat", method: "POST", jsonBody: ["message": message]))
+    }
 }

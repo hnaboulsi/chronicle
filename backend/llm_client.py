@@ -86,7 +86,7 @@ async def _ask_openai(prompt: str, model_kind: str = "default") -> str:
                 json={
                     "model": model,
                     "messages": [
-                        {"role": "system", "content": "You are a focused productivity assistant."},
+                        {"role": "system", "content": "You are Vero, a personal productivity AI assistant."},
                         {"role": "user", "content": prompt},
                     ],
                     "temperature": 0.3,

@@ -210,7 +210,7 @@ final class NativeAppModel: ObservableObject {
 
     func sendReply(_ text: String) async {
         do {
-            try await backend.replyToPrompt(text)
+            try await backend.sendChat(text)
             await refreshAll()
         } catch {
             statusMessage = error.localizedDescription

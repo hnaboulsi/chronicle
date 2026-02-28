@@ -15,7 +15,7 @@ struct ChatView: View {
                         LazyVStack(spacing: Spacing.lg) {
                             ForEach(Array(model.chatTurns.enumerated()), id: \.offset) { index, turn in
                                 VStack(spacing: Spacing.xs) {
-                                    Text(turn.time)
+                                    Text(formattedTime(turn.time))
                                         .font(.caption2)
                                         .foregroundStyle(.tertiary)
                                         .frame(maxWidth: .infinity)
@@ -75,6 +75,28 @@ struct ChatView: View {
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func formattedTime(_ raw: String) -> String {
+        // Try ISO 8601 (new format from backend)
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: raw) {
+            let display = DateFormatter()
+            display.dateFormat = "h:mm a"
+            display.timeZone = .current
+            return display.string(from: date)
+        }
+        // Try without fractional seconds
+        formatter.formatOptions = [.withInternetDateTime]
+        if let date = formatter.date(from: raw) {
+            let display = DateFormatter()
+            display.dateFormat = "h:mm a"
+            display.timeZone = .current
+            return display.string(from: date)
+        }
+        // Fall back to raw string (old HH:MM format)
+        return raw
     }
 
     private var canSend: Bool {

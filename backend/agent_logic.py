@@ -114,15 +114,12 @@ def ensure_default_settings(db: Session):
 
 
 def ensure_default_zones(db: Session):
-    existing = {z.slug for z in db.query(LocationZone).all()}
-    changed = False
+    # Only seed default zones on first run (empty table)
+    if db.query(LocationZone).count() > 0:
+        return
     for zone in DEFAULT_ZONES:
-        if zone["slug"] in existing:
-            continue
         db.add(LocationZone(**zone))
-        changed = True
-    if changed:
-        db.commit()
+    db.commit()
 
 
 def zone_to_dict(zone: LocationZone) -> dict:
@@ -182,8 +179,6 @@ def upsert_zone(db: Session, payload: dict, zone_id: int | None = None) -> dict:
 def delete_zone(db: Session, zone_id: int) -> bool:
     zone = db.query(LocationZone).filter(LocationZone.id == zone_id).first()
     if not zone:
-        return False
-    if zone.slug in {z["slug"] for z in DEFAULT_ZONES}:
         return False
     db.delete(zone)
     db.commit()

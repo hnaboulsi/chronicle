@@ -26,6 +26,9 @@ struct TrackingView: View {
 
             Section {
                 Toggle("Tracking Enabled", isOn: $model.settings.tracking_enabled)
+                    .onChange(of: model.settings.tracking_enabled) { _ in
+                        Task { await model.saveSettings() }
+                    }
                 Stepper(value: $model.settings.polling_interval_seconds, in: 60 ... 3600, step: 60) {
                     HStack {
                         Text("Activity Check Interval")

@@ -560,11 +560,6 @@ def patch_zone(zone_id: int, payload: Dict[str, Any], db: Session = Depends(get_
 
 @app.delete("/api/zones/{zone_id}")
 def remove_zone(zone_id: int, db: Session = Depends(get_db)):
-    zone = db.query(models.LocationZone).filter(models.LocationZone.id == zone_id).first()
-    if not zone:
-        raise HTTPException(status_code=404, detail="Zone not found")
-    if zone.slug in {z["slug"] for z in agent_logic.DEFAULT_ZONES}:
-        raise HTTPException(status_code=400, detail="Default zones cannot be deleted")
     if not agent_logic.delete_zone(db, zone_id):
         raise HTTPException(status_code=404, detail="Zone not found")
     return {"status": "deleted"}
@@ -826,7 +821,7 @@ async def chat_message(payload: Dict[str, Any], db: Session = Depends(get_db)):
         agent_logic.set_state(db, "current_activity_summary", message[:80])
 
     # Store in chat history
-    history.append({"time": now.strftime("%H:%M"), "user": message, "reply": reply})
+    history.append({"time": now.isoformat() + "Z", "user": message, "reply": reply})
     # Keep last 20 messages per day
     if len(history) > 20:
         history = history[-20:]
