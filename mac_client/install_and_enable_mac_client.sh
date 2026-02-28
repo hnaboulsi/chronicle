@@ -3,7 +3,6 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 MAC_DIR="$ROOT_DIR/mac_client"
-PLIST_SRC="$MAC_DIR/com.naboulsi.lifemanager.plist"
 PLIST_DST="$HOME/Library/LaunchAgents/com.naboulsi.lifemanager.plist"
 CFG_DIR="$HOME/.config/life-manager"
 STATE_DIR="$HOME/.local/state/life-manager"
@@ -34,10 +33,13 @@ if [[ ! -d "$MAC_DIR/venv" ]]; then
 fi
 "$MAC_DIR/venv/bin/pip" install -q -r "$MAC_DIR/requirements.txt"
 
-cp "$PLIST_SRC" "$PLIST_DST"
+if [[ -f "$PLIST_DST" ]]; then
+  launchctl unload "$PLIST_DST" >/dev/null 2>&1 || true
+  rm -f "$PLIST_DST"
+fi
 
-launchctl unload "$PLIST_DST" >/dev/null 2>&1 || true
-launchctl load "$PLIST_DST"
+bash "$MAC_DIR/make_app.sh"
+open -a "Life Manager" || true
 
 sleep 2
 HEALTH_URL="$BACKEND_URL/api/healthz"
@@ -51,4 +53,4 @@ else
   echo "WARN: backend not reachable at $HEALTH_URL"
 fi
 
-echo "Installed and enabled LaunchAgent: com.naboulsi.lifemanager"
+echo "Installed Life Manager.app and registered it as a Login Item."

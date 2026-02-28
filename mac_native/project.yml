@@ -1,0 +1,45 @@
+name: LifeManager
+options:
+  minimumXcodeGenVersion: 2.44.0
+  deploymentTarget:
+    macOS: "13.0"
+settings:
+  base:
+    PRODUCT_NAME: "$(TARGET_NAME)"
+    SWIFT_VERSION: 5.9
+    MACOSX_DEPLOYMENT_TARGET: "13.0"
+targets:
+  LifeManager:
+    type: application
+    platform: macOS
+    sources:
+      - path: LifeManager
+        excludes:
+          - Info.plist
+          - "*.entitlements"
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.naboulsi.lifemanager
+        INFOPLIST_FILE: LifeManager/Info.plist
+        CODE_SIGN_ENTITLEMENTS: LifeManager/LifeManager.entitlements
+        DEVELOPMENT_TEAM: ""
+    scheme:
+      gatherCoverageData: false
+  LifeManagerAgent:
+    type: application
+    platform: macOS
+    sources:
+      - path: LifeManagerAgent
+        excludes:
+          - Info.plist
+          - "*.entitlements"
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.naboulsi.lifemanager.agent
+        INFOPLIST_FILE: LifeManagerAgent/Info.plist
+        CODE_SIGN_ENTITLEMENTS: LifeManagerAgent/LifeManagerAgent.entitlements
+        DEVELOPMENT_TEAM: ""
+    scheme:
+      gatherCoverageData: false

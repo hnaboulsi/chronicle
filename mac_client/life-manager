@@ -4,6 +4,7 @@ set -euo pipefail
 CMD="${1:-doctor}"
 CFG_DIR="$HOME/.config/life-manager"
 PLIST="$HOME/Library/LaunchAgents/com.naboulsi.lifemanager.plist"
+APP_BUNDLE="/Applications/Life Manager.app"
 URL_FILE="$CFG_DIR/backend.url"
 AUTH_FILE="$CFG_DIR/auth"
 
@@ -12,16 +13,28 @@ fail() { echo "FAIL: $1"; }
 warn() { echo "WARN: $1"; }
 
 doctor() {
-  if [[ -f "$PLIST" ]]; then
-    pass "LaunchAgent plist exists"
+  if [[ -d "$APP_BUNDLE" ]]; then
+    pass "App bundle exists: $APP_BUNDLE"
   else
-    fail "LaunchAgent plist missing"
+    fail "App bundle missing: $APP_BUNDLE"
   fi
 
-  if launchctl list | grep -q "com.naboulsi.lifemanager"; then
-    pass "LaunchAgent loaded"
+  if osascript -e 'tell application "System Events" to get the name of every login item' 2>/dev/null | grep -q "Life Manager"; then
+    pass "Login Item registered"
   else
-    fail "LaunchAgent not loaded"
+    warn "Login Item not registered"
+  fi
+
+  if [[ -f "$PLIST" ]]; then
+    warn "Legacy LaunchAgent plist still present"
+  else
+    pass "Legacy LaunchAgent not present"
+  fi
+
+  if pgrep -af "menubar_app.py|Life Manager.app|/Applications/Life Manager.app|Python.app/Contents/MacOS/Python /Users/.*/mac_client/menubar_app.py" >/dev/null; then
+    pass "Mac agent process detected"
+  else
+    fail "Mac agent process not detected"
   fi
 
   if [[ -f "$URL_FILE" ]]; then
@@ -65,10 +78,14 @@ doctor() {
   if [[ -n "$URL" ]]; then
     STATE_JSON="$(curl -fsS "${CURL_AUTH_ARGS[@]}" "$URL/api/state" 2>/dev/null || true)"
     if [[ -n "$STATE_JSON" ]]; then
-      MAC_AGE="$(echo "$STATE_JSON" | grep -o '"last_mac_ping_age_seconds":[[:space:]]*[^,}]*' | head -n1 | sed 's/.*: *//')"
-      IOS_AGE="$(echo "$STATE_JSON" | grep -o '"last_ios_ping_age_seconds":[[:space:]]*[^,}]*' | head -n1 | sed 's/.*: *//')"
-      echo "INFO: last_mac_ping_age_seconds=$MAC_AGE"
-      echo "INFO: last_ios_ping_age_seconds=$IOS_AGE"
+      MAC_STATUS="$(echo "$STATE_JSON" | grep -o '"mac_status":[[:space:]]*"[^"]*"' | head -n1 | sed 's/.*: *"//; s/"$//' || true)"
+      MAC_HB_AGE="$(echo "$STATE_JSON" | grep -o '"last_mac_heartbeat_age_seconds":[[:space:]]*[^,}]*' | head -n1 | sed 's/.*: *//' || true)"
+      MAC_SNAP_AGE="$(echo "$STATE_JSON" | grep -o '"last_mac_snapshot_age_seconds":[[:space:]]*[^,}]*' | head -n1 | sed 's/.*: *//' || true)"
+      IOS_AGE="$(echo "$STATE_JSON" | grep -o '"last_ios_event_age_seconds":[[:space:]]*[^,}]*' | head -n1 | sed 's/.*: *//' || true)"
+      echo "INFO: mac_status=$MAC_STATUS"
+      echo "INFO: last_mac_heartbeat_age_seconds=$MAC_HB_AGE"
+      echo "INFO: last_mac_snapshot_age_seconds=$MAC_SNAP_AGE"
+      echo "INFO: last_ios_event_age_seconds=$IOS_AGE"
     else
       warn "Could not read /api/state"
     fi

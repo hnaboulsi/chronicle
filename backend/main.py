@@ -1,6 +1,7 @@
 import logging
 import os
 import base64
+import subprocess
 import secrets
 from datetime import datetime, timedelta
 from typing import Dict, Any
@@ -12,7 +13,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc, text, func
 from database import engine, Base, get_db, SessionLocal
 import models
-from models import ActivityLog, HourlySummary, MacTelemetry, iOSTelemetry
+from models import ActivityLog, CalendarEventJob, HourlySummary, MacHeartbeat, MacTelemetry, iOSZoneEvent, iOSTelemetry
 import agent_logic
 
 # Logging
@@ -45,9 +46,30 @@ _run_migrations()
 
 app = FastAPI(title="Life-Manager Agent API")
 _STARTED_AT = datetime.utcnow()
+_BUILD_VERSION = os.environ.get("LIFE_MANAGER_BUILD_VERSION", "dev")
+_DEPLOYMENT_CHANNEL = os.environ.get("LIFE_MANAGER_DEPLOYMENT_CHANNEL", "internal")
+try:
+    _GIT_SHA = (
+        subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=os.path.dirname(__file__),
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        or "unknown"
+    )
+except Exception:
+    _GIT_SHA = "unknown"
 
 # Telemetry endpoints are called by Mac tracker and iPhone shortcut — no auth needed
-_NO_AUTH_PATHS = {"/api/mac-telemetry", "/api/ios-telemetry", "/api/healthz"}
+_NO_AUTH_PATHS = {
+    "/api/mac-telemetry",
+    "/api/mac-heartbeat",
+    "/api/ios-telemetry",
+    "/api/ios-zone-event",
+    "/api/healthz",
+}
 
 # Brute-force protection: track failed attempts per IP
 # { ip: {"count": int, "blocked_until": float} }
@@ -124,6 +146,83 @@ app.mount("/dashboard", StaticFiles(directory=frontend_path, html=True), name="f
 async def redirect_to_dashboard():
     return RedirectResponse(url="/dashboard/index.html")
 
+
+def _normalize_battery_level(battery_level: float | None) -> int | None:
+    if battery_level is None:
+        return None
+    raw = float(battery_level)
+    return int(raw) if raw > 1 else int(raw * 100)
+
+
+def _serialize_calendar_job(job: CalendarEventJob) -> dict:
+    return {
+        "id": job.id,
+        "kind": job.kind,
+        "title": job.title,
+        "notes": job.notes or "",
+        "start_at": job.start_at.isoformat() if job.start_at else "",
+        "end_at": job.end_at.isoformat() if job.end_at else "",
+        "status": job.status,
+        "attempts": job.attempts,
+        "last_error": job.last_error or "",
+        "payload_json": job.payload_json or "{}",
+        "created_at": job.created_at.isoformat() if job.created_at else "",
+        "updated_at": job.updated_at.isoformat() if job.updated_at else "",
+    }
+
+
+def _build_state_payload(db: Session) -> dict:
+    agent_logic.ensure_default_settings(db)
+    states = agent_logic.get_all_states(db)
+    now = datetime.utcnow()
+
+    try:
+        polling_interval_seconds = int(agent_logic.get_state(db, "polling_interval_seconds", "60"))
+    except Exception:
+        polling_interval_seconds = 60
+
+    last_ios_event_age_seconds = None
+    last_ios_ping_age_seconds = None
+    last_ios_event_str = states.get("last_ios_event") or states.get("last_ios_ping") or ""
+    last_ios_ping_str = states.get("last_ios_ping", "")
+    if last_ios_event_str:
+        try:
+            last_ios_event_age_seconds = int((now - datetime.fromisoformat(last_ios_event_str)).total_seconds())
+        except Exception:
+            last_ios_event_age_seconds = None
+    if last_ios_ping_str:
+        try:
+            last_ios_ping_age_seconds = int((now - datetime.fromisoformat(last_ios_ping_str)).total_seconds())
+        except Exception:
+            last_ios_ping_age_seconds = None
+
+    mac_status = agent_logic.compute_mac_status(states, now)
+    states["backend_target_url"] = _get_backend_url()
+    states["polling_interval_seconds"] = polling_interval_seconds
+    states["mac_online_threshold_seconds"] = max(300, polling_interval_seconds * 2 + 30)
+    states["last_mac_ping_age_seconds"] = mac_status["last_mac_snapshot_age_seconds"]
+    states["last_mac_heartbeat_age_seconds"] = mac_status["last_mac_heartbeat_age_seconds"]
+    states["last_mac_snapshot_age_seconds"] = mac_status["last_mac_snapshot_age_seconds"]
+    states["last_ios_ping_age_seconds"] = last_ios_ping_age_seconds
+    states["last_ios_event_age_seconds"] = last_ios_event_age_seconds
+    states["ios_recent_ping"] = (last_ios_ping_age_seconds is not None and last_ios_ping_age_seconds < 3600)
+    states["ios_recent_event"] = (last_ios_event_age_seconds is not None and last_ios_event_age_seconds < 3600)
+    states["sleep_source"] = agent_logic.get_state(db, "sleep_source", "iphone_only")
+    states["sleep_status_note"] = (
+        "Sleep detection inactive until iPhone automation pings."
+        if not states["ios_recent_event"] else
+        "Sleep detection active from iPhone telemetry."
+    )
+    states["mac_online"] = mac_status["mac_online"]
+    states["mac_status"] = mac_status["mac_status"]
+    states["mac_status_reason"] = mac_status["mac_status_reason"]
+    states["mac_launch_url"] = "lifemanager://open"
+    states["last_mac_heartbeat"] = states.get("last_mac_heartbeat", "")
+    states["service_health"] = "ok" if mac_status["mac_status"] in {"online", "online_idle"} else (
+        "degraded" if mac_status["mac_status"] in {"degraded", "paused"} else "offline"
+    )
+    return states
+
 def _bg_process_mac(data: MacTelemetry):
     """Run mac telemetry processing with its own DB session."""
     db = SessionLocal()
@@ -148,6 +247,28 @@ def _bg_process_ios(data: iOSTelemetry):
         db.close()
 
 
+def _bg_process_heartbeat(data: MacHeartbeat):
+    db = SessionLocal()
+    try:
+        import asyncio
+        asyncio.run(agent_logic.process_mac_heartbeat(data, db))
+    except Exception as e:
+        log.error("Background mac heartbeat error: %s", e)
+    finally:
+        db.close()
+
+
+def _bg_process_ios_zone(data: iOSZoneEvent):
+    db = SessionLocal()
+    try:
+        import asyncio
+        asyncio.run(agent_logic.process_ios_zone_event(data, db))
+    except Exception as e:
+        log.error("Background ios zone event error: %s", e)
+    finally:
+        db.close()
+
+
 @app.post("/api/mac-telemetry")
 async def receive_mac_telemetry(data: MacTelemetry, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     log_entry = ActivityLog(
@@ -164,13 +285,21 @@ async def receive_mac_telemetry(data: MacTelemetry, background_tasks: Background
     return {"status": "ok", "prompt": pending_prompt}
 
 
+@app.post("/api/mac-heartbeat")
+async def receive_mac_heartbeat(data: MacHeartbeat, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    background_tasks.add_task(_bg_process_heartbeat, data)
+    states = _build_state_payload(db)
+    return {
+        "status": "ok",
+        "mac_status": states["mac_status"],
+        "mac_status_reason": states["mac_status_reason"],
+        "tracking_enabled": str(states.get("tracking_enabled", "true")).lower() == "true",
+    }
+
+
 @app.post("/api/ios-telemetry")
 async def receive_ios_telemetry(data: iOSTelemetry, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    # Normalize battery: iOS Shortcuts sends 0-100, convert to int percentage
-    batt_pct = None
-    if data.battery_level is not None:
-        raw = float(data.battery_level)
-        batt_pct = int(raw) if raw > 1 else int(raw * 100)
+    batt_pct = _normalize_battery_level(data.battery_level)
 
     log_entry = ActivityLog(
         device="ios",
@@ -188,53 +317,26 @@ async def receive_ios_telemetry(data: iOSTelemetry, background_tasks: Background
     return {"status": "ok"}
 
 
+@app.post("/api/ios-zone-event")
+async def receive_ios_zone_event(data: iOSZoneEvent, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    zone = agent_logic.get_zone(db, data.zone_slug)
+    zone_label = zone.name if zone else data.zone_slug.replace("-", " ").title()
+    log_entry = ActivityLog(
+        device="ios",
+        location_label=zone_label,
+        activity_type=f"Zone {data.transition.title()}",
+        battery_pct=_normalize_battery_level(data.battery_level),
+        steps_today=data.steps_today,
+    )
+    db.add(log_entry)
+    db.commit()
+    background_tasks.add_task(_bg_process_ios_zone, data)
+    return {"status": "ok", "zone": zone_label, "transition": data.transition}
+
+
 @app.get("/api/state")
 async def get_state(db: Session = Depends(get_db)):
-    agent_logic.ensure_default_settings(db)
-    states = agent_logic.get_all_states(db)
-    try:
-        polling_interval_seconds = int(agent_logic.get_state(db, "polling_interval_seconds", "60"))
-    except Exception:
-        polling_interval_seconds = 60
-    mac_online_threshold_seconds = max(300, polling_interval_seconds * 2 + 30)
-    last_ping_str = states.get("last_mac_ping", "")
-    last_ios_ping_str = states.get("last_ios_ping", "")
-    last_mac_ping_age_seconds = None
-    last_ios_ping_age_seconds = None
-    if last_ping_str:
-        try:
-            last_ping = datetime.fromisoformat(last_ping_str)
-            last_mac_ping_age_seconds = int((datetime.utcnow() - last_ping).total_seconds())
-            states["mac_online"] = last_mac_ping_age_seconds <= mac_online_threshold_seconds
-        except Exception:
-            states["mac_online"] = False
-    else:
-        states["mac_online"] = False
-    if last_ios_ping_str:
-        try:
-            ios_ping = datetime.fromisoformat(last_ios_ping_str)
-            last_ios_ping_age_seconds = int((datetime.utcnow() - ios_ping).total_seconds())
-        except Exception:
-            pass
-    states["backend_target_url"] = _get_backend_url()
-    states["polling_interval_seconds"] = polling_interval_seconds
-    states["mac_online_threshold_seconds"] = mac_online_threshold_seconds
-    states["last_mac_ping_age_seconds"] = last_mac_ping_age_seconds
-    states["last_ios_ping_age_seconds"] = last_ios_ping_age_seconds
-    states["ios_recent_ping"] = (last_ios_ping_age_seconds is not None and last_ios_ping_age_seconds < 3600)
-    states["sleep_source"] = agent_logic.get_state(db, "sleep_source", "iphone_only")
-    states["sleep_status_note"] = (
-        "Sleep detection inactive until iPhone automation pings."
-        if not states["ios_recent_ping"] else
-        "Sleep detection active from iPhone telemetry."
-    )
-    if states["mac_online"]:
-        states["service_health"] = "ok"
-    elif last_mac_ping_age_seconds is not None:
-        states["service_health"] = "degraded"
-    else:
-        states["service_health"] = "offline"
-    return states
+    return _build_state_payload(db)
 
 @app.get("/api/settings")
 async def get_settings(db: Session = Depends(get_db)):
@@ -245,6 +347,7 @@ async def get_settings(db: Session = Depends(get_db)):
         "polling_interval_seconds": int(polling_str),
         "tracking_enabled": tracking_enabled_str.lower() == "true",
         "backend_mode": agent_logic.get_state(db, "backend_mode", "railway_primary"),
+        "ai_provider": agent_logic.get_state(db, "ai_provider", "auto"),
         "llm_mode": agent_logic.get_state(db, "llm_mode", "ultra_save"),
         "hourly_summaries_enabled": agent_logic.get_state(db, "hourly_summaries_enabled", "false").lower() == "true",
         "classification_interval_seconds": int(agent_logic.get_state(db, "classification_interval_seconds", "1800")),
@@ -261,6 +364,9 @@ async def update_settings(payload: Dict[str, Any], db: Session = Depends(get_db)
         agent_logic.set_state(db, "tracking_enabled", str(payload["tracking_enabled"]).lower())
     if "backend_mode" in payload and payload["backend_mode"] in {"railway_primary", "local_primary", "hybrid_auto"}:
         agent_logic.set_state(db, "backend_mode", payload["backend_mode"])
+    if "ai_provider" in payload and payload["ai_provider"] in {"auto", "gemini", "openai"}:
+        agent_logic.set_state(db, "ai_provider", payload["ai_provider"])
+        os.environ["LIFE_MANAGER_AI_PROVIDER"] = payload["ai_provider"]
     if "llm_mode" in payload and payload["llm_mode"] in {"ultra_save", "balanced", "quality"}:
         agent_logic.set_state(db, "llm_mode", payload["llm_mode"])
     if "hourly_summaries_enabled" in payload:
@@ -286,6 +392,143 @@ async def update_settings(payload: Dict[str, Any], db: Session = Depends(get_db)
         except Exception:
             raise HTTPException(status_code=400, detail=f"Invalid timezone: {tz_name}")
     return {"status": "updated"}
+
+
+@app.get("/api/version")
+async def api_version():
+    return {
+        "build_version": _BUILD_VERSION,
+        "deployment_channel": _DEPLOYMENT_CHANNEL,
+        "git_sha": _GIT_SHA,
+        "started_at": _STARTED_AT.isoformat(),
+    }
+
+
+@app.get("/api/zones")
+async def get_zones(db: Session = Depends(get_db)):
+    return {"zones": agent_logic.list_zones(db)}
+
+
+@app.post("/api/zones")
+async def create_zone(payload: Dict[str, Any], db: Session = Depends(get_db)):
+    try:
+        zone = agent_logic.upsert_zone(db, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"status": "created", "zone": zone}
+
+
+@app.patch("/api/zones/{zone_id}")
+async def patch_zone(zone_id: int, payload: Dict[str, Any], db: Session = Depends(get_db)):
+    try:
+        zone = agent_logic.upsert_zone(db, payload, zone_id=zone_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"status": "updated", "zone": zone}
+
+
+@app.delete("/api/zones/{zone_id}")
+async def remove_zone(zone_id: int, db: Session = Depends(get_db)):
+    zone = db.query(models.LocationZone).filter(models.LocationZone.id == zone_id).first()
+    if not zone:
+        raise HTTPException(status_code=404, detail="Zone not found")
+    if zone.slug in {z["slug"] for z in agent_logic.DEFAULT_ZONES}:
+        raise HTTPException(status_code=400, detail="Default zones cannot be deleted")
+    if not agent_logic.delete_zone(db, zone_id):
+        raise HTTPException(status_code=404, detail="Zone not found")
+    return {"status": "deleted"}
+
+
+@app.get("/api/calendar/jobs")
+async def get_calendar_jobs(limit: int = 25, status: str = "pending", db: Session = Depends(get_db)):
+    query = db.query(CalendarEventJob)
+    if status and status != "all":
+        query = query.filter(CalendarEventJob.status == status)
+    jobs = query.order_by(CalendarEventJob.created_at).limit(max(1, min(limit, 100))).all()
+    return {"jobs": [_serialize_calendar_job(job) for job in jobs]}
+
+
+@app.post("/api/calendar/jobs/{job_id}/ack")
+async def ack_calendar_job(job_id: int, db: Session = Depends(get_db)):
+    job = db.query(CalendarEventJob).filter(CalendarEventJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Calendar job not found")
+    job.status = "done"
+    job.last_error = ""
+    db.commit()
+    db.refresh(job)
+    return {"status": "acknowledged", "job": _serialize_calendar_job(job)}
+
+
+@app.post("/api/calendar/jobs/{job_id}/fail")
+async def fail_calendar_job(job_id: int, payload: Dict[str, Any], db: Session = Depends(get_db)):
+    job = db.query(CalendarEventJob).filter(CalendarEventJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Calendar job not found")
+    job.status = "failed"
+    job.attempts = (job.attempts or 0) + 1
+    job.last_error = str(payload.get("error") or "Unknown error")
+    db.commit()
+    db.refresh(job)
+    return {"status": "failed", "job": _serialize_calendar_job(job)}
+
+
+@app.post("/mcp")
+async def mcp_http_transport(payload: Dict[str, Any], db: Session = Depends(get_db)):
+    method = str(payload.get("method") or "").strip()
+    params = payload.get("params") or {}
+
+    if method == "get_current_state":
+        return {"result": _build_state_payload(db)}
+    if method == "get_recent_logs":
+        limit = max(1, min(int(params.get("limit", 15)), 100))
+        logs = db.query(ActivityLog).order_by(desc(ActivityLog.timestamp)).limit(limit).all()
+        return {
+            "result": [
+                {
+                    "id": l.id,
+                    "timestamp": l.timestamp.isoformat() if l.timestamp else "",
+                    "device": l.device,
+                    "app_name": l.app_name,
+                    "window_title": l.window_title,
+                    "is_idle": l.is_idle,
+                    "location_label": l.location_label,
+                    "activity_type": l.activity_type,
+                    "steps_today": l.steps_today,
+                    "battery_pct": l.battery_pct,
+                }
+                for l in logs
+            ]
+        }
+    if method == "get_daily_analytics":
+        return {"result": await analytics_today(db)}
+    if method == "set_tracking":
+        enabled = bool(params.get("enabled", True))
+        agent_logic.set_state(db, "tracking_enabled", str(enabled).lower())
+        return {"result": {"tracking_enabled": enabled}}
+    if method == "set_polling_interval":
+        seconds = max(60, int(params.get("seconds", 60)))
+        agent_logic.set_state(db, "polling_interval_seconds", str(seconds))
+        return {"result": {"polling_interval_seconds": seconds}}
+    if method == "send_checkin":
+        message = str(params.get("message") or "").strip()
+        if not message:
+            raise HTTPException(status_code=400, detail="message is required")
+        return {"result": await chat_message({"message": message}, db)}
+    if method == "get_pending_checkin":
+        return {"result": await get_checkin(db)}
+    if method == "reply_to_prompt":
+        reply = str(params.get("reply") or "").strip()
+        return {"result": await handle_prompt_reply({"reply": reply}, db)}
+    if method == "list_zones":
+        return {"result": {"zones": agent_logic.list_zones(db)}}
+    if method == "upsert_zone":
+        try:
+            return {"result": {"zone": agent_logic.upsert_zone(db, params)}}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    raise HTTPException(status_code=404, detail=f"Unknown MCP method: {method}")
 
 @app.get("/api/logs")
 async def get_logs(limit: int = 50, db: Session = Depends(get_db)):
@@ -397,6 +640,19 @@ async def chat_message(payload: Dict[str, Any], db: Session = Depends(get_db)):
             context_parts.append(f"Recent apps: {apps}")
 
     context_str = "; ".join(context_parts) if context_parts else "No recent context"
+    history_key = f"chat_history:{now.strftime('%Y-%m-%d')}"
+    import json
+    existing = agent_logic.get_state(db, history_key, "[]")
+    try:
+        history = json.loads(existing)
+    except Exception:
+        history = []
+    prior_turns = history[-3:]
+    prior_context = "\n".join(
+        f'- User: {turn.get("user", "")}\n  Assistant: {turn.get("reply", "")}'
+        for turn in prior_turns
+        if turn.get("user") or turn.get("reply")
+    )
 
     # Use LLM to generate a smart response if budget allows
     if agent_logic.can_use_llm(db, now):
@@ -405,16 +661,17 @@ async def chat_message(payload: Dict[str, Any], db: Session = Depends(get_db)):
         prompt = (
             f"You are Life Manager, a personal productivity AI. The user just told you:\n"
             f'"{message}"\n\n'
-            f"Context: {context_str}\n\n"
-            "Respond in 1-2 short sentences. Be friendly, acknowledge what they said, and confirm you're tracking it. "
-            "If they mentioned going somewhere, note that you'll track the location. "
-            "If they said what they're doing, confirm the activity category. Keep it conversational and brief."
+            f"Current context: {context_str}\n\n"
+            f"Recent chat context:\n{prior_context or '- No recent conversation.'}\n\n"
+            "Respond in 1-2 short sentences. Be direct, helpful, and specific. "
+            "Acknowledge what they said, confirm what the system will track next, and if useful suggest the next likely state "
+            "(for example study, class, workout, commute, or break). Do not sound generic."
         )
         reply = await llm_client.ask_gemini(prompt)
         if not reply:
-            reply = f"Got it! I'll track that."
+            reply = "Got it. I'll track that and update your context."
     else:
-        reply = f"Got it — noted! I'll factor that into your activity tracking."
+        reply = "Got it. I noted that and will use it in your activity tracking."
 
     # Try to extract activity intent from the message using heuristics
     msg_lower = message.lower()
@@ -438,13 +695,6 @@ async def chat_message(payload: Dict[str, Any], db: Session = Depends(get_db)):
         agent_logic.set_state(db, "current_activity_summary", message[:80])
 
     # Store in chat history
-    history_key = f"chat_history:{now.strftime('%Y-%m-%d')}"
-    import json
-    existing = agent_logic.get_state(db, history_key, "[]")
-    try:
-        history = json.loads(existing)
-    except Exception:
-        history = []
     history.append({"time": now.strftime("%H:%M"), "user": message, "reply": reply})
     # Keep last 20 messages per day
     if len(history) > 20:
@@ -511,9 +761,10 @@ async def healthz(db: Session = Depends(get_db)):
         db_error = str(e)
 
     now = datetime.utcnow()
-    states = agent_logic.get_all_states(db)
+    states = _build_state_payload(db)
     llm_stats = agent_logic.llm_usage_snapshot(db, now)
-    llm_configured = bool(os.environ.get("GEMINI_API_KEY"))
+    ai_provider = agent_logic.get_state(db, "ai_provider", "auto")
+    llm_configured = bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("OPENAI_API_KEY"))
 
     return {
         "status": "ok" if db_ok else "degraded",
@@ -531,6 +782,7 @@ async def healthz(db: Session = Depends(get_db)):
         },
         "llm": {
             "configured": llm_configured,
+            "provider": ai_provider,
             "daily_used": llm_stats["daily_used"],
             "daily_remaining": llm_stats["daily_remaining"],
             "daily_cap": llm_stats["daily_cap"],
@@ -538,26 +790,40 @@ async def healthz(db: Session = Depends(get_db)):
         },
         "telemetry": {
             "last_mac_ping": states.get("last_mac_ping", ""),
+            "last_mac_heartbeat": states.get("last_mac_heartbeat", ""),
             "last_ios_ping": states.get("last_ios_ping", ""),
+            "last_ios_event": states.get("last_ios_event", ""),
+        },
+        "build": {
+            "build_version": _BUILD_VERSION,
+            "deployment_channel": _DEPLOYMENT_CHANNEL,
+            "git_sha": _GIT_SHA,
+        },
+        "mac": {
+            "status": states.get("mac_status", "offline"),
+            "reason": states.get("mac_status_reason", ""),
         },
     }
 
 
 @app.get("/api/ios-setup-status")
 async def ios_setup_status(db: Session = Depends(get_db)):
-    states = await get_state(db)
-    last_ios_ping_age = states.get("last_ios_ping_age_seconds")
+    states = _build_state_payload(db)
+    last_ios_ping_age = states.get("last_ios_event_age_seconds")
     checklist = [
-        {"id": "periodic_ping", "label": "Time-of-day ping automation", "configured": states.get("seen_periodic_automation") == "true"},
+        {"id": "zone_arrive", "label": "Zone arrive automations", "configured": states.get("seen_arrive_automation") == "true"},
+        {"id": "zone_leave", "label": "Zone leave automations", "configured": states.get("seen_leave_automation") == "true"},
+        {"id": "periodic_ping", "label": "Legacy GPS ping automation", "configured": states.get("seen_periodic_automation") == "true"},
         {"id": "arrive_location", "label": "Arrive location automation", "configured": states.get("seen_arrive_automation") == "true"},
         {"id": "walking", "label": "Walking automation", "configured": states.get("seen_walking_automation") == "true"},
         {"id": "charging_stationary", "label": "Charging on/off automations", "configured": states.get("seen_charging_automation") == "true"},
     ]
     return {
-        "ios_recent_ping": states.get("ios_recent_ping", False),
+        "ios_recent_ping": states.get("ios_recent_event", False),
         "last_ios_ping_age_seconds": last_ios_ping_age,
         "sleep_source": states.get("sleep_source", "iphone_only"),
         "sleep_status_note": states.get("sleep_status_note", ""),
+        "zones": agent_logic.list_zones(db),
         "checklist": checklist,
     }
 
@@ -616,6 +882,11 @@ function copyCmd(btn) {{
 </script>
 </head>
 <body>
+<nav style="margin-bottom:1.5rem;">
+  <a href="/" style="color:#8b949e;text-decoration:none;font-size:0.9rem;display:inline-flex;align-items:center;gap:0.4rem;">
+    ← Dashboard
+  </a>
+</nav>
 <h1>💻 Mac Tracker Setup <span class="badge-remote" style="{remote_only}">☁️ Cloud</span></h1>
 <p>Install the Life Manager menu bar tracker on your Mac — takes about 2 minutes.</p>
 
@@ -633,7 +904,7 @@ function copyCmd(btn) {{
 <div class="step">
   <div class="step-num">Paste this into Terminal and press Enter</div>
   <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>git clone https://github.com/naboulsi/life-manager-agent.git ~/life-manager-agent 2>/dev/null || git -C ~/life-manager-agent pull && cd ~/life-manager-agent && bash mac_client/install_and_enable_mac_client.sh "{backend_url}"</pre>
-  <p class="note">This clones the repo, creates a Python venv, installs dependencies, and registers the LaunchAgent to auto-start at login.</p>
+  <p class="note">This clones the repo, creates a Python venv, builds <code>Life Manager.app</code>, and registers it as a Login Item so the menu bar agent stays on after login.</p>
 </div>
 
 <h2>Step 2 — Configure authentication</h2>
@@ -649,7 +920,7 @@ function copyCmd(btn) {{
 <h2>Step 3 — Start the tracker</h2>
 <div class="step">
   <div class="step-num">Launch it now (it auto-starts on future logins)</div>
-  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>open -a "Life Manager" || launchctl load ~/Library/LaunchAgents/com.naboulsi.lifemanager.plist</pre>
+  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>open -a "Life Manager"</pre>
   <p class="note">You should see a 🧠 icon appear in your menu bar. If you don't see it, check System Settings → Privacy &amp; Security → Accessibility and allow Life Manager.</p>
 </div>
 
@@ -743,11 +1014,16 @@ function copyCmd(btn) {{
 </script>
 </head>
 <body>
+<nav style="margin-bottom:1.5rem;">
+  <a href="/" style="color:#8b949e;text-decoration:none;font-size:0.9rem;display:inline-flex;align-items:center;gap:0.4rem;">
+    ← Dashboard
+  </a>
+</nav>
 <h1>📱 iPhone Setup <span class="badge-remote" style="{remote_only}">☁️ Cloud</span></h1>
 <p>Follow these steps to set up Life Manager on your iPhone — takes under 3 minutes.</p>
 
 <!-- ── Step 1: Download ─────────────────────────────── -->
-<h2>Step 1 — Download shortcuts to your Mac</h2>
+<h2>Step 1 — Download helper shortcuts to your Mac</h2>
 <div class="step">
   <div class="step-num">On your Mac — open this page in Safari or Chrome</div>
   <p>
@@ -755,10 +1031,10 @@ function copyCmd(btn) {{
     <span style="{signing_section_display}" class="badge-signed" style="background:rgba(210,153,34,0.15);color:#d29922;border-color:rgba(210,153,34,0.3);">⚠️ Requires signing — see Step 2</span>
   </p>
   <p style="margin: 0.75rem 0 1rem; font-size:0.88rem; line-height:1.7;">
-    <strong style="color:#f0f6fc;">GPS Ping</strong> <span style="color:#8b949e;">— Runs every 30 min, sends your location &amp; battery level.</span><br>
-    <strong style="color:#f0f6fc;">Arrive</strong> <span style="color:#8b949e;">— Triggers when you reach a saved location (home, campus).</span><br>
-    <strong style="color:#f0f6fc;">Walking</strong> <span style="color:#8b949e;">— Fires when your phone detects a walking workout.</span><br>
-    <strong style="color:#f0f6fc;">Charging On/Off</strong> <span style="color:#8b949e;">— Logs when you plug in/unplug (used for sleep detection).</span>
+    <strong style="color:#f0f6fc;">Walking</strong> <span style="color:#8b949e;">— Fires when your iPhone detects a walking workout (great for Apple Watch-triggered walks).</span><br>
+    <strong style="color:#f0f6fc;">Charging On/Off</strong> <span style="color:#8b949e;">— Logs when you plug in/unplug (used for sleep detection).</span><br>
+    <strong style="color:#f0f6fc;">GPS Ping</strong> <span style="color:#8b949e;">— Legacy fallback heartbeat only. The preferred setup is zone enter/leave automations in Step 4.</span><br>
+    <strong style="color:#f0f6fc;">Arrive</strong> <span style="color:#8b949e;">— Legacy shortcut retained for compatibility; zone automations are preferred.</span>
   </p>
   <p style="margin-top:1rem">
     <a class="action-btn" href="/setup/shortcut/download?kind=gps">⬇ GPS Ping</a>&nbsp;
@@ -801,8 +1077,8 @@ done && echo "All 5 shortcuts ready on your Desktop."</pre>
 </div>
 <div class="step" style="{local_only}">
   <div class="step-num">Method B — iCloud Drive (no AirDrop needed)</div>
-  <p><a class="action-btn" href="/setup/save-to-icloud" style="font-size:0.9rem;padding:0.5rem 1rem;">Save GPS shortcut to iCloud Drive →</a></p>
-  <p class="note">On iPhone: <strong>Files app → iCloud Drive → LifeManager.shortcut → Add Shortcut</strong></p>
+  <p><a class="action-btn" href="/setup/save-to-icloud" style="font-size:0.9rem;padding:0.5rem 1rem;">Save helper shortcut to iCloud Drive →</a></p>
+  <p class="note">On iPhone: <strong>Files app → iCloud Drive → LifeManager.shortcut → Add Shortcut</strong>. Use this for the walking helper if you do not want to AirDrop.</p>
 </div>
 
 <hr class="divider">
@@ -811,12 +1087,33 @@ done && echo "All 5 shortcuts ready on your Desktop."</pre>
 <h2>Step 4 — Create automations on iPhone</h2>
 <div class="step">
   <div class="step-num">In the Shortcuts app → Automation tab → + New Automation</div>
-  <p><strong>1.</strong> <em>Time of Day</em> — every 30 min → Run Shortcut <strong>Life Manager GPS</strong></p>
-  <p><strong>2.</strong> <em>Arrive</em> — your campus/home → Run Shortcut <strong>Life Manager Arrive</strong></p>
-  <p><strong>3.</strong> <em>Workout: Walking starts</em> → Run Shortcut <strong>Life Manager Walking</strong></p>
-  <p><strong>4.</strong> <em>Charger connected</em> → Run Shortcut <strong>Life Manager Charging On</strong></p>
-  <p><strong>5.</strong> <em>Charger disconnected</em> → Run Shortcut <strong>Life Manager Charging Off</strong></p>
-  <p class="note">For each automation: disable <strong>Ask Before Running</strong> and <strong>Notify When Run</strong>.</p>
+  <p><strong>Preferred model: zone state, not 30-minute GPS polling.</strong></p>
+  <p class="note">Create geofences with a radius of about 50-100 meters for: <strong>Anchor House</strong>, <strong>Dwinelle Hall</strong>, <strong>Wheeler Hall</strong>, <strong>VLSB</strong>, and optionally <strong>Doe/Moffitt</strong> and <strong>RSF</strong>.</p>
+  <ol style="margin:0.5rem 0 1rem 1.5rem;color:#c9d1d9;line-height:1.8">
+    <li>For each zone, create an <strong>Arrive</strong> automation and a <strong>Leave</strong> automation.</li>
+    <li>In each automation, use <strong>Get Contents of URL</strong> to send a <strong>POST</strong> to <code>{backend_url}/api/ios-zone-event</code>.</li>
+    <li>Send JSON like <code>{{"zone_slug":"dwinelle-hall","transition":"enter"}}</code> for arrival and <code>{{"zone_slug":"dwinelle-hall","transition":"exit"}}</code> for leaving.</li>
+    <li>For Dwinelle and Wheeler, optionally add <strong>Set Focus → Class</strong> before the network action. For VLSB or Doe/Moffitt, optionally add <strong>Set Focus → Deep Work</strong>.</li>
+    <li>For Anchor House arrival, optionally turn Focus off before the network action.</li>
+  </ol>
+  <p class="note">This tracks intentional blocks, commute timing, and time-in-zone. It is lower power and more accurate than 30-minute GPS polling.</p>
+  <p class="note">Apple supports automatic run for these trigger types when <strong>Ask Before Running</strong> is turned off, so <em>Arrive</em>, <em>Leave</em>, <em>Workout</em>, and <em>Charger</em> automations can stay hands-off once you set them up.</p>
+
+  <p><strong>Apple Watch walking signal</strong></p>
+  <p class="note">Create one more automation: <em>Workout → Walking → Starts</em> → Run Shortcut <strong>Life Manager Walking</strong>. In the Watch app on iPhone, enable <strong>Workout Start Reminder</strong> and <strong>Workout End Reminder</strong>.</p>
+
+  <p><strong>Sleep signal</strong></p>
+  <p class="note"><em>Charger connected</em> → Run Shortcut <strong>Life Manager Charging On</strong>; <em>Charger disconnected</em> → Run Shortcut <strong>Life Manager Charging Off</strong>.</p>
+
+  <p><strong>Legacy fallback only</strong></p>
+  <p class="note">If you still want a periodic heartbeat, you can keep the old Focus-loop GPS Ping shortcut, but it is no longer the recommended setup.</p>
+</div>
+
+<h2>Step 5 — iCloud Calendar sync on your Mac</h2>
+<div class="step">
+  <div class="step-num">Make sure Apple Calendar is syncing through iCloud</div>
+  <p>On your Mac, go to <strong>System Settings → Apple Account → iCloud</strong> and make sure <strong>Calendar</strong> is enabled.</p>
+  <p>Then open the Calendar app and confirm the <strong>Life Manager</strong> calendar lives under your iCloud account, not only <strong>On My Mac</strong>. That is what lets your logged study sessions, walks, and location visits sync across devices.</p>
 </div>
 
 <h2>Your backend URL</h2>
@@ -826,7 +1123,7 @@ done && echo "All 5 shortcuts ready on your Desktop."</pre>
 <h2>Verify</h2>
 <div class="step">
   <div class="step-num">Run each shortcut once manually in the Shortcuts app</div>
-  <p>Then check <a href="/api/ios-setup-status" style="color:#58a6ff">/api/ios-setup-status</a> — all items should show as configured.</p>
+  <p>Then check <a href="/api/ios-setup-status" style="color:#58a6ff">/api/ios-setup-status</a> — all items should show as configured. Personal automations are created per device, so build these on the iPhone that will actually run them.</p>
 </div>
 </body>
 </html>"""
@@ -1011,15 +1308,15 @@ def _build_shortcut_bytes(kind: str = "gps", sign: bool = True) -> bytes:
 
 @app.get("/setup/save-to-icloud")
 async def save_shortcut_to_icloud():
-    """Save the shortcut to iCloud Drive and open Finder there."""
+    """Save the walking helper shortcut to iCloud Drive and open Finder there."""
     import subprocess, os
     from fastapi.responses import HTMLResponse as HR
     icloud_path = os.path.expanduser("~/Library/Mobile Documents/com~apple~CloudDocs")
     if not os.path.isdir(icloud_path):
         return HR("<p style='font-family:sans-serif;color:#f85149'>iCloud Drive not found. Make sure iCloud Drive is enabled in System Settings → Apple ID → iCloud.</p>")
-    dest = os.path.join(icloud_path, "LifeManager.shortcut")
+    dest = os.path.join(icloud_path, "LifeManager-walking.shortcut")
     with open(dest, "wb") as f:
-        f.write(_build_shortcut_bytes())
+        f.write(_build_shortcut_bytes(kind="walking"))
     subprocess.run(["open", icloud_path])
     return HR("""<html><head><meta charset='UTF-8'><style>
       body{font-family:sans-serif;background:#0d1117;color:#f0f6fc;display:flex;align-items:center;
@@ -1027,19 +1324,19 @@ async def save_shortcut_to_icloud():
       p{color:#8b949e;} a{color:#58a6ff;}
     </style></head><body>
     <h2 style='color:#3fb950'>✅ Saved to iCloud Drive!</h2>
-    <p>Finder opened. On your iPhone: open <strong>Files → iCloud Drive → LifeManager.shortcut</strong></p>
+    <p>Finder opened. On your iPhone: open <strong>Files → iCloud Drive → LifeManager-walking.shortcut</strong></p>
     <a href='/setup/ios'>← Back to setup</a>
     </body></html>""")
 
 
 @app.get("/setup/save-to-desktop")
 async def save_shortcut_to_desktop():
-    """Save the shortcut to the Mac Desktop and reveal it in Finder."""
+    """Save the walking helper shortcut to the Mac Desktop and reveal it in Finder."""
     import subprocess, os
     from fastapi.responses import HTMLResponse as HR
-    dest = os.path.expanduser("~/Desktop/LifeManager.shortcut")
+    dest = os.path.expanduser("~/Desktop/LifeManager-walking.shortcut")
     with open(dest, "wb") as f:
-        f.write(_build_shortcut_bytes())
+        f.write(_build_shortcut_bytes(kind="walking"))
     subprocess.run(["open", "-R", dest])  # Reveal in Finder
     return HR("""<html><head><meta charset='UTF-8'><style>
       body{font-family:sans-serif;background:#0d1117;color:#f0f6fc;display:flex;align-items:center;
@@ -1211,7 +1508,7 @@ async def event_stream(db: Session = Depends(get_db)):
             try:
                 fresh_db = SessionLocal()
                 try:
-                    states = agent_logic.get_all_states(fresh_db)
+                    states = _build_state_payload(fresh_db)
                     logs = fresh_db.query(ActivityLog).order_by(desc(ActivityLog.timestamp)).limit(15).all()
                     logs_data = [
                         {

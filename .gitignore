@@ -18,6 +18,10 @@ credentials.json
 # IDEs
 .idea/
 .vscode/
+DerivedData/
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
 
 # Python caching
 __pycache__/
