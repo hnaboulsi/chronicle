@@ -13,7 +13,7 @@ struct LifeManagerApp: App {
     }
 
     var body: some Scene {
-        WindowGroup {
+        Window("Vero", id: "main") {
             Group {
                 if requiresSetup {
                     SetupView {

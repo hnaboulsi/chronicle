@@ -28,4 +28,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         HelperController.shared.ensureHelperEnabled()
     }
+
+    func applicationShouldTerminateWhenLastWindowClosed(_ sender: NSApplication) -> Bool {
+        return false
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            for window in sender.windows {
+                window.makeKeyAndOrderFront(nil)
+            }
+        }
+        return true
+    }
 }

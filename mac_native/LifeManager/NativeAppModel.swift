@@ -10,6 +10,7 @@ enum AppScreen: String, CaseIterable, Identifiable {
     case permissions
     case diagnostics
     case calendar
+    case iphone
 
     var id: String { rawValue }
 
@@ -27,6 +28,8 @@ enum AppScreen: String, CaseIterable, Identifiable {
             return "Diagnostics"
         case .calendar:
             return "Calendar"
+        case .iphone:
+            return "iPhone Setup"
         }
     }
 }
@@ -68,6 +71,7 @@ final class NativeAppModel: ObservableObject {
 
     // Diagnostic props (reactive, refreshed from AppGroupStore on each cycle)
     @Published var helperDesiredState: String = AppGroupStore.shared.helperDesiredState
+    @Published var helperActualStatus: String = "unknown"
     @Published var helperLastSeenAt: Date? = AppGroupStore.shared.helperLastSeenAt
     @Published var helperLastError: String = AppGroupStore.shared.helperLastError
 
@@ -80,6 +84,7 @@ final class NativeAppModel: ObservableObject {
     func startup() async {
         guard !didStart else { return }
         didStart = true
+        await AgentNotificationManager.shared.requestAuthorizationIfNeeded()
         await refreshAll()
         // Auto-refresh every 30 seconds so the UI stays current
         refreshTimer = Timer.publish(every: 30, on: .main, in: .common)
@@ -116,8 +121,9 @@ final class NativeAppModel: ObservableObject {
             lastSavedSettings = settings
             lastSavedNotificationLevel = notificationLevel
 
-            // Sync diagnostic props from AppGroupStore
+            // Sync diagnostic props from AppGroupStore and HelperController
             helperDesiredState = store.helperDesiredState
+            helperActualStatus = HelperController.shared.actualStatus
             helperLastSeenAt = store.helperLastSeenAt
             helperLastError = store.helperLastError
 

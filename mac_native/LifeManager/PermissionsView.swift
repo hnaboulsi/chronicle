@@ -21,7 +21,12 @@ struct PermissionsView: View {
                     name: "Notifications",
                     description: "Enables check-in prompts, focus nudges, and activity alerts.",
                     status: model.permissionSnapshot.notifications,
-                    action: nil
+                    action: {
+                        Task {
+                            await AgentNotificationManager.shared.requestAuthorizationIfNeeded()
+                            model.permissionSnapshot = await PermissionSnapshot.capture()
+                        }
+                    }
                 )
 
                 PermissionRowItem(
