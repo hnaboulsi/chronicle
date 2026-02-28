@@ -218,7 +218,7 @@ async def initialize_runtime():
             _STARTUP_STATUS["startup_errors"].append(msg)
             log.error(msg)
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     with concurrent.futures.ThreadPoolExecutor() as pool:
         try:
             # 20s timeout — Railway's healthcheck allows 30s; we need to be ready in time
@@ -891,7 +891,7 @@ async def healthz():
         finally:
             _db.close()
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
         try:
             result = await asyncio.wait_for(loop.run_in_executor(pool, _db_check), timeout=3.0)
