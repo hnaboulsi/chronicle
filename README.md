@@ -72,3 +72,31 @@ The native Mac agent writes productive sessions (10+ min), walks (3+ min), and l
 
 ### Settings & Zones
 Full settings panel accessible from the dashboard. Configure your timezone, AI budget, polling intervals, custom geofence Zones, and notification verbosity.
+
+---
+
+### Detailed Feature Footnote
+
+**MacOS Telemetry & Automation**
+- 🧠 Native Swift background agent with negligible CPU footprint.
+- 👁️ Active window tracking & idle detection (automatically pauses tracking after 5 mins of inactivity).
+- 📅 EventKit Calendar Sync: Automatically writes past productive sessions directly into Apple Calendar.
+
+**iOS Automation & Tracking**
+- 📍 Battery-efficient Geofence Zones (Arrive/Leave) via Apple Shortcuts (No background GPS polling).
+- 🚶 Apple Watch integration for automatic Walking session telemetry.
+- 🔋 Charging state detection to automatically determine sleep schedules.
+- ✨ "Smart Punctuation" rescue: The backend automatically fixes curly quotes typed incorrectly into Apple Shortcuts.
+
+**AI Classification Engine**
+- 🤖 Gemini 2.5 Flash / OpenAI fallback support for processing raw application telemetry.
+- 📊 Categorizes time into strict buckets: `studying`, `working`, `creative`, `entertainment`, `social media`, `gaming`, `break`, `idle`.
+- 🧠 Heuristic Fallback: Automatically falls back to keyword matching to save money when the daily LLM budget is exhausted.
+- 📝 AI Summaries: Click any event in the dashboard to generate a personalized AI summary of what you were working on.
+
+**Control Center Dashboard**
+- ⚡ Real-time UI updates via Server-Sent Events (SSE). No page refreshing required.
+- 🗣️ Interactive Chat Bar: Tell the agent where you are going or what you are doing to manually override context.
+- 🤔 Proactive Check-ins: The UI will prompt you ("Are you still working?") if it detects a context switch it isn't sure about.
+- 📉 Daily and Hourly Analytics: Computes your daily productivity score and generates a rolling hourly summary log.
+- 🌍 Installable PWA: Add it to your iPhone home screen for a native app-like experience.
