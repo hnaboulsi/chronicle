@@ -199,4 +199,12 @@ final class BackendClient {
     func sendChat(_ message: String) async throws {
         _ = try await perform(try request(path: "api/chat", method: "POST", jsonBody: ["message": message]))
     }
+
+    func clearLogs(minutes: Int?) async throws -> Int {
+        struct ClearResponse: Decodable { let count: Int }
+        var body: [String: Any] = [:]
+        if let m = minutes { body["minutes"] = m }
+        let data = try await perform(try request(path: "api/logs/clear", method: "POST", jsonBody: body))
+        return (try? decode(ClearResponse.self, from: data))?.count ?? 0
+    }
 }

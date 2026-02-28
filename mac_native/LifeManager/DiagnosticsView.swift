@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DiagnosticsView: View {
     @EnvironmentObject private var model: NativeAppModel
+    @State private var showClearConfirm: Int? = nil  // minutes, or -1 for "all today"
 
     var body: some View {
         Form {
@@ -129,6 +130,27 @@ struct DiagnosticsView: View {
             }
 
             Section {
+                HStack(spacing: Spacing.sm) {
+                    ForEach([1, 5, 15, 30], id: \.self) { minutes in
+                        Button("Last \(minutes)m") {
+                            showClearConfirm = minutes
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                    Spacer()
+                    Button("Today") {
+                        showClearConfirm = -1
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.red)
+                }
+            } header: {
+                Text("Clear Activity Data")
+            } footer: {
+                Text("Permanently removes activity logs from the selected time window.")
+            }
+
+            Section {
                 Link("Open Accessibility Settings", destination: URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
                 Button("Open Tracking Screen") {
                     model.selectedScreen = .tracking
@@ -139,6 +161,24 @@ struct DiagnosticsView: View {
         }
         .formStyle(.grouped)
         .navigationTitle("Diagnostics")
+        .confirmationDialog(
+            clearConfirmTitle,
+            isPresented: Binding(
+                get: { showClearConfirm != nil },
+                set: { if !$0 { showClearConfirm = nil } }
+            )
+        ) {
+            Button("Delete", role: .destructive) {
+                if let val = showClearConfirm {
+                    let minutes: Int? = val == -1 ? nil : val
+                    Task { await model.clearActivityLogs(minutes: minutes) }
+                    showClearConfirm = nil
+                }
+            }
+            Button("Cancel", role: .cancel) { showClearConfirm = nil }
+        } message: {
+            Text(clearConfirmTitle)
+        }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 if model.helperActualStatus != "running" {
@@ -148,6 +188,11 @@ struct DiagnosticsView: View {
                 }
             }
         }
+    }
+
+    private var clearConfirmTitle: String {
+        guard let val = showClearConfirm else { return "" }
+        return val == -1 ? "Delete all activity logs for today?" : "Delete activity logs from the last \(val) minute\(val == 1 ? "" : "s")?"
     }
 
     private func formatUptime(_ seconds: Int) -> String {

@@ -19,6 +19,8 @@ final class AgentRuntime {
         guard !isRunning else { return }
         isRunning = true
         notifier.requestAuthorizationIfNeeded()
+        // Prompt for Accessibility if not yet granted — needed to read window/tab titles
+        _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as NSDictionary)
         heartbeatTask = Task { await runHeartbeatLoop() }
         telemetryTask = Task { await runTelemetryLoop() }
         refreshTask = Task { await runRefreshLoop() }

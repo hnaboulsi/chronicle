@@ -661,6 +661,19 @@ def get_logs(limit: int = 50, db: Session = Depends(get_db)):
     logs = db.query(ActivityLog).order_by(desc(ActivityLog.timestamp)).limit(limit).all()
     return logs
 
+
+@app.post("/api/logs/clear")
+def clear_logs(payload: Dict[str, Any], db: Session = Depends(get_db)):
+    minutes = payload.get("minutes")  # int or None (None = all today)
+    if minutes is not None:
+        try:
+            minutes = int(minutes)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="minutes must be an integer")
+    count = agent_logic.clear_recent_logs(db, minutes=minutes)
+    return {"status": "cleared", "count": count}
+
+
 @app.get("/api/summary/{log_id}")
 async def get_log_summary(log_id: int, db: Session = Depends(get_db)):
     entry = db.query(ActivityLog).filter(ActivityLog.id == log_id).first()

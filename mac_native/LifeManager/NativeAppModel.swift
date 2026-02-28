@@ -217,6 +217,15 @@ final class NativeAppModel: ObservableObject {
         }
     }
 
+    func clearActivityLogs(minutes: Int?) async {
+        do {
+            let count = try await backend.clearLogs(minutes: minutes)
+            statusMessage = "Cleared \(count) log\(count == 1 ? "" : "s")."
+        } catch {
+            statusMessage = error.localizedDescription
+        }
+    }
+
     func openSystemSettings() {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
             NSWorkspace.shared.open(url)

@@ -176,6 +176,20 @@ def upsert_zone(db: Session, payload: dict, zone_id: int | None = None) -> dict:
     return zone_to_dict(zone)
 
 
+def clear_recent_logs(db: Session, minutes: int | None = None) -> int:
+    """Delete activity logs from the last `minutes` minutes (or all today if minutes is None)."""
+    if minutes is not None:
+        cutoff = datetime.utcnow() - timedelta(minutes=minutes)
+        count = db.query(ActivityLog).filter(ActivityLog.timestamp >= cutoff).delete()
+    else:
+        today = datetime.utcnow().date()
+        count = db.query(ActivityLog).filter(
+            ActivityLog.timestamp >= datetime(today.year, today.month, today.day)
+        ).delete()
+    db.commit()
+    return count
+
+
 def delete_zone(db: Session, zone_id: int) -> bool:
     zone = db.query(LocationZone).filter(LocationZone.id == zone_id).first()
     if not zone:

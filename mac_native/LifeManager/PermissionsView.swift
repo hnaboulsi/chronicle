@@ -9,7 +9,7 @@ struct PermissionsView: View {
                 PermissionRowItem(
                     icon: "hand.raised",
                     name: "Accessibility",
-                    description: "Required to read window titles and detect your active application.",
+                    description: "Required to read window and tab titles. Both Vero and the Vero Agent background helper need this — approve both when prompted.",
                     status: model.permissionSnapshot.accessibility,
                     action: {
                         model.openSystemSettings()
