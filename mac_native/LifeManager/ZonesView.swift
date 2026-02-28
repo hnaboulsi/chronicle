@@ -36,8 +36,10 @@ struct ZonesView: View {
                     TextField("Focus Hint", text: $draft.focus_mode)
                     Button("Create Zone") {
                         Task {
-                            await model.save(zone: draft)
-                            draft = .empty
+                            let success = await model.save(zone: draft)
+                            if success {
+                                draft = .empty
+                            }
                         }
                     }
                     .disabled(draft.name.isEmpty || draft.slug.isEmpty)

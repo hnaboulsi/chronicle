@@ -14,8 +14,14 @@ struct DiagnosticsView: View {
                         diagRow("Last Error", value: model.helperLastError.isEmpty ? "None" : model.helperLastError, color: model.helperLastError.isEmpty ? nil : .red)
                     }
                 } label: {
-                    Label("Background Agent", systemImage: "bolt.circle")
-                        .font(.headline)
+                    HStack {
+                        Label("Background Agent", systemImage: "bolt.circle")
+                            .font(.headline)
+                        Spacer()
+                        Button(action: { Task { await model.refreshAll() } }) {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                    }
                 }
 
                 // Backend

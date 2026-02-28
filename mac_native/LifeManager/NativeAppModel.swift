@@ -125,21 +125,29 @@ final class NativeAppModel: ObservableObject {
         }
     }
 
-    func save(zone: ZoneRecord) async {
+    @discardableResult
+    func save(zone: ZoneRecord) async -> Bool {
         do {
             try await backend.save(zone: zone)
+            statusMessage = "Zone saved."
             await refreshAll()
+            return true
         } catch {
-            statusMessage = error.localizedDescription
+            statusMessage = "Save failed: \(error.localizedDescription)"
+            return false
         }
     }
 
-    func delete(zone: ZoneRecord) async {
+    @discardableResult
+    func delete(zone: ZoneRecord) async -> Bool {
         do {
             try await backend.delete(zone: zone)
+            statusMessage = "Zone deleted."
             await refreshAll()
+            return true
         } catch {
-            statusMessage = error.localizedDescription
+            statusMessage = "Delete failed: \(error.localizedDescription)"
+            return false
         }
     }
 
