@@ -3,7 +3,7 @@ import EventKit
 import Foundation
 import UserNotifications
 
-struct PermissionSnapshot {
+struct PermissionSnapshot: Equatable {
     let accessibility: String
     let notifications: String
     let calendar: String

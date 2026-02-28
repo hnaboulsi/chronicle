@@ -5,6 +5,8 @@ import Foundation
 
 @MainActor
 final class AgentRuntime {
+    static let shared = AgentRuntime()
+
     private let backend = BackendClient.shared
     private let store = AppGroupStore.shared
     private let notifier = AgentNotificationManager.shared
@@ -83,13 +85,6 @@ final class AgentRuntime {
     }
 
     private func sendHeartbeat() async {
-        guard store.isConfigured else {
-            if !store.helperLastError.isEmpty {
-                store.helperLastError = ""
-            }
-            return
-        }
-
         do {
             let response = try await backend.sendHeartbeat(
                 clientID: store.clientID,
@@ -120,10 +115,6 @@ final class AgentRuntime {
     }
 
     private func sendTelemetry() async {
-        guard store.isConfigured else {
-            return
-        }
-
         let snapshot = captureSnapshot()
         do {
             let response = try await backend.sendTelemetry(
@@ -145,10 +136,6 @@ final class AgentRuntime {
     }
 
     private func refreshBackendState() async {
-        guard store.isConfigured else {
-            return
-        }
-
         do {
             _ = try await backend.fetchState()
 

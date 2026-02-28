@@ -18,9 +18,10 @@ enum LegacyConfigImporter {
 
         if let urlString = try? String(contentsOf: backendURL, encoding: .utf8)
             .trimmingCharacters(in: .whitespacesAndNewlines),
-           let url = URL(string: urlString),
-           !urlString.isEmpty {
+           let url = AppGroupStore.validatedCloudBackendURL(from: urlString) {
             store.backendURL = url
+        } else {
+            store.backendURL = nil
         }
 
         if let authString = try? String(contentsOf: auth, encoding: .utf8)
@@ -34,9 +35,25 @@ enum LegacyConfigImporter {
     }
 
     static func isLegacyPythonAgentRunning() -> Bool {
+        let patterns = [
+            "menubar_app.py",
+            "mac_client",
+            "life_manager",
+            "Python.app.*menubar_app.py",
+            "Python.app.*mac_client",
+        ]
+        for pattern in patterns {
+            if isPythonProcessRunning(pattern: pattern) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private static func isPythonProcessRunning(pattern: String) -> Bool {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
-        process.arguments = ["-af", "menubar_app.py"]
+        process.arguments = ["-af", pattern]
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = Pipe()
@@ -49,6 +66,23 @@ enum LegacyConfigImporter {
             return !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         } catch {
             return false
+        }
+    }
+
+    static func killLegacyPythonAgent() {
+        let patterns = [
+            "menubar_app.py",
+            "mac_client",
+            "life_manager",
+            "Python.app.*menubar_app.py",
+            "Python.app.*mac_client",
+        ]
+        for pattern in patterns {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+            process.arguments = ["-f", pattern]
+            try? process.run()
+            process.waitUntilExit()
         }
     }
 }

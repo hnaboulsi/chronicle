@@ -53,6 +53,18 @@ final class NativeAppModel: ObservableObject {
     @Published var permissionSnapshot = PermissionSnapshot(accessibility: "pending", notifications: "pending", calendar: "pending")
     @Published var statusMessage = ""
     @Published var notificationLevel = AppGroupStore.shared.notificationLevel
+    @Published var lastSavedSettings = BackendSettings(
+        polling_interval_seconds: 60,
+        tracking_enabled: true,
+        backend_mode: "railway_primary",
+        ai_provider: "auto",
+        llm_mode: "balanced",
+        hourly_summaries_enabled: true,
+        classification_interval_seconds: 300,
+        llm_daily_cap: 200,
+        user_timezone: TimeZone.current.identifier
+    )
+    @Published var lastSavedNotificationLevel = AppGroupStore.shared.notificationLevel
 
     // Diagnostic props (reactive, refreshed from AppGroupStore on each cycle)
     @Published var helperDesiredState: String = AppGroupStore.shared.helperDesiredState
@@ -63,8 +75,11 @@ final class NativeAppModel: ObservableObject {
     let store = AppGroupStore.shared
 
     private var refreshTimer: AnyCancellable?
+    private var didStart = false
 
     func startup() async {
+        guard !didStart else { return }
+        didStart = true
         await refreshAll()
         // Auto-refresh every 30 seconds so the UI stays current
         refreshTimer = Timer.publish(every: 30, on: .main, in: .common)
@@ -98,6 +113,8 @@ final class NativeAppModel: ObservableObject {
             store.aiProvider = settings.ai_provider
             store.pollingInterval = settings.polling_interval_seconds
             store.classificationInterval = settings.classification_interval_seconds
+            lastSavedSettings = settings
+            lastSavedNotificationLevel = notificationLevel
 
             // Sync diagnostic props from AppGroupStore
             helperDesiredState = store.helperDesiredState
@@ -118,6 +135,8 @@ final class NativeAppModel: ObservableObject {
             store.pollingInterval = settings.polling_interval_seconds
             store.classificationInterval = settings.classification_interval_seconds
             store.notificationLevel = notificationLevel
+            lastSavedSettings = settings
+            lastSavedNotificationLevel = notificationLevel
             statusMessage = "Saved."
             await refreshAll()
         } catch {
@@ -129,11 +148,11 @@ final class NativeAppModel: ObservableObject {
     func save(zone: ZoneRecord) async -> Bool {
         do {
             try await backend.save(zone: zone)
-            statusMessage = "Zone saved."
+            statusMessage = "Saved."
             await refreshAll()
             return true
         } catch {
-            statusMessage = "Save failed: \(error.localizedDescription)"
+            statusMessage = error.localizedDescription
             return false
         }
     }
@@ -142,11 +161,11 @@ final class NativeAppModel: ObservableObject {
     func delete(zone: ZoneRecord) async -> Bool {
         do {
             try await backend.delete(zone: zone)
-            statusMessage = "Zone deleted."
+            statusMessage = "Deleted."
             await refreshAll()
             return true
         } catch {
-            statusMessage = "Delete failed: \(error.localizedDescription)"
+            statusMessage = error.localizedDescription
             return false
         }
     }
@@ -172,9 +191,11 @@ final class NativeAppModel: ObservableObject {
     func openWebDashboard() {
         if let target = state.backend_target_url, let url = URL(string: target + "/dashboard/index.html") {
             NSWorkspace.shared.open(url)
-        } else {
-            let url = store.backendURL.appendingPathComponent("dashboard/index.html")
+        } else if let baseURL = store.backendURL {
+            let url = baseURL.appendingPathComponent("dashboard/index.html")
             NSWorkspace.shared.open(url)
+        } else {
+            statusMessage = BackendError.notConfigured.localizedDescription
         }
     }
 

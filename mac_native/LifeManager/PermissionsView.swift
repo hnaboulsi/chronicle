@@ -4,81 +4,105 @@ struct PermissionsView: View {
     @EnvironmentObject private var model: NativeAppModel
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                GroupBox {
-                    VStack(alignment: .leading, spacing: 12) {
-                        permissionRow(name: "Accessibility", status: model.permissionSnapshot.accessibility, description: "Required for reading window titles.")
-                        Divider()
-                        permissionRow(name: "Notifications", status: model.permissionSnapshot.notifications, description: "Enables check-in prompts and focus nudges.")
-                        Divider()
-                        permissionRow(name: "Calendar", status: model.permissionSnapshot.calendar, description: "Allows syncing productive sessions to Apple Calendar.")
+        Form {
+            Section {
+                PermissionRowItem(
+                    icon: "hand.raised",
+                    name: "Accessibility",
+                    description: "Required to read window titles and detect your active application.",
+                    status: model.permissionSnapshot.accessibility,
+                    action: {
+                        model.openSystemSettings()
                     }
-                } label: {
-                    Label("Permission Status", systemImage: "lock.shield")
-                        .font(.headline)
-                }
+                )
 
-                GroupBox {
-                    VStack(spacing: 10) {
-                        Button(action: { model.openSystemSettings() }) {
-                            Label("Open Accessibility Settings", systemImage: "hand.raised")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.bordered)
+                PermissionRowItem(
+                    icon: "bell.badge",
+                    name: "Notifications",
+                    description: "Enables check-in prompts, focus nudges, and activity alerts.",
+                    status: model.permissionSnapshot.notifications,
+                    action: nil
+                )
 
-                        Button(action: { requestCalendarAccess() }) {
-                            Label("Request Calendar Access", systemImage: "calendar.badge.plus")
-                                .frame(maxWidth: .infinity)
+                PermissionRowItem(
+                    icon: "calendar.badge.plus",
+                    name: "Calendar",
+                    description: "Syncs your productive sessions to Apple Calendar.",
+                    status: model.permissionSnapshot.calendar,
+                    action: {
+                        Task {
+                            await CalendarSyncEngine.shared.requestAccessIfNeeded()
+                            model.permissionSnapshot = await PermissionSnapshot.capture()
                         }
-                        .buttonStyle(.bordered)
-
-                        Button(action: {
-                            Task { model.permissionSnapshot = await PermissionSnapshot.capture() }
-                        }) {
-                            Label("Refresh Permissions", systemImage: "arrow.clockwise")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.bordered)
                     }
-                } label: {
-                    Label("Actions", systemImage: "gearshape")
-                        .font(.headline)
-                }
+                )
+            } header: {
+                Text("System Permissions")
+            } footer: {
+                Text("All permissions can be managed in System Settings under Security & Privacy.")
             }
-            .padding(24)
-        }
-    }
 
-    private func permissionRow(name: String, status: String, description: String) -> some View {
-        HStack {
+            Section {
+                Button(action: { model.openSystemSettings() }) {
+                    Label("Open System Preferences", systemImage: "gear")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.bordered)
+
+                Button(action: {
+                    Task { model.permissionSnapshot = await PermissionSnapshot.capture() }
+                }) {
+                    Label("Refresh Status", systemImage: "arrow.clockwise")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.bordered)
+            } header: {
+                Text("Actions")
+            }
+        }
+        .formStyle(.grouped)
+        .navigationTitle("Permissions")
+        .animation(.spring(), value: model.permissionSnapshot)
+    }
+}
+
+private struct PermissionRowItem: View {
+    let icon: String
+    let name: String
+    let description: String
+    let status: String
+    let action: (() -> Void)?
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(permissionColor(status))
+                .frame(width: 24)
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(name)
-                    .font(.body.weight(.medium))
+                    .font(.subheadline.weight(.semibold))
                 Text(description)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            Spacer()
-            Text(status.capitalized)
-                .font(.callout.weight(.semibold))
-                .foregroundStyle(permissionColor(status))
-        }
-    }
 
-    private func permissionColor(_ status: String) -> Color {
-        switch status.lowercased() {
-        case "granted": return .green
-        case "denied", "restricted": return .red
-        case "pending", "not determined": return .orange
-        default: return .secondary
-        }
-    }
+            Spacer(minLength: 16)
 
-    private func requestCalendarAccess() {
-        Task {
-            await CalendarSyncEngine.shared.requestAccessIfNeeded()
-            model.permissionSnapshot = await PermissionSnapshot.capture()
+            VStack(spacing: 6) {
+                StatusBadge(label: status.capitalized, color: permissionColor(status))
+                if let action = action {
+                    if status != "granted" {
+                        Button(action: action) {
+                            Text("Request")
+                                .font(.caption.weight(.semibold))
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+            }
         }
+        .padding(.vertical, 4)
     }
 }

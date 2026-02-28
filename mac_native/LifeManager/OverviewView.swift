@@ -5,124 +5,163 @@ struct OverviewView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                // Status at a glance
-                GroupBox {
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack {
-                            Circle()
-                                .fill(statusDotColor)
-                                .frame(width: 10, height: 10)
-                            LabeledContent("Backend") {
-                                Text(model.health?.status.capitalized ?? "Unknown")
-                            }
-                        }
-                        LabeledContent("Mac Status") {
-                            Text(model.state.mac_status?.replacingOccurrences(of: "_", with: " ").capitalized ?? "Unknown")
-                                .foregroundStyle(macStatusColor)
-                        }
-                        LabeledContent("Mac Detail") {
-                            Text(model.state.mac_status_reason ?? "Waiting for helper state")
-                                .foregroundStyle(.secondary)
-                        }
-                        LabeledContent("Last Heartbeat") {
-                            Text(ageString(model.state.last_mac_heartbeat_age_seconds))
-                        }
-                        LabeledContent("Last Telemetry") {
-                            Text(ageString(model.state.last_mac_snapshot_age_seconds))
-                        }
-                    }
-                } label: {
-                    Label("System", systemImage: "waveform.path.ecg")
-                        .font(.headline)
-                }
-
-                // Activity
-                GroupBox {
-                    VStack(alignment: .leading, spacing: 10) {
-                        LabeledContent("Current Activity") {
-                            Text(model.state.current_activity_summary ?? model.state.current_activity_category ?? "Unknown")
-                        }
-                        LabeledContent("iPhone Location") {
-                            Text(model.state.current_location ?? "No recent location")
-                                .foregroundStyle(.secondary)
-                        }
-                        LabeledContent("Sleep Status") {
-                            Text(model.state.sleep_status_note ?? "Unknown")
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                } label: {
-                    Label("Activity", systemImage: "figure.walk")
-                        .font(.headline)
-                }
-
-                // Connected to
-                GroupBox {
-                    LabeledContent("Server") {
-                        Text(model.store.backendURL.absoluteString)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                } label: {
-                    Label("Connection", systemImage: "network")
-                        .font(.headline)
-                }
-
-                // Recent Chat
-                GroupBox {
-                    if model.chatTurns.isEmpty {
-                        Text("No recent chat.")
-                            .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: Spacing.xl) {
+                VStack(spacing: Spacing.lg) {
+                    if model.health == nil {
+                        loadingCards
                     } else {
-                        VStack(alignment: .leading, spacing: 10) {
-                            ForEach(Array(model.chatTurns.suffix(4).reversed()), id: \.self) { turn in
-                                VStack(alignment: .leading, spacing: 4) {
+                        summaryCards
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: Spacing.md) {
+                    SectionHeaderLabel("Recent Chat", icon: "bubble.left.and.bubble.right", color: .brand)
+                        .padding(.horizontal, Spacing.lg)
+
+                    if model.chatTurns.isEmpty {
+                        HStack {
+                            Spacer()
+                            VStack(spacing: Spacing.sm) {
+                                Image(systemName: "bubble.left.and.bubble.right")
+                                    .font(.system(size: 28))
+                                    .foregroundStyle(.secondary)
+                                Text("No conversations yet")
+                                    .foregroundStyle(.secondary)
+                                    .font(.subheadline)
+                            }
+                            Spacer()
+                        }
+                        .padding(.vertical, 32)
+                    } else {
+                        VStack(spacing: Spacing.md) {
+                            ForEach(Array(model.chatTurns.suffix(5).reversed()), id: \.self) { turn in
+                                VStack(spacing: Spacing.xs) {
+                                    ChatBubble(text: turn.user, isUser: true)
+                                    ChatBubble(text: turn.reply, isUser: false)
                                     Text(turn.time)
-                                        .font(.caption)
+                                        .font(.caption2)
                                         .foregroundStyle(.tertiary)
-                                    Text("You: \(turn.user)")
-                                        .font(.callout)
-                                    Text("Agent: \(turn.reply)")
-                                        .font(.callout)
-                                        .foregroundStyle(.secondary)
-                                }
-                                if turn != model.chatTurns.suffix(4).reversed().last {
-                                    Divider()
+                                        .frame(maxWidth: .infinity)
                                 }
                             }
                         }
+                        .padding(.horizontal, Spacing.lg)
                     }
-                } label: {
-                    Label("Recent Chat", systemImage: "bubble.left.and.bubble.right")
-                        .font(.headline)
                 }
+
             }
-            .padding(24)
+            .padding(Spacing.xl)
         }
+        .navigationTitle("Overview")
     }
 
     private func ageString(_ value: Int?) -> String {
         guard let value else { return "Unknown" }
         if value < 60 { return "\(value)s ago" }
-        return "\(value / 60)m ago"
+        if value < 3600 { return "\(value / 60)m ago" }
+        if value < 86_400 { return "\(value / 3600)h ago" }
+        return "\(value / 86_400)d ago"
     }
 
-    private var statusDotColor: Color {
-        switch model.health?.status {
-        case "ok": return .green
-        case "degraded": return .orange
-        default: return .red
+    private func formatUptime(_ seconds: Int) -> String {
+        let days = seconds / 86_400
+        let hours = (seconds % 86_400) / 3600
+        let minutes = (seconds % 3600) / 60
+        if days > 0 {
+            return "\(days)d \(hours)h"
+        }
+        if hours > 0 {
+            return "\(hours)h \(minutes)m"
+        }
+        return "\(minutes)m"
+    }
+
+    @ViewBuilder
+    private var summaryCards: some View {
+        DashboardCard(
+            title: "System Status",
+            icon: "waveform.path.ecg",
+            iconColor: .green,
+            tint: healthColor(model.health?.status) == .green ? .greenTint : (healthColor(model.health?.status) == .orange ? .orangeTint : .redTint)
+        ) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    StatusDot(
+                        color: healthColor(model.health?.status),
+                        label: model.health?.status.capitalized ?? "Unknown",
+                        isPulsing: healthColor(model.health?.status) == .green
+                    )
+                    Spacer()
+                    StatusBadge(
+                        label: (model.state.mac_status ?? "unknown").replacingOccurrences(of: "_", with: " ").capitalized,
+                        color: macStatusColor(model.state.mac_status)
+                    )
+                }
+                Divider()
+                InfoRow(label: "Detail", value: model.state.mac_status_reason ?? "Waiting for agent")
+                InfoRow(label: "Uptime", value: formatUptime(model.health?.uptime_seconds ?? 0))
+            }
+        }
+
+        DashboardCard(
+            title: "Current Activity",
+            icon: "figure.walk",
+            iconColor: .blue,
+            tint: .blueTint
+        ) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(model.state.current_activity_summary ?? model.state.current_activity_category ?? "Unknown")
+                    .font(.system(.body, design: .rounded))
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.primary)
+                Text("Last seen \(ageString(model.state.last_mac_snapshot_age_seconds))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Divider()
+                InfoRow(label: "Location", value: model.state.current_location ?? "No recent data")
+                InfoRow(label: "Sleep", value: model.state.sleep_status_note ?? "Unknown")
+            }
+        }
+
+        DashboardCard(
+            title: "Connection",
+            icon: "network",
+            iconColor: .indigo,
+            tint: .indigoTint
+        ) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(model.store.backendURL?.absoluteString ?? "Not configured")
+                    .font(.system(.caption, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .foregroundStyle(.secondary)
+                Divider()
+                HStack {
+                    Text("Last Sync")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text(ageString(model.state.last_mac_heartbeat_age_seconds))
+                        .font(.caption)
+                }
+            }
         }
     }
 
-    private var macStatusColor: Color {
-        switch model.state.mac_status {
-        case "online", "online_idle": return .green
-        case "paused", "degraded": return .orange
-        case "offline": return .red
-        default: return .secondary
+    @ViewBuilder
+    private var loadingCards: some View {
+        ForEach(0 ..< 3, id: \.self) { _ in
+            DashboardCard(
+                title: "Loading",
+                icon: "waveform.path.ecg",
+                iconColor: .indigo,
+                tint: .indigoTint
+            ) {
+                VStack(spacing: Spacing.sm) {
+                    ShimmerView(height: 18, cornerRadius: 8)
+                    ShimmerView(height: 14, cornerRadius: 8)
+                    ShimmerView(height: 14, cornerRadius: 8)
+                }
+            }
         }
     }
 }

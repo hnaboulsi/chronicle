@@ -1,6 +1,11 @@
 import Foundation
 
-struct BackendSettings: Codable {
+struct BackendConfiguration {
+    let baseURL: URL
+    let authValue: String
+}
+
+struct BackendSettings: Codable, Equatable {
     var polling_interval_seconds: Int
     var tracking_enabled: Bool
     var backend_mode: String

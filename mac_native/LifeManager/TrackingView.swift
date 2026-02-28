@@ -4,96 +4,129 @@ struct TrackingView: View {
     @EnvironmentObject private var model: NativeAppModel
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                // Connection
-                GroupBox {
-                    VStack(alignment: .leading, spacing: 8) {
-                        LabeledContent("Backend URL") {
-                            Text(model.store.backendURL.absoluteString)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                        }
-                        LabeledContent("Auth") {
-                            Text(model.store.authValue.isEmpty ? "Not configured" : "Configured")
-                                .foregroundStyle(model.store.authValue.isEmpty ? .orange : .green)
-                        }
-                    }
-                } label: {
-                    Label("Connection", systemImage: "network")
-                        .font(.headline)
+        Form {
+            Section("Connection") {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Backend")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(model.store.backendURL?.absoluteString ?? "Not configured")
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
                 }
-
-                // Tracking Settings
-                GroupBox {
-                    Form {
-                        Toggle("Tracking Enabled", isOn: $model.settings.tracking_enabled)
-                        Stepper(value: $model.settings.polling_interval_seconds, in: 60 ... 3600, step: 60) {
-                            Text("Telemetry Interval: \(model.settings.polling_interval_seconds)s")
-                        }
-                        Stepper(value: $model.settings.classification_interval_seconds, in: 300 ... 3600, step: 60) {
-                            Text("Classification Interval: \(model.settings.classification_interval_seconds)s")
-                        }
-                    }
-                    .formStyle(.columns)
-                } label: {
-                    Label("Tracking", systemImage: "dial.high")
-                        .font(.headline)
-                }
-
-                // AI Settings
-                GroupBox {
-                    Form {
-                        Picker("AI Provider", selection: $model.settings.ai_provider) {
-                            Text("Auto").tag("auto")
-                            Text("Gemini").tag("gemini")
-                            Text("OpenAI").tag("openai")
-                        }
-                        Picker("LLM Mode", selection: $model.settings.llm_mode) {
-                            Text("Ultra Save").tag("ultra_save")
-                            Text("Balanced").tag("balanced")
-                            Text("Quality").tag("quality")
-                        }
-                        Stepper(value: $model.settings.llm_daily_cap, in: 1 ... 500, step: 1) {
-                            Text("Daily AI Cap: \(model.settings.llm_daily_cap)")
-                        }
-                        Picker("Notification Level", selection: $model.notificationLevel) {
-                            ForEach(NotificationLevel.allCases) { level in
-                                Text(level.rawValue.capitalized).tag(level)
-                            }
-                        }
-                    }
-                    .formStyle(.columns)
-                } label: {
-                    Label("AI & Notifications", systemImage: "brain")
-                        .font(.headline)
-                }
-
-                // Actions
-                GroupBox {
-                    VStack(spacing: 10) {
-                        Button(action: { Task { await model.saveSettings() } }) {
-                            Text("Save Settings")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.borderedProminent)
-
-                        HStack(spacing: 10) {
-                            Button("Enable Agent") { model.enableHelper() }
-                                .buttonStyle(.bordered)
-                            Button("Disable Agent") { model.disableHelper() }
-                                .buttonStyle(.bordered)
-                            Button("Repair Agent") { model.repairHelper() }
-                                .buttonStyle(.bordered)
-                        }
-                    }
-                } label: {
-                    Label("Background Agent", systemImage: "gearshape.2")
-                        .font(.headline)
+                HStack {
+                    Text("Authentication")
+                    Spacer()
+                    StatusBadge(
+                        label: model.store.authValue.isEmpty ? "Not Set" : "Configured",
+                        color: model.store.authValue.isEmpty ? .orange : .green
+                    )
                 }
             }
-            .padding(24)
+
+            Section {
+                Toggle("Tracking Enabled", isOn: $model.settings.tracking_enabled)
+                Stepper(value: $model.settings.polling_interval_seconds, in: 60 ... 3600, step: 60) {
+                    HStack {
+                        Text("Activity Check Interval")
+                        Spacer()
+                        Text("\(model.settings.polling_interval_seconds)s")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Stepper(value: $model.settings.classification_interval_seconds, in: 300 ... 3600, step: 60) {
+                    HStack {
+                        Text("Classification Interval")
+                        Spacer()
+                        Text("\(model.settings.classification_interval_seconds)s")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } header: {
+                Text("Tracking")
+            } footer: {
+                Text("How frequently the app checks your active window and sends telemetry.")
+            }
+
+            Section {
+                Picker("AI Provider", selection: $model.settings.ai_provider) {
+                    Text("Auto").tag("auto")
+                    Text("Gemini").tag("gemini")
+                    Text("OpenAI").tag("openai")
+                }
+                Picker("Mode", selection: $model.settings.llm_mode) {
+                    Text("Ultra Save").tag("ultra_save")
+                    Text("Balanced").tag("balanced")
+                    Text("Quality").tag("quality")
+                }
+                Stepper(value: $model.settings.llm_daily_cap, in: 1 ... 500, step: 1) {
+                    HStack {
+                        Text("Daily AI Calls")
+                        Spacer()
+                        Text("\(model.settings.llm_daily_cap)")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Picker("Notifications", selection: $model.notificationLevel) {
+                    ForEach(NotificationLevel.allCases) { level in
+                        Text(level.rawValue.capitalized).tag(level)
+                    }
+                }
+            } header: {
+                Text("AI & Intelligence")
+            } footer: {
+                Text("Controls how often AI analyzes your activity and how verbose notifications are.")
+            }
+
+            Section {
+                HStack {
+                    Text("Status")
+                    Spacer()
+                    StatusBadge(
+                        label: model.helperDesiredState.capitalized,
+                        color: model.helperDesiredState == "enabled" ? .green : .orange
+                    )
+                }
+                if !model.helperLastError.isEmpty {
+                    HStack {
+                        Text("Last Error")
+                            .foregroundStyle(.red)
+                        Spacer()
+                        Text(model.helperLastError)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                }
+            } header: {
+                Text("Background Agent")
+            } footer: {
+                Text("The background agent runs silently and sends heartbeats every 60 seconds.")
+            }
         }
+        .formStyle(.grouped)
+        .navigationTitle(isDirty ? "Tracking *" : "Tracking")
+        .animation(.easeInOut(duration: 0.2), value: model.settings)
+        .animation(.easeInOut(duration: 0.2), value: model.notificationLevel)
+        .toolbar {
+            ToolbarItemGroup(placement: .primaryAction) {
+                Menu {
+                    Button("Enable", action: { model.enableHelper() })
+                    Button("Disable", action: { model.disableHelper() })
+                    Button("Repair", action: { model.repairHelper() })
+                } label: {
+                    Label("Agent", systemImage: "gearshape.2")
+                }
+
+                Button(action: { Task { await model.saveSettings() } }) {
+                    Label("Save", systemImage: "checkmark")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!isDirty)
+            }
+        }
+    }
+
+    private var isDirty: Bool {
+        model.settings != model.lastSavedSettings || model.notificationLevel != model.lastSavedNotificationLevel
     }
 }

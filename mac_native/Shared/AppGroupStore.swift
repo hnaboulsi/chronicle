@@ -7,17 +7,41 @@ final class AppGroupStore {
 
     private init() {}
 
-    var backendURL: URL {
+    var backendURL: URL? {
         get {
             if let string = defaults?.string(forKey: "backend_url"),
                let url = URL(string: string) {
                 return url
             }
-            return AppConstants.defaultBackendURL
+            return nil
         }
         set {
-            defaults?.set(newValue.absoluteString, forKey: "backend_url")
+            defaults?.set(newValue?.absoluteString, forKey: "backend_url")
         }
+    }
+
+    var validatedBackendURL: URL? {
+        guard let rawValue = defaults?.string(forKey: "backend_url") else {
+            return nil
+        }
+        return Self.validatedCloudBackendURL(from: rawValue)
+    }
+
+    var backendConfiguration: BackendConfiguration? {
+        guard let baseURL = validatedBackendURL else {
+            return nil
+        }
+
+        let trimmedAuth = authValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedAuth.isEmpty else {
+            return nil
+        }
+
+        return BackendConfiguration(baseURL: baseURL, authValue: trimmedAuth)
+    }
+
+    var isConfigured: Bool {
+        backendConfiguration != nil
     }
 
     var authValue: String {
@@ -92,6 +116,11 @@ final class AppGroupStore {
         set { defaults?.set(newValue, forKey: "helper_last_seen_at") }
     }
 
+    var legacyPythonWarningShown: Bool {
+        get { defaults?.bool(forKey: "legacy_python_warning_shown") ?? false }
+        set { defaults?.set(newValue, forKey: "legacy_python_warning_shown") }
+    }
+
     var clientID: String {
         if let value = defaults?.string(forKey: "client_id"), !value.isEmpty {
             return value
@@ -99,5 +128,43 @@ final class AppGroupStore {
         let value = UUID().uuidString
         defaults?.set(value, forKey: "client_id")
         return value
+    }
+
+    func clearInvalidConfiguration() {
+        guard let rawValue = defaults?.string(forKey: "backend_url"), !rawValue.isEmpty else {
+            return
+        }
+
+        if Self.validatedCloudBackendURL(from: rawValue) == nil {
+            backendURL = nil
+        }
+    }
+
+    static func validatedCloudBackendURL(from value: String) -> URL? {
+        let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedValue.isEmpty, let url = URL(string: trimmedValue) else {
+            return nil
+        }
+        return isAllowedCloudBackendURL(url) ? url : nil
+    }
+
+    static func isAllowedCloudBackendURL(_ url: URL) -> Bool {
+        guard url.scheme?.lowercased() == "https" else {
+            return false
+        }
+
+        guard let host = url.host?.lowercased(), !host.isEmpty else {
+            return false
+        }
+
+        if ["localhost", "127.0.0.1", "0.0.0.0", "::1"].contains(host) {
+            return false
+        }
+
+        if host.hasSuffix(".local") {
+            return false
+        }
+
+        return true
     }
 }

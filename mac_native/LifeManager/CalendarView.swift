@@ -4,70 +4,127 @@ struct CalendarView: View {
     @EnvironmentObject private var model: NativeAppModel
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                GroupBox {
-                    VStack(alignment: .leading, spacing: 10) {
-                        LabeledContent("Recommended") {
-                            Text("Use an iCloud-backed \"Life Manager\" calendar")
+        VStack(spacing: 0) {
+            // Setup Section
+            Form {
+                Section("Setup Status") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Recommended")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Text("iCloud-backed Life Manager calendar")
+                                .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
-                        LabeledContent("Detected") {
-                            Text("\(CalendarSyncEngine.shared.preferredCalendarName()) via \(CalendarSyncEngine.shared.targetDescription())")
-                        }
-                        LabeledContent("Permission") {
-                            Text(model.permissionSnapshot.calendar.capitalized)
-                                .foregroundStyle(model.permissionSnapshot.calendar == "granted" ? .green : .orange)
-                        }
-                        LabeledContent("Setup Hint") {
-                            Text(CalendarSyncEngine.shared.setupRecommendation())
+                        HStack {
+                            Text("Detected")
+                                .font(.caption)
                                 .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.trailing)
+                            Spacer()
+                            Text("\(CalendarSyncEngine.shared.preferredCalendarName()) (\(CalendarSyncEngine.shared.targetDescription()))")
+                                .font(.caption)
+                        }
+                        HStack {
+                            Text("Permission")
+                            Spacer()
+                            StatusBadge(
+                                label: model.permissionSnapshot.calendar.capitalized,
+                                color: permissionColor(model.permissionSnapshot.calendar)
+                            )
                         }
                     }
-                } label: {
-                    Label("Calendar Setup", systemImage: "calendar.badge.checkmark")
-                        .font(.headline)
-                }
+                    .padding(.vertical, 4)
 
-                GroupBox {
-                    if model.calendarJobs.isEmpty {
-                        Text("No pending calendar jobs.")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        VStack(alignment: .leading, spacing: 8) {
-                            ForEach(model.calendarJobs, id: \.self) { job in
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(job.title)
-                                            .font(.body.weight(.medium))
-                                        Text("\(job.kind) \u{2022} attempts: \(job.attempts)")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                        if !job.last_error.isEmpty {
-                                            Text(job.last_error)
-                                                .font(.caption)
-                                                .foregroundStyle(.red)
-                                        }
-                                    }
-                                    Spacer()
-                                    Text(job.status.capitalized)
-                                        .font(.caption.weight(.semibold))
-                                        .foregroundStyle(job.status == "done" ? .green : (job.status == "failed" ? .red : .orange))
-                                }
-                                .padding(.vertical, 4)
-                                if job != model.calendarJobs.last {
-                                    Divider()
-                                }
+                    if model.permissionSnapshot.calendar != "granted" {
+                        Button(action: {
+                            Task {
+                                await CalendarSyncEngine.shared.requestAccessIfNeeded()
+                                model.permissionSnapshot = await PermissionSnapshot.capture()
                             }
+                        }) {
+                            Label("Request Calendar Access", systemImage: "calendar.badge.plus")
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
+                        .buttonStyle(.bordered)
                     }
-                } label: {
-                    Label("Pending Jobs", systemImage: "tray.full")
-                        .font(.headline)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Setup Recommendation")
+                            .font(.caption.weight(.semibold))
+                        Text(CalendarSyncEngine.shared.setupRecommendation())
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 4)
                 }
             }
-            .padding(24)
+            .formStyle(.grouped)
+
+            // Jobs Section
+            List {
+                if model.calendarJobs.isEmpty {
+                    Section {
+                        HStack {
+                            Spacer()
+                            VStack(spacing: 8) {
+                                Image(systemName: "calendar.badge.checkmark")
+                                    .font(.system(size: 28))
+                                    .foregroundStyle(.green)
+                                Text("No Pending Jobs")
+                                    .foregroundStyle(.secondary)
+                                    .font(.subheadline)
+                            }
+                            Spacer()
+                        }
+                        .padding(.vertical, 32)
+                    }
+                } else {
+                    Section("Pending Jobs") {
+                        ForEach(model.calendarJobs, id: \.self) { job in
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(job.title)
+                                        .font(.subheadline.weight(.semibold))
+                                    HStack(spacing: 4) {
+                                        Text(job.kind)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                        Text("•")
+                                            .foregroundStyle(.secondary)
+                                        Text("\(job.attempts) attempt\(job.attempts == 1 ? "" : "s")")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    if !job.last_error.isEmpty {
+                                        Text(job.last_error)
+                                            .font(.caption)
+                                            .foregroundStyle(.red)
+                                            .lineLimit(2)
+                                    }
+                                }
+                                Spacer(minLength: 16)
+                                StatusBadge(
+                                    label: job.status.capitalized,
+                                    color: jobStatusColor(job.status)
+                                )
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                }
+            }
+            .listStyle(.inset)
+        }
+        .navigationTitle("Calendar")
+    }
+
+    private func jobStatusColor(_ status: String) -> Color {
+        switch status {
+        case "done": return .green
+        case "failed": return .red
+        default: return .orange
         }
     }
 }

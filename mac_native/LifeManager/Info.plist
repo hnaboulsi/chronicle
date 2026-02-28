@@ -6,8 +6,6 @@
     <string>Life Manager</string>
     <key>CFBundleName</key>
     <string>Life Manager</string>
-    <key>CFBundleIconName</key>
-    <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
     <string>com.naboulsi.lifemanager</string>
     <key>CFBundleURLTypes</key>

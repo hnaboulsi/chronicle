@@ -2,104 +2,205 @@ import SwiftUI
 
 struct ZonesView: View {
     @EnvironmentObject private var model: NativeAppModel
-    @State private var draft = ZoneRecord.empty
+    @State private var showingAddZone = false
+    @State private var pendingDeleteZone: ZoneRecord?
+    @State private var showDeleteConfirmation = false
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                Text("Zones drive the iPhone geofence model. Built-in zones can be edited but not deleted.")
-                    .foregroundStyle(.secondary)
-
-                VStack(alignment: .leading, spacing: 12) {
-                    ForEach(model.zones, id: \.id) { zone in
-                        ZoneEditorCard(zone: zone)
-                            .environmentObject(model)
-                    }
-                }
-
-                Divider()
-
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Add Custom Zone").font(.headline)
-                    TextField("Name", text: $draft.name)
-                    TextField("Slug", text: $draft.slug)
-                    Stepper(value: $draft.radius_meters, in: 25 ... 500, step: 5) {
-                        Text("Radius: \(draft.radius_meters)m")
-                    }
-                    Picker("Type", selection: $draft.zone_type) {
-                        Text("Custom").tag("custom")
-                        Text("Home").tag("home")
-                        Text("Lecture").tag("lecture")
-                        Text("Study").tag("study")
-                        Text("Gym").tag("gym")
-                    }
-                    TextField("Focus Hint", text: $draft.focus_mode)
-                    Button("Create Zone") {
-                        Task {
-                            let success = await model.save(zone: draft)
-                            if success {
-                                draft = .empty
-                            }
+        List {
+            if !model.zones.isEmpty {
+                Section {
+                    ForEach(model.zones, id: \.self) { zone in
+                        NavigationLink(value: zone) {
+                            ZoneRowView(zone: zone)
                         }
                     }
-                    .disabled(draft.name.isEmpty || draft.slug.isEmpty)
+                    .onDelete { indices in
+                        guard let index = indices.first else { return }
+                        let zone = model.zones[index]
+                        if !(zone.is_default ?? false) {
+                            pendingDeleteZone = zone
+                            showDeleteConfirmation = true
+                        }
+                    }
+                } header: {
+                    Text("Your Zones")
+                } footer: {
+                    Text("Built-in zones (marked as Default) can be edited but not deleted. Swipe to delete custom zones.")
                 }
             }
-            .padding(24)
+        }
+        .listStyle(.inset)
+        .animation(.easeInOut, value: model.zones)
+        .navigationTitle("Zones")
+        .toolbar {
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button(action: { showingAddZone = true }) {
+                    Label("Add Zone", systemImage: "plus")
+                }
+            }
+        }
+        .sheet(isPresented: $showingAddZone) {
+            ZoneEditorSheet(zone: .empty, isNew: true)
+                .environmentObject(model)
+        }
+        .navigationDestination(for: ZoneRecord.self) { zone in
+            ZoneEditorSheet(zone: zone, isNew: false)
+                .environmentObject(model)
+        }
+        .confirmationDialog("Delete this zone?", isPresented: $showDeleteConfirmation, presenting: pendingDeleteZone) { zone in
+            Button("Delete \"\(zone.name)\"", role: .destructive) {
+                Task {
+                    _ = await model.delete(zone: zone)
+                    pendingDeleteZone = nil
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                pendingDeleteZone = nil
+            }
+        } message: { zone in
+            Text("Are you sure you want to delete \"\(zone.name)\"?")
         }
     }
 }
 
-private struct ZoneEditorCard: View {
-    @EnvironmentObject private var model: NativeAppModel
+private struct ZoneRowView: View {
     let zone: ZoneRecord
-    @State private var editable: ZoneRecord
 
-    init(zone: ZoneRecord) {
-        self.zone = zone
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: zoneTypeIcon(zone.zone_type).0)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(zoneTypeIcon(zone.zone_type).1)
+                .frame(width: 24)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(zone.name)
+                    .font(.subheadline.weight(.semibold))
+                Text("\(zone.radius_meters)m radius")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            if zone.is_default ?? false {
+                StatusBadge(label: "Default", color: .blue)
+            }
+
+            StatusBadge(label: zone.enabled ? "On" : "Off", color: zone.enabled ? .green : .orange)
+        }
+    }
+}
+
+private struct ZoneEditorSheet: View {
+    @EnvironmentObject private var model: NativeAppModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var editable: ZoneRecord
+    @State private var showDeleteConfirmation = false
+    @State private var saved = false
+
+    init(zone: ZoneRecord, isNew: Bool) {
         _editable = State(initialValue: zone)
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            TextField("Name", text: $editable.name)
-            TextField("Slug", text: $editable.slug)
-                .disabled(editable.is_default ?? false)
-            Stepper(value: $editable.radius_meters, in: 25 ... 500, step: 5) {
-                Text("Radius: \(editable.radius_meters)m")
-            }
-            Picker("Type", selection: $editable.zone_type) {
-                Text("Home").tag("home")
-                Text("Lecture").tag("lecture")
-                Text("Study").tag("study")
-                Text("Gym").tag("gym")
-                Text("Custom").tag("custom")
-            }
-            TextField("Focus Hint", text: $editable.focus_mode)
-            Toggle("Enabled", isOn: $editable.enabled)
-
-            Text("Enter payload: {\"zone_slug\":\"\(editable.slug)\",\"transition\":\"enter\"}")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text("Exit payload: {\"zone_slug\":\"\(editable.slug)\",\"transition\":\"exit\"}")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            HStack {
-                Button("Save") {
-                    Task { await model.save(zone: editable) }
+        NavigationStack {
+            Form {
+                Section("Basic Info") {
+                    TextField("Name", text: $editable.name)
+                    TextField("Slug", text: $editable.slug)
+                        .disabled(editable.is_default ?? false)
+                    Toggle("Enabled", isOn: $editable.enabled)
                 }
+
+                Section("Geofence") {
+                    Picker("Type", selection: $editable.zone_type) {
+                        Text("Home").tag("home")
+                        Text("Lecture").tag("lecture")
+                        Text("Study").tag("study")
+                        Text("Gym").tag("gym")
+                        Text("Custom").tag("custom")
+                    }
+                    Stepper(value: $editable.radius_meters, in: 25 ... 500, step: 5) {
+                        HStack {
+                            Text("Radius")
+                            Spacer()
+                            Text("\(editable.radius_meters)m")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                Section {
+                    TextField("Focus Hint (optional)", text: $editable.focus_mode)
+                } header: {
+                    Text("Focus Mode")
+                } footer: {
+                    Text("Used to identify which Focus mode matches this zone.")
+                }
+
+                Section("Payloads") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Entry")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("{\"zone_slug\":\"\(editable.slug)\",\"transition\":\"enter\"}")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                        Divider()
+                        Text("Exit")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("{\"zone_slug\":\"\(editable.slug)\",\"transition\":\"exit\"}")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
                 if !(editable.is_default ?? false) {
-                    Button("Delete", role: .destructive) {
-                        Task { await model.delete(zone: editable) }
+                    Section {
+                        Button("Delete Zone", role: .destructive) {
+                            showDeleteConfirmation = true
+                        }
+                    }
+                }
+
+                if saved {
+                    Section {
+                        Text("Saved ✓")
+                            .foregroundStyle(.green)
+                            .font(.subheadline.weight(.semibold))
                     }
                 }
             }
-        }
-        .padding()
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
-        .onChange(of: zone) { newValue in
-            editable = newValue
+            .navigationTitle(editable.id == nil ? "New Zone" : editable.name)
+            .toolbar {
+                ToolbarItemGroup(placement: .confirmationAction) {
+                    Button("Save") {
+                        Task {
+                            guard await model.save(zone: editable) else { return }
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                saved = true
+                            }
+                            try? await Task.sleep(for: .milliseconds(800))
+                            dismiss()
+                        }
+                    }
+                    .disabled(editable.name.isEmpty || editable.slug.isEmpty)
+                }
+            }
+            .confirmationDialog("Delete this zone?", isPresented: $showDeleteConfirmation) {
+                Button("Delete \"\(editable.name)\"", role: .destructive) {
+                    Task {
+                        guard await model.delete(zone: editable) else { return }
+                        dismiss()
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Are you sure you want to delete \"\(editable.name)\"?")
+            }
         }
     }
 }

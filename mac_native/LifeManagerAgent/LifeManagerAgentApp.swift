@@ -15,13 +15,16 @@ struct LifeManagerAgentApp: App {
 @MainActor
 final class AgentAppDelegate: NSObject, NSApplicationDelegate {
     private let runtime = AgentRuntime()
+    private let statusItemController = StatusItemController()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.prohibited)
+        statusItemController.start()
         runtime.start()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         runtime.stop()
+        statusItemController.stop()
     }
 }

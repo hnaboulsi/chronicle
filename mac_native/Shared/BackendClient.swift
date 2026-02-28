@@ -1,32 +1,54 @@
 import Foundation
 
-enum BackendError: Error {
-    case invalidResponse
+enum BackendError: LocalizedError {
+    case notConfigured
+    case invalidConfiguration
+    case invalidResponse(statusCode: Int?)
+
+    var errorDescription: String? {
+        switch self {
+        case .notConfigured:
+            return "Life Manager is not connected to a cloud backend yet."
+        case .invalidConfiguration:
+            return "The saved backend configuration is invalid. Reconnect to your cloud backend."
+        case let .invalidResponse(statusCode):
+            if let statusCode {
+                return "The backend returned an unexpected response (\(statusCode))."
+            }
+            return "The backend returned an unexpected response."
+        }
+    }
 }
 
 final class BackendClient {
-    static let shared = BackendClient()
+    static let shared = BackendClient {
+        AppGroupStore.shared.backendConfiguration
+    }
 
     private let session: URLSession
     private let decoder: JSONDecoder
-    private let encoder: JSONEncoder
-    private let store = AppGroupStore.shared
+    private let configurationProvider: () -> BackendConfiguration?
 
-    private init() {
+    convenience init(configuration: BackendConfiguration) {
+        self.init {
+            configuration
+        }
+    }
+
+    private init(configurationProvider: @escaping () -> BackendConfiguration?) {
         self.session = URLSession(configuration: .default)
         self.decoder = JSONDecoder()
-        self.encoder = JSONEncoder()
+        self.configurationProvider = configurationProvider
     }
 
     private func request(path: String, method: String = "GET", jsonBody: [String: Any]? = nil) throws -> URLRequest {
-        let url = store.backendURL.appendingPathComponent(path)
+        let configuration = try resolvedConfiguration()
+        let url = configuration.baseURL.appendingPathComponent(path)
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.timeoutInterval = 10
-        if !store.authValue.isEmpty {
-            let token = Data(store.authValue.utf8).base64EncodedString()
-            request.setValue("Basic \(token)", forHTTPHeaderField: "Authorization")
-        }
+        let token = Data(configuration.authValue.utf8).base64EncodedString()
+        request.setValue("Basic \(token)", forHTTPHeaderField: "Authorization")
         if let jsonBody {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONSerialization.data(withJSONObject: jsonBody, options: [])
@@ -41,10 +63,26 @@ final class BackendClient {
     @discardableResult
     private func perform(_ request: URLRequest) async throws -> Data {
         let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode) else {
-            throw BackendError.invalidResponse
+        guard let http = response as? HTTPURLResponse else {
+            throw BackendError.invalidResponse(statusCode: nil)
+        }
+        guard (200 ..< 300).contains(http.statusCode) else {
+            throw BackendError.invalidResponse(statusCode: http.statusCode)
         }
         return data
+    }
+
+    private func resolvedConfiguration() throws -> BackendConfiguration {
+        guard let configuration = configurationProvider() else {
+            throw BackendError.notConfigured
+        }
+
+        guard AppGroupStore.isAllowedCloudBackendURL(configuration.baseURL),
+              !configuration.authValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw BackendError.invalidConfiguration
+        }
+
+        return configuration
     }
 
     func fetchState() async throws -> DashboardState {
