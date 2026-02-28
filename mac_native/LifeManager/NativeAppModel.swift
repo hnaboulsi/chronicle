@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import Combine
 import Foundation
 import SwiftUI
@@ -229,6 +230,17 @@ final class NativeAppModel: ObservableObject {
     func openSystemSettings() {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
             NSWorkspace.shared.open(url)
+        }
+    }
+
+    func requestAccessibilityPermission() {
+        // Registers the current binary with macOS TCC and shows a prompt if not trusted.
+        // Must be called from the running process — simply toggling in System Settings
+        // doesn't re-register a new binary after rebuilds.
+        AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as NSDictionary)
+        Task {
+            try? await Task.sleep(for: .seconds(1))
+            permissionSnapshot = await PermissionSnapshot.capture()
         }
     }
 
