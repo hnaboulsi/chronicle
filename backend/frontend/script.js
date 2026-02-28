@@ -80,7 +80,7 @@ function connectSSE() {
         try {
             const data = JSON.parse(e.data);
             if (data.states && data.logs) updateUI(data.logs, data.states);
-        } catch {}
+        } catch { }
     };
     eventSource.onerror = () => {
         sseConnected = false;
@@ -226,7 +226,7 @@ async function fetchAnalytics() {
         const data = await res.json();
         renderAnalytics(data);
         renderStats(data);
-    } catch {}
+    } catch { }
 }
 
 function renderStats(data) {
@@ -287,7 +287,7 @@ async function fetchHourlySummaries() {
                 <p>${esc(s.summary_text)}</p>
             </div>`;
         }).join('');
-    } catch {}
+    } catch { }
 }
 
 // ── Call-Out Banner ──
@@ -310,7 +310,7 @@ async function fetchCallout() {
             calloutBanner.classList.add('hidden');
             lastCalloutNotification = '';
         }
-    } catch {}
+    } catch { }
 }
 
 document.getElementById('callout-submit').addEventListener('click', async () => {
@@ -355,7 +355,7 @@ toggleBtn.addEventListener('click', async () => {
             body: JSON.stringify({ tracking_enabled: next })
         });
         updateTrackingUI(next);
-    } catch {}
+    } catch { }
 });
 
 // ── Interval Pills ──
@@ -371,7 +371,7 @@ document.getElementById('interval-pills').addEventListener('click', async (e) =>
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ polling_interval_seconds: mins * 60 })
         });
-    } catch {}
+    } catch { }
 });
 
 // ── Modal ──
@@ -470,7 +470,7 @@ async function requestNotifications() {
     if (!('Notification' in window)) return;
     try {
         await Notification.requestPermission();
-    } catch {}
+    } catch { }
     updateNotificationPermissionUI();
 }
 
@@ -525,7 +525,7 @@ function renderZones(zones) {
                 body: JSON.stringify(payload),
             });
             if (res.ok) loadZones();
-        } catch {}
+        } catch { }
     }));
 
     list.querySelectorAll('.zone-delete-btn').forEach((btn) => btn.addEventListener('click', async () => {
@@ -538,7 +538,7 @@ function renderZones(zones) {
         try {
             const res = await fetch(`${API}/api/zones/${zoneId}`, { method: 'DELETE' });
             if (res.ok) loadZones();
-        } catch {}
+        } catch { }
     }));
 }
 
@@ -602,7 +602,7 @@ async function loadSettings() {
             document.getElementById('setting-health').textContent = h.status === 'ok' ? 'Healthy' : h.status;
             document.getElementById('setting-health').style.color = h.status === 'ok' ? 'var(--success)' : 'var(--warning)';
         }
-    } catch {}
+    } catch { }
 }
 
 document.getElementById('settings-save-btn').addEventListener('click', async () => {
@@ -625,7 +625,7 @@ document.getElementById('settings-save-btn').addEventListener('click', async () 
         pollingSlider.value = Math.max(1, Math.floor(payload.polling_interval_seconds / 60));
         pollingLabel.textContent = `Every ${pollingSlider.value}m`;
         closeSettings();
-    } catch {}
+    } catch { }
 });
 
 document.getElementById('settings-btn').addEventListener('click', openSettings);
@@ -665,11 +665,11 @@ async function checkOnboarding() {
                     }
                 }
             }
-        } catch {}
+        } catch { }
         // Detect timezone
         const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
         document.getElementById('onboard-tz').textContent = tz || 'America/Los_Angeles';
-    } catch {}
+    } catch { }
 }
 
 function nextOnboardStep(step) {
@@ -687,7 +687,7 @@ async function completeOnboarding() {
         });
         // Mark onboarding done by setting state (we'll use the prompt-reply endpoint as a workaround)
         // Actually, let's just not show it again after first visit using localStorage
-    } catch {}
+    } catch { }
     localStorage.setItem('lm_onboarded', '1');
 }
 
@@ -709,7 +709,7 @@ async function initSettings() {
             p.classList.toggle('active', parseInt(p.dataset.val) === mins);
         });
         if (data.tracking_enabled !== undefined) updateTrackingUI(data.tracking_enabled);
-    } catch {}
+    } catch { }
 }
 
 // ── Chat Bar ──
@@ -759,7 +759,7 @@ async function sendChat() {
             // Auto-hide reply after 8 seconds
             setTimeout(() => chatReplyEl.classList.add('hidden'), 8000);
         }
-    } catch {}
+    } catch { }
     chatSendBtn.textContent = 'Send';
     chatSendBtn.disabled = false;
 }
@@ -812,7 +812,7 @@ async function fetchCheckin() {
             checkinBanner.classList.add('hidden');
             lastCheckinNotification = '';
         }
-    } catch {}
+    } catch { }
 }
 
 checkinConfirm.addEventListener('click', async () => {
@@ -821,7 +821,7 @@ checkinConfirm.addEventListener('click', async () => {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ confirmed: true })
         });
-    } catch {}
+    } catch { }
     checkinBanner.classList.add('hidden');
     lastCheckinNotification = '';
 });
@@ -834,7 +834,7 @@ checkinSend.addEventListener('click', async () => {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ confirmed: false, correction })
         });
-    } catch {}
+    } catch { }
     checkinBanner.classList.add('hidden');
     checkinCorrection.value = '';
     lastCheckinNotification = '';
@@ -864,7 +864,7 @@ async function checkIosSetupStatus() {
             warning.onclick = () => window.open('/setup/ios', '_blank');
             cardIos.appendChild(warning);
         }
-    } catch {}
+    } catch { }
 }
 
 async function fetchControlCenterStatus() {
@@ -968,16 +968,16 @@ if (!localStorage.getItem('lm_onboarded')) checkOnboarding();
 // Polling fallback + analytics/checkin refresh
 setInterval(() => {
     if (!sseConnected) fetchData();
-    fetchHourlySummaries();
 }, 5000);
-setInterval(fetchCallout, 30000);
-setInterval(fetchAnalytics, 30000);
-setInterval(fetchCheckin, 15000);
-setInterval(fetchChatHistory, 30000);
+setInterval(fetchHourlySummaries, 60000);
+setInterval(fetchCallout, 60000);
+setInterval(fetchAnalytics, 120000);
+setInterval(fetchCheckin, 30000);
+setInterval(fetchChatHistory, 60000);
 setInterval(checkIosSetupStatus, 120000); // re-check every 2 min
-setInterval(fetchControlCenterStatus, 30000);
+setInterval(fetchControlCenterStatus, 60000);
 
 // ── Service Worker ──
 if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/dashboard/sw.js').catch(() => {});
+    navigator.serviceWorker.register('/dashboard/sw.js').catch(() => { });
 }
