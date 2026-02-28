@@ -83,7 +83,7 @@ struct iPhoneSetupView: View {
                 VStack(alignment: .leading, spacing: Spacing.lg) {
                     SectionHeaderLabel("Step 2 — Set Up Zone Automations", icon: "mappin.circle.fill", color: .indigo)
 
-                    Text("Create iOS Shortcut automations for your zones. Use the URLs below in the Shortcuts app.")
+                    Text("Create location-based automations in the iOS Shortcuts app to track when you enter and leave your zones.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
 
@@ -96,61 +96,164 @@ struct iPhoneSetupView: View {
                                 .foregroundStyle(.secondary)
                         }
                     } else {
-                        VStack(spacing: Spacing.md) {
-                            ForEach(model.zones, id: \.slug) { zone in
-                                if let backendURL = model.store.backendURL {
-                                    let enterURL = backendURL.absoluteString + "/api/ios-zone-event?zone_slug=\(zone.slug)&transition=enter"
-                                    let leaveURL = backendURL.absoluteString + "/api/ios-zone-event?zone_slug=\(zone.slug)&transition=leave"
+                        VStack(alignment: .leading, spacing: Spacing.lg) {
+                            // Quick Summary
+                            VStack(alignment: .leading, spacing: Spacing.sm) {
+                                Text("For each zone, you'll create two automations:")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                VStack(alignment: .leading, spacing: Spacing.xs) {
+                                    Text("• 📍 Arrive — Triggers when you enter the zone")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    Text("• 🚪 Leave — Triggers when you exit the zone")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .padding(Spacing.md)
+                            .background(.orange.opacity(0.08))
+                            .cornerRadius(8)
 
-                                    VStack(alignment: .leading, spacing: Spacing.sm) {
-                                        Text(zone.name)
-                                            .font(.subheadline.weight(.semibold))
+                            // Detailed Instructions
+                            VStack(alignment: .leading, spacing: Spacing.md) {
+                                Text("Step-by-Step Instructions:")
+                                    .font(.caption.weight(.semibold))
 
-                                        VStack(alignment: .leading, spacing: Spacing.xs) {
-                                            Text("Arrive:")
+                                VStack(alignment: .leading, spacing: Spacing.sm) {
+                                    Text("For the ARRIVE automation:")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(.primary)
+
+                                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                                        ForEach([
+                                            "1. Open Shortcuts app → go to Automation tab",
+                                            "2. Tap + (New Automation) → Location",
+                                            "3. Select your zone (search by name)",
+                                            "4. Choose Arrival time (optional radius: 50-100m)",
+                                            "5. Tap Next → disable 'Ask Before Running'",
+                                            "6. Add action: Get Contents of URL",
+                                            "7. Paste the ARRIVE URL (see below) into URL field",
+                                            "8. Tap Next → Done"
+                                        ], id: \.self) { step in
+                                            Text(step)
                                                 .font(.caption)
                                                 .foregroundStyle(.secondary)
-                                            HStack {
-                                                Text(enterURL)
-                                                    .font(.system(.caption, design: .monospaced))
-                                                    .lineLimit(1)
-                                                    .truncationMode(.middle)
-                                                    .foregroundStyle(.blue)
-                                                Button(action: {
-                                                    NSPasteboard.general.clearContents()
-                                                    NSPasteboard.general.setString(enterURL, forType: .string)
-                                                }) {
-                                                    Image(systemName: "doc.on.doc")
-                                                        .font(.caption)
-                                                }
-                                                .buttonStyle(.plain)
-                                            }
-                                        }
-
-                                        VStack(alignment: .leading, spacing: Spacing.xs) {
-                                            Text("Leave:")
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
-                                            HStack {
-                                                Text(leaveURL)
-                                                    .font(.system(.caption, design: .monospaced))
-                                                    .lineLimit(1)
-                                                    .truncationMode(.middle)
-                                                    .foregroundStyle(.blue)
-                                                Button(action: {
-                                                    NSPasteboard.general.clearContents()
-                                                    NSPasteboard.general.setString(leaveURL, forType: .string)
-                                                }) {
-                                                    Image(systemName: "doc.on.doc")
-                                                        .font(.caption)
-                                                }
-                                                .buttonStyle(.plain)
-                                            }
+                                                .lineLimit(nil)
                                         }
                                     }
-                                    .padding(Spacing.md)
-                                    .background(.gray.opacity(0.05))
-                                    .cornerRadius(8)
+                                }
+
+                                VStack(alignment: .leading, spacing: Spacing.sm) {
+                                    Text("For the LEAVE automation:")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(.primary)
+
+                                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                                        ForEach([
+                                            "1. Tap + (New Automation) → Location",
+                                            "2. Select your zone again",
+                                            "3. Choose Leaving time (same radius)",
+                                            "4. Tap Next → disable 'Ask Before Running'",
+                                            "5. Add action: Get Contents of URL",
+                                            "6. Paste the LEAVE URL (see below)",
+                                            "7. Tap Next → Done"
+                                        ], id: \.self) { step in
+                                            Text(step)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                                .lineLimit(nil)
+                                        }
+                                    }
+                                }
+
+                                VStack(alignment: .leading, spacing: Spacing.sm) {
+                                    Text("Optional: Add Focus Mode actions")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(.primary)
+
+                                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                                        Text("Before the 'Get Contents of URL' step, you can add:")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                        ForEach([
+                                            "• Dwinelle Hall: Set Focus → Class",
+                                            "• Wheeler Hall: Set Focus → Class",
+                                            "• VLSB: Set Focus → Deep Work",
+                                            "• Doe/Moffitt: Set Focus → Deep Work",
+                                            "• Anchor House: Set Focus → Off (on arrival only)"
+                                        ], id: \.self) { step in
+                                            Text(step)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+                                }
+                            }
+                            .padding(Spacing.md)
+                            .background(.blue.opacity(0.05))
+                            .cornerRadius(8)
+
+                            // Zone URLs
+                            Text("Zone Automation URLs (tap to copy):")
+                                .font(.caption.weight(.semibold))
+
+                            VStack(spacing: Spacing.md) {
+                                ForEach(model.zones, id: \.slug) { zone in
+                                    if let backendURL = model.store.backendURL {
+                                        let enterURL = backendURL.absoluteString + "/api/ios-zone-event?zone_slug=\(zone.slug)&transition=enter"
+                                        let leaveURL = backendURL.absoluteString + "/api/ios-zone-event?zone_slug=\(zone.slug)&transition=leave"
+
+                                        VStack(alignment: .leading, spacing: Spacing.sm) {
+                                            Text(zone.name)
+                                                .font(.subheadline.weight(.semibold))
+
+                                            VStack(alignment: .leading, spacing: Spacing.xs) {
+                                                Text("📍 Arrive URL:")
+                                                    .font(.caption)
+                                                    .foregroundStyle(.secondary)
+                                                HStack {
+                                                    Text(enterURL)
+                                                        .font(.system(.caption2, design: .monospaced))
+                                                        .lineLimit(1)
+                                                        .truncationMode(.middle)
+                                                        .foregroundStyle(.blue)
+                                                    Button(action: {
+                                                        NSPasteboard.general.clearContents()
+                                                        NSPasteboard.general.setString(enterURL, forType: .string)
+                                                    }) {
+                                                        Image(systemName: "doc.on.doc")
+                                                            .font(.caption)
+                                                    }
+                                                    .buttonStyle(.plain)
+                                                }
+                                            }
+
+                                            VStack(alignment: .leading, spacing: Spacing.xs) {
+                                                Text("🚪 Leave URL:")
+                                                    .font(.caption)
+                                                    .foregroundStyle(.secondary)
+                                                HStack {
+                                                    Text(leaveURL)
+                                                        .font(.system(.caption2, design: .monospaced))
+                                                        .lineLimit(1)
+                                                        .truncationMode(.middle)
+                                                        .foregroundStyle(.blue)
+                                                    Button(action: {
+                                                        NSPasteboard.general.clearContents()
+                                                        NSPasteboard.general.setString(leaveURL, forType: .string)
+                                                    }) {
+                                                        Image(systemName: "doc.on.doc")
+                                                            .font(.caption)
+                                                    }
+                                                    .buttonStyle(.plain)
+                                                }
+                                            }
+                                        }
+                                        .padding(Spacing.md)
+                                        .background(.gray.opacity(0.05))
+                                        .cornerRadius(8)
+                                    }
                                 }
                             }
                         }
