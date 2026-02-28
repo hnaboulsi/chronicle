@@ -1654,19 +1654,26 @@ async def event_stream(db: Session = Depends(get_db)):
 
 def _get_backend_url() -> str:
     """Return the public-facing backend URL (Railway HTTPS or local IP)."""
-    railway_domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN") or os.environ.get("RAILWAY_STATIC_URL")
+    # Priority 1: Railway public domain env vars (auto-injected by Railway)
+    railway_domain = (
+        os.environ.get("RAILWAY_PUBLIC_DOMAIN")
+        or os.environ.get("RAILWAY_STATIC_URL")
+        or os.environ.get("RAILWAY_SERVICE_LIFE_MANAGER_AGENT_URL")
+    )
     if railway_domain:
         domain = railway_domain.replace("https://", "").replace("http://", "").rstrip("/")
         return f"https://{domain}"
+    # Priority 2: Local network IP (use actual $PORT to match start command)
+    port = int(os.environ.get("PORT", "8000"))
     try:
         import socket
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
         local_ip = s.getsockname()[0]
         s.close()
-        return f"http://{local_ip}:8000"
+        return f"http://{local_ip}:{port}"
     except Exception:
-        return "http://localhost:8000"
+        return f"http://localhost:{port}"
 
 
 if __name__ == "__main__":
