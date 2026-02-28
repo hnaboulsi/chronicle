@@ -1,29 +1,89 @@
+import json
 import logging
-from zoneinfo import ZoneInfo
-from sqlalchemy.orm import Session
-from sqlalchemy import desc, func
-from models import AgentState, ActivityLog, MacTelemetry, iOSTelemetry, HourlySummary
-import llm_client
-import calendar_sync
+import os
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
+from sqlalchemy import desc
+from sqlalchemy.orm import Session
+
+from models import AgentState, ActivityLog, CalendarEventJob, HourlySummary, LocationZone, MacHeartbeat, MacTelemetry, iOSTelemetry, iOSZoneEvent
+import llm_client
 
 log = logging.getLogger("life_manager")
 
-# Categories that go on the calendar automatically
 PRODUCTIVE_CATEGORIES = {"studying", "working", "creative"}
 DISTRACTED_CATEGORIES = {"entertainment", "social_media", "gaming"}
-
-# Minimum session length to log to calendar (minutes)
 MIN_SESSION_MINUTES = 10
+
 DEFAULTS = {
     "backend_mode": "railway_primary",
     "llm_mode": "balanced",
+    "ai_provider": "auto",
     "hourly_summaries_enabled": "true",
     "classification_interval_seconds": "300",
     "llm_daily_cap": "200",
     "sleep_source": "iphone_only",
     "user_timezone": "America/Los_Angeles",
+    "tracking_enabled": "true",
 }
+
+DEFAULT_ZONES = [
+    {
+        "slug": "anchor-house",
+        "name": "Anchor House",
+        "radius_meters": 90,
+        "enabled": True,
+        "zone_type": "home",
+        "focus_mode": "",
+        "sort_order": 10,
+    },
+    {
+        "slug": "dwinelle-hall",
+        "name": "Dwinelle Hall",
+        "radius_meters": 75,
+        "enabled": True,
+        "zone_type": "lecture",
+        "focus_mode": "Class",
+        "sort_order": 20,
+    },
+    {
+        "slug": "wheeler-hall",
+        "name": "Wheeler Hall",
+        "radius_meters": 75,
+        "enabled": True,
+        "zone_type": "lecture",
+        "focus_mode": "Class",
+        "sort_order": 30,
+    },
+    {
+        "slug": "vlsb",
+        "name": "VLSB",
+        "radius_meters": 75,
+        "enabled": True,
+        "zone_type": "study",
+        "focus_mode": "Deep Work",
+        "sort_order": 40,
+    },
+    {
+        "slug": "doe-moffitt",
+        "name": "Doe/Moffitt Library",
+        "radius_meters": 90,
+        "enabled": False,
+        "zone_type": "study",
+        "focus_mode": "Deep Work",
+        "sort_order": 50,
+    },
+    {
+        "slug": "rsf",
+        "name": "RSF",
+        "radius_meters": 90,
+        "enabled": False,
+        "zone_type": "gym",
+        "focus_mode": "",
+        "sort_order": 60,
+    },
+]
 
 
 def get_state(db: Session, key: str, default: str = "") -> str:
@@ -49,6 +109,85 @@ def ensure_default_settings(db: Session):
     for key, value in DEFAULTS.items():
         if not get_state(db, key):
             set_state(db, key, value)
+    ensure_default_zones(db)
+    os.environ["LIFE_MANAGER_AI_PROVIDER"] = get_state(db, "ai_provider", DEFAULTS["ai_provider"])
+
+
+def ensure_default_zones(db: Session):
+    existing = {z.slug for z in db.query(LocationZone).all()}
+    changed = False
+    for zone in DEFAULT_ZONES:
+        if zone["slug"] in existing:
+            continue
+        db.add(LocationZone(**zone))
+        changed = True
+    if changed:
+        db.commit()
+
+
+def zone_to_dict(zone: LocationZone) -> dict:
+    default_slugs = {z["slug"] for z in DEFAULT_ZONES}
+    return {
+        "id": zone.id,
+        "slug": zone.slug,
+        "name": zone.name,
+        "radius_meters": zone.radius_meters,
+        "enabled": bool(zone.enabled),
+        "zone_type": zone.zone_type,
+        "focus_mode": zone.focus_mode or "",
+        "sort_order": zone.sort_order,
+        "is_default": zone.slug in default_slugs,
+        "created_at": zone.created_at.isoformat() if zone.created_at else "",
+        "updated_at": zone.updated_at.isoformat() if zone.updated_at else "",
+    }
+
+
+def list_zones(db: Session) -> list[dict]:
+    ensure_default_zones(db)
+    zones = db.query(LocationZone).order_by(LocationZone.sort_order, LocationZone.id).all()
+    return [zone_to_dict(z) for z in zones]
+
+
+def get_zone(db: Session, slug: str) -> LocationZone | None:
+    ensure_default_zones(db)
+    return db.query(LocationZone).filter(LocationZone.slug == slug).first()
+
+
+def upsert_zone(db: Session, payload: dict, zone_id: int | None = None) -> dict:
+    ensure_default_zones(db)
+    zone = None
+    if zone_id is not None:
+        zone = db.query(LocationZone).filter(LocationZone.id == zone_id).first()
+    elif payload.get("slug"):
+        zone = db.query(LocationZone).filter(LocationZone.slug == payload["slug"]).first()
+
+    if zone is None:
+        zone = LocationZone()
+        db.add(zone)
+
+    zone.slug = str(payload.get("slug") or zone.slug or "").strip()
+    zone.name = str(payload.get("name") or zone.name or "").strip()
+    if not zone.slug or not zone.name:
+        raise ValueError("slug and name are required")
+    zone.radius_meters = max(25, int(payload.get("radius_meters", zone.radius_meters or 75)))
+    zone.enabled = bool(payload.get("enabled", zone.enabled if zone.enabled is not None else True))
+    zone.zone_type = str(payload.get("zone_type", zone.zone_type or "custom")).strip() or "custom"
+    zone.focus_mode = str(payload.get("focus_mode", zone.focus_mode or "")).strip()
+    zone.sort_order = int(payload.get("sort_order", zone.sort_order or 0))
+    db.commit()
+    db.refresh(zone)
+    return zone_to_dict(zone)
+
+
+def delete_zone(db: Session, zone_id: int) -> bool:
+    zone = db.query(LocationZone).filter(LocationZone.id == zone_id).first()
+    if not zone:
+        return False
+    if zone.slug in {z["slug"] for z in DEFAULT_ZONES}:
+        return False
+    db.delete(zone)
+    db.commit()
+    return True
 
 
 def _today_key(now: datetime) -> str:
@@ -60,6 +199,23 @@ def _safe_int(value: str, default: int) -> int:
         return int(value)
     except Exception:
         return default
+
+
+def _parse_iso_dt(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except Exception:
+        return None
+
+
+def _age_seconds(value: str | None, now: datetime | None = None) -> int | None:
+    dt = _parse_iso_dt(value)
+    if dt is None:
+        return None
+    now = now or datetime.utcnow()
+    return max(0, int((now - dt).total_seconds()))
 
 
 def llm_usage_snapshot(db: Session, now: datetime | None = None) -> dict:
@@ -94,7 +250,6 @@ def heuristic_classify_activity(recent_activities: list, idle_time_seconds: int 
         f"{(a.get('app_name') or '').lower()} {(a.get('window_title') or '').lower()}"
         for a in recent_activities
     )
-    # Enrich with Chrome history domains and titles for richer keyword matching
     if recent_history:
         history_text = " ".join(
             f"{(h.get('domain') or '').lower()} {(h.get('title') or '').lower()}"
@@ -118,7 +273,7 @@ def heuristic_classify_activity(recent_activities: list, idle_time_seconds: int 
     return {"category": "break", "summary": "General browsing or light activity"}
 
 
-def get_pending_prompt(db: Session) -> str:
+def get_pending_prompt(db: Session) -> str | None:
     prompt = get_state(db, "pending_prompt")
     return prompt if prompt else None
 
@@ -128,8 +283,8 @@ def clear_pending_prompt(db: Session):
 
 
 def update_context_with_reply(reply: str, db: Session):
-    """Store the user's self-reported activity and log it."""
     set_state(db, "user_self_report", reply)
+    set_state(db, "last_user_checkin", datetime.utcnow().isoformat())
     log.info("User self-reported: %s", reply)
 
 
@@ -161,65 +316,132 @@ def get_mac_logs_for_hour(db: Session, since: datetime) -> list:
     return [{"app_name": l.app_name, "window_title": l.window_title} for l in logs]
 
 
+def queue_calendar_job(
+    db: Session,
+    kind: str,
+    title: str,
+    start_dt: datetime,
+    end_dt: datetime,
+    notes: str = "",
+    payload: dict | None = None,
+) -> CalendarEventJob:
+    job = CalendarEventJob(
+        kind=kind,
+        title=title,
+        notes=notes,
+        start_at=start_dt,
+        end_at=end_dt,
+        payload_json=json.dumps(payload or {}),
+        status="pending",
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    set_state(db, "last_calendar_job_at", datetime.utcnow().isoformat())
+    return job
+
+
+def _queue_session_event(db: Session, category: str, summary: str, start_dt: datetime, end_dt: datetime):
+    duration_min = max(1, int((end_dt - start_dt).total_seconds() / 60))
+    label_map = {
+        "studying": "Study",
+        "working": "Work",
+        "creative": "Creative",
+        "entertainment": "Entertainment",
+        "social_media": "Social Media",
+        "gaming": "Gaming",
+        "break": "Break",
+    }
+    label = label_map.get(category, category.replace("_", " ").title())
+    display = summary if summary else label
+    title = f"{display} ({duration_min} min)"
+    notes = f"Auto-logged by Life Manager | Category: {category}"
+    queue_calendar_job(
+        db,
+        kind="session",
+        title=title,
+        start_dt=start_dt,
+        end_dt=end_dt,
+        notes=notes,
+        payload={"category": category, "summary": summary},
+    )
+
+
+def _queue_walk_event(db: Session, location_from: str, location_to: str, start_dt: datetime, end_dt: datetime):
+    duration_min = max(1, int((end_dt - start_dt).total_seconds() / 60))
+    if location_from and location_to and location_from != location_to:
+        title = f"Walk: {location_from} to {location_to} ({duration_min} min)"
+    else:
+        label = location_from or location_to or "Unknown"
+        title = f"Walk near {label} ({duration_min} min)"
+    queue_calendar_job(
+        db,
+        kind="walk",
+        title=title,
+        start_dt=start_dt,
+        end_dt=end_dt,
+        payload={"from": location_from, "to": location_to},
+    )
+
+
+def _queue_location_visit(db: Session, location_label: str, arrival_dt: datetime, departure_dt: datetime):
+    duration_min = max(1, int((departure_dt - arrival_dt).total_seconds() / 60))
+    title = f"At {location_label} ({duration_min} min)"
+    queue_calendar_job(
+        db,
+        kind="location_visit",
+        title=title,
+        start_dt=arrival_dt,
+        end_dt=departure_dt,
+        payload={"location": location_label},
+    )
+
+
 def _close_session_to_calendar(db: Session, new_category: str, now: datetime):
-    """
-    If a productive session was in progress, close it out and write to calendar.
-    Called whenever the detected category changes.
-    """
     session_cat = get_state(db, "session_category")
     session_start_str = get_state(db, "session_start")
     session_summary = get_state(db, "session_summary")
 
     if not session_cat or not session_start_str:
         return
-
     if session_cat == new_category:
-        return  # Same session, no change
+        return
 
-    # Session has ended — log it if it was long enough
     try:
         session_start = datetime.fromisoformat(session_start_str)
         duration_min = (now - session_start).total_seconds() / 60
-        should_log = (
-            duration_min >= MIN_SESSION_MINUTES
-            and session_cat in PRODUCTIVE_CATEGORIES
-        )
+        should_log = duration_min >= MIN_SESSION_MINUTES and session_cat in PRODUCTIVE_CATEGORIES
         if should_log:
-            calendar_sync.create_session_event(session_cat, session_summary, session_start, now)
-    except Exception as e:
-        log.error("Calendar session close error: %s", e)
+            _queue_session_event(db, session_cat, session_summary, session_start, now)
+    except Exception as exc:
+        log.error("Calendar session queue error: %s", exc)
 
-    # Clear session state
     set_state(db, "session_category", "")
     set_state(db, "session_start", "")
     set_state(db, "session_summary", "")
 
 
 def _maybe_start_session(db: Session, category: str, summary: str, now: datetime):
-    """Start tracking a new productive session."""
     if category not in PRODUCTIVE_CATEGORIES:
         return
     current = get_state(db, "session_category")
     if current == category:
-        # Ongoing session — update summary if better
         if summary:
             set_state(db, "session_summary", summary)
         return
-    # New productive session
     set_state(db, "session_category", category)
     set_state(db, "session_start", now.isoformat())
     set_state(db, "session_summary", summary)
-    log.info("Session started: %s — %s", category, summary)
+    log.info("Session started: %s - %s", category, summary)
 
 
 async def _generate_and_store_hourly_summary(db: Session, now: datetime):
-    """Background task: generate and persist a 30-min summary."""
     hour_start = now - timedelta(minutes=30)
     logs = get_mac_logs_for_hour(db, since=hour_start)
     if not logs:
         return
 
-    hour_label = f"{hour_start.strftime('%I:%M')}–{now.strftime('%I:%M %p')}"
+    hour_label = f"{hour_start.strftime('%I:%M')}-{now.strftime('%I:%M %p')}"
     result = await llm_client.generate_hourly_summary(logs, hour_label)
 
     summary = HourlySummary(
@@ -232,15 +454,174 @@ async def _generate_and_store_hourly_summary(db: Session, now: datetime):
     log.info("Hourly summary stored for %s", hour_label)
 
 
+def _guess_activity(location: str, prev_location: str, now: datetime, db: Session) -> str:
+    loc = location.lower()
+    tz_name = get_state(db, "user_timezone", DEFAULTS["user_timezone"])
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        tz = ZoneInfo("America/Los_Angeles")
+    local_hour = now.replace(tzinfo=ZoneInfo("UTC")).astimezone(tz).hour
+
+    study_places = {"library", "vlsb", "evans", "moffitt", "doe", "soda", "cory", "class", "lecture", "campus"}
+    food_places = {"student union", "crossroads", "cafe", "restaurant", "dining", "golden bear", "grab"}
+    gym_places = {"gym", "rsf", "rec center", "fitness"}
+    home_words = {"home", "apartment", "dorm", "residence", "anchor"}
+
+    if any(p in loc for p in study_places):
+        return "I think you're about to study"
+    if any(p in loc for p in food_places):
+        return "I think you stopped for food"
+    if any(p in loc for p in gym_places):
+        return "I think you're working out"
+    if any(p in loc for p in home_words):
+        if local_hour >= 20:
+            return "I think you're winding down for the night"
+        return "I think you're back home"
+    if 7 <= local_hour <= 9:
+        return "Starting your morning"
+    if 11 <= local_hour <= 13:
+        return "Maybe grabbing lunch"
+    if local_hour >= 22:
+        return "Looks like you're heading home"
+    if prev_location:
+        return f"You came from {prev_location}"
+    return "What are you up to?"
+
+
+def _update_study_mode(db: Session, location_label: str, zone_type: str = ""):
+    label = (location_label or "").lower()
+    zone_type = (zone_type or "").lower()
+    if zone_type in {"study", "lecture"} or any(word in label for word in ["library", "class", "school", "campus", "vlsb", "dwinelle", "wheeler", "doe", "moffitt"]):
+        set_state(db, "study_mode", "active")
+    elif location_label:
+        set_state(db, "study_mode", "inactive")
+
+
+def _maybe_generate_checkin(db: Session, current_location: str, prev_location: str, now: datetime):
+    if not current_location:
+        return
+    if current_location in {"charging_trigger", "walking_trigger"}:
+        return
+
+    last_checkin_str = get_state(db, "last_user_checkin")
+    needs_checkin = True
+    if last_checkin_str:
+        try:
+            last_checkin = datetime.fromisoformat(last_checkin_str)
+            if (now - last_checkin).total_seconds() < 900:
+                needs_checkin = False
+        except Exception:
+            pass
+
+    if needs_checkin and not get_state(db, "pending_checkin"):
+        guess = _guess_activity(current_location, prev_location, now, db)
+        if guess:
+            checkin_msg = f"Looks like you're at {current_location}. {guess} - is that right?"
+            set_state(db, "pending_checkin", checkin_msg)
+            set_state(db, "checkin_guess", guess)
+            log.info("Check-in generated: %s", checkin_msg)
+
+
+def _close_current_location_visit(db: Session, now: datetime, explicit_location: str | None = None):
+    prev_location = explicit_location or get_state(db, "current_location")
+    arrival_str = get_state(db, "location_arrival")
+    if prev_location and arrival_str:
+        try:
+            arrival_dt = datetime.fromisoformat(arrival_str)
+            duration_min = (now - arrival_dt).total_seconds() / 60
+            if duration_min >= 10:
+                _queue_location_visit(db, prev_location, arrival_dt, now)
+        except Exception as exc:
+            log.error("Location calendar queue error: %s", exc)
+    set_state(db, "current_location", "")
+    set_state(db, "location_arrival", "")
+
+
+def _start_location_visit(db: Session, location_label: str, now: datetime):
+    set_state(db, "current_location", location_label)
+    set_state(db, "location_arrival", now.isoformat())
+
+
+def _handle_location_change(db: Session, current_location: str, now: datetime, zone_type: str = ""):
+    prev_location = get_state(db, "current_location")
+    if current_location and current_location != prev_location:
+        if prev_location:
+            _close_current_location_visit(db, now, explicit_location=prev_location)
+        _start_location_visit(db, current_location, now)
+        _maybe_generate_checkin(db, current_location, prev_location, now)
+    _update_study_mode(db, current_location, zone_type=zone_type)
+
+
+def _update_sleep_state(db: Session, now: datetime, activity_type: str, is_charging: bool | None):
+    tz_name = get_state(db, "user_timezone", DEFAULTS["user_timezone"])
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        tz = ZoneInfo("America/Los_Angeles")
+    local_hour = now.replace(tzinfo=ZoneInfo("UTC")).astimezone(tz).hour
+    if local_hour >= 22 or local_hour <= 4:
+        if is_charging and activity_type == "Stationary":
+            set_state(db, "user_asleep", "true")
+    else:
+        set_state(db, "user_asleep", "false")
+
+
+def compute_mac_status(states: dict, now: datetime | None = None) -> dict:
+    now = now or datetime.utcnow()
+    heartbeat_age = _age_seconds(states.get("last_mac_heartbeat"), now)
+    snapshot_age = _age_seconds(states.get("last_mac_ping"), now)
+    tracking_enabled = str(states.get("tracking_enabled", "true")).lower() == "true"
+    permissions_state = (states.get("last_mac_permissions_state") or "ok").lower()
+    agent_state = (states.get("last_mac_agent_state") or "running").lower()
+    is_idle = str(states.get("last_mac_idle", "false")).lower() == "true"
+
+    if heartbeat_age is None or heartbeat_age > 150:
+        status = "offline"
+        reason = "No recent heartbeat from the Mac agent."
+    elif not tracking_enabled or agent_state == "paused":
+        status = "paused"
+        reason = "The Mac agent is running, but tracking is paused."
+    elif permissions_state not in {"ok", "granted"}:
+        status = "degraded"
+        reason = "The agent is alive, but macOS permissions are incomplete."
+    elif is_idle:
+        status = "online_idle"
+        reason = "The agent is online and the Mac has been idle."
+    else:
+        status = "online"
+        reason = "The agent is online and sending heartbeats."
+
+    return {
+        "mac_status": status,
+        "mac_status_reason": reason,
+        "mac_online": status != "offline",
+        "last_mac_heartbeat_age_seconds": heartbeat_age,
+        "last_mac_snapshot_age_seconds": snapshot_age,
+    }
+
+
+async def process_mac_heartbeat(data: MacHeartbeat, db: Session):
+    now = datetime.utcnow()
+    ensure_default_settings(db)
+    set_state(db, "last_mac_heartbeat", now.isoformat())
+    set_state(db, "last_mac_client_id", data.client_id or "")
+    set_state(db, "last_mac_app_version", data.app_version or "")
+    set_state(db, "last_mac_agent_state", data.agent_state or "running")
+    set_state(db, "last_mac_permissions_state", data.permissions_state or "ok")
+    set_state(db, "last_mac_error", data.last_error or "")
+    if data.tracking_enabled is not None:
+        set_state(db, "tracking_enabled", str(bool(data.tracking_enabled)).lower())
+
+
 async def process_mac_telemetry(data: MacTelemetry, db: Session):
     now = datetime.utcnow()
     ensure_default_settings(db)
 
-    # Heartbeat — lets dashboard detect if tracker is actually running
     prev_mac_ping_str = get_state(db, "last_mac_ping")
     set_state(db, "last_mac_ping", now.isoformat())
+    set_state(db, "last_mac_idle", str(data.idle_time_seconds > 60 * 30).lower())
 
-    # Check-in: if Mac was offline for 15+ min and user hasn't checked in, ask
     if prev_mac_ping_str and not get_state(db, "pending_checkin"):
         try:
             prev_ping = datetime.fromisoformat(prev_mac_ping_str)
@@ -257,7 +638,7 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session):
                 location = get_state(db, "current_location")
                 if location:
                     guess = _guess_activity(location, "", now, db)
-                    msg = f"Welcome back! You were at {location}. {guess} — what were you up to?"
+                    msg = f"Welcome back! You were at {location}. {guess} - what were you up to?"
                 else:
                     msg = "Welcome back! What have you been up to?"
                 set_state(db, "pending_checkin", msg)
@@ -266,13 +647,11 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session):
         except Exception:
             pass
 
-    # Rule 1 — Idle check (30 min idle → prompt)
     if data.idle_time_seconds > 60 * 30:
         if not get_state(db, "pending_prompt"):
-            set_state(db, "pending_prompt", "Hey — you've been idle for 30+ minutes. Taking a break or got distracted?")
+            set_state(db, "pending_prompt", "Hey - you've been idle for 30+ minutes. Taking a break or got distracted?")
         return
 
-    # Rule 2 — Context classification (every 30 min to conserve API quota)
     last_check_str = get_state(db, "last_vagueness_check")
     last_check = datetime.fromisoformat(last_check_str) if last_check_str else datetime.min
 
@@ -298,15 +677,13 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session):
         new_category = result["category"]
         new_summary = result["summary"]
 
-        # Close out previous session if category changed, start new one
         _close_session_to_calendar(db, new_category, now)
         _maybe_start_session(db, new_category, new_summary, now)
 
         set_state(db, "current_activity_category", new_category)
         set_state(db, "current_activity_summary", new_summary)
-        log.info("Activity classified: %s — %s", new_category, new_summary)
+        log.info("Activity classified: %s - %s", new_category, new_summary)
 
-        # Study mode enforcement: distracted while supposed to be studying → call out
         study_mode = get_state(db, "study_mode")
         if study_mode == "active" and new_category in DISTRACTED_CATEGORIES and not get_state(db, "pending_prompt"):
             if can_use_llm(db, now):
@@ -315,8 +692,6 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session):
             else:
                 prompt = "You seem distracted. Is this still part of your intended task?"
             set_state(db, "pending_prompt", prompt)
-
-        # Not studying and not productive → gentle call-out (dashboard will show it)
         elif new_category in DISTRACTED_CATEGORIES and not get_state(db, "pending_prompt"):
             set_state(db, "callout_category", new_category)
             set_state(db, "callout_summary", new_summary)
@@ -324,7 +699,6 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session):
             set_state(db, "callout_category", "")
             set_state(db, "callout_summary", "")
 
-    # Rule 3 — Hourly summary auto-trigger (runs inline since we're already in a background task)
     last_summary_str = get_state(db, "last_hourly_summary")
     last_summary = datetime.fromisoformat(last_summary_str) if last_summary_str else datetime.min
     summaries_enabled = get_state(db, "hourly_summaries_enabled", DEFAULTS["hourly_summaries_enabled"]) == "true"
@@ -333,62 +707,49 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session):
         register_llm_call(db, now)
         await _generate_and_store_hourly_summary(db, now)
 
-    # Rule 4 — Calendar setup (ensure calendar exists, run once)
-    if not get_state(db, "calendar_initialized"):
-        try:
-            calendar_sync.ensure_life_manager_calendar()
-            set_state(db, "calendar_initialized", "true")
-        except Exception as e:
-            log.error("Calendar init error: %s", e)
+
+def _record_ios_event(db: Session, now: datetime):
+    set_state(db, "last_ios_ping", now.isoformat())
+    set_state(db, "last_ios_event", now.isoformat())
+    set_state(db, "sleep_source", "iphone_only")
+    set_state(db, "sleep_status_note", "Sleep detection uses iPhone automations.")
 
 
-def _guess_activity(location: str, prev_location: str, now: datetime, db: Session) -> str:
-    """Guess what the user is doing based on location, time, and history."""
-    loc = location.lower()
-    tz_name = get_state(db, "user_timezone", DEFAULTS["user_timezone"])
-    try:
-        tz = ZoneInfo(tz_name)
-    except Exception:
-        tz = ZoneInfo("America/Los_Angeles")
-    local_hour = now.replace(tzinfo=ZoneInfo("UTC")).astimezone(tz).hour
+def _handle_ios_steps(db: Session, steps_today: int | None):
+    if steps_today is not None:
+        set_state(db, "steps_today", str(steps_today))
 
-    # Known location patterns
-    study_places = {"library", "vlsb", "evans", "moffitt", "doe", "soda", "cory", "class", "lecture", "campus"}
-    food_places = {"student union", "crossroads", "cafe", "restaurant", "dining", "golden bear", "grab"}
-    gym_places = {"gym", "rsf", "rec center", "fitness"}
-    home_words = {"home", "apartment", "dorm", "residence"}
 
-    if any(p in loc for p in study_places):
-        return "I think you're about to study"
-    if any(p in loc for p in food_places):
-        return "I think you stopped for food"
-    if any(p in loc for p in gym_places):
-        return "I think you're working out"
-    if any(p in loc for p in home_words):
-        if local_hour >= 20:
-            return "I think you're winding down for the night"
-        return "I think you're back home"
+def _handle_walking_transition(db: Session, now: datetime, is_walking: bool, location_label: str):
+    was_walking = get_state(db, "is_walking") == "true"
+    if is_walking:
+        if not was_walking:
+            set_state(db, "walk_start", now.isoformat())
+            set_state(db, "walk_from", location_label or get_state(db, "current_location"))
+        set_state(db, "is_walking", "true")
+        set_state(db, "walk_current_location", location_label or get_state(db, "current_location"))
+        return
 
-    # Time-based guessing
-    if 7 <= local_hour <= 9:
-        return "Starting your morning"
-    if 11 <= local_hour <= 13:
-        return "Maybe grabbing lunch"
-    if local_hour >= 22:
-        return "Looks like you're heading home"
-
-    # Generic
-    if prev_location:
-        return f"You came from {prev_location}"
-    return "What are you up to?"
+    if was_walking:
+        walk_start_str = get_state(db, "walk_start")
+        walk_from = get_state(db, "walk_from")
+        walk_to = get_state(db, "walk_current_location") or location_label or get_state(db, "current_location")
+        if walk_start_str:
+            try:
+                walk_start = datetime.fromisoformat(walk_start_str)
+                duration_min = (now - walk_start).total_seconds() / 60
+                if duration_min >= 3:
+                    _queue_walk_event(db, walk_from, walk_to, walk_start, now)
+            except Exception as exc:
+                log.error("Walk calendar queue error: %s", exc)
+        set_state(db, "walk_start", "")
+    set_state(db, "is_walking", "false")
 
 
 async def process_ios_telemetry(data: iOSTelemetry, db: Session):
     now = datetime.utcnow()
     ensure_default_settings(db)
-    set_state(db, "last_ios_ping", now.isoformat())
-    set_state(db, "sleep_source", "iphone_only")
-    set_state(db, "sleep_status_note", "Sleep detection uses iPhone automations.")
+    _record_ios_event(db, now)
     activity_type = data.activity_type or ""
     activity_type_lower = activity_type.lower()
     if activity_type_lower == "ios_ping":
@@ -399,94 +760,52 @@ async def process_ios_telemetry(data: iOSTelemetry, db: Session):
         set_state(db, "seen_walking_automation", "true")
     if data.is_charging is not None:
         set_state(db, "seen_charging_automation", "true")
-    is_walking = bool(data.activity_type and "walk" in data.activity_type.lower())
 
-    # Store steps if provided
-    if data.steps_today is not None:
-        set_state(db, "steps_today", str(data.steps_today))
+    _handle_ios_steps(db, data.steps_today)
+    is_walking = bool(activity_type and "walk" in activity_type_lower)
+    _handle_walking_transition(db, now, is_walking, data.location_label or "")
 
-    # Walking detection with calendar logging
-    was_walking = get_state(db, "is_walking") == "true"
-    if is_walking:
-        if not was_walking:
-            # Walk just started
-            set_state(db, "walk_start", now.isoformat())
-            set_state(db, "walk_from", data.location_label or "")
-        set_state(db, "is_walking", "true")
-        set_state(db, "walk_current_location", data.location_label or "")
-    else:
-        if was_walking:
-            # Walk just ended — log to calendar
-            walk_start_str = get_state(db, "walk_start")
-            walk_from = get_state(db, "walk_from")
-            walk_to = get_state(db, "walk_current_location") or data.location_label or ""
-            if walk_start_str:
-                try:
-                    walk_start = datetime.fromisoformat(walk_start_str)
-                    duration_min = (now - walk_start).total_seconds() / 60
-                    if duration_min >= 3:  # Only log walks 3+ minutes
-                        calendar_sync.create_walk_event(walk_from, walk_to, walk_start, now)
-                except Exception as e:
-                    log.error("Walk calendar error: %s", e)
-            set_state(db, "walk_start", "")
-        set_state(db, "is_walking", "false")
-
-    # Location visit tracking (for calendar)
-    prev_location = get_state(db, "current_location")
     current_location = data.location_label or ""
-    if current_location and current_location != prev_location:
-        # Left previous location — log the visit
-        arrival_str = get_state(db, "location_arrival")
-        if prev_location and arrival_str:
-            try:
-                arrival_dt = datetime.fromisoformat(arrival_str)
-                duration_min = (now - arrival_dt).total_seconds() / 60
-                if duration_min >= 10:  # Only log visits 10+ minutes
-                    calendar_sync.create_location_event(prev_location, arrival_dt, now)
-            except Exception as e:
-                log.error("Location calendar error: %s", e)
-        # Start tracking new location
-        set_state(db, "current_location", current_location)
-        set_state(db, "location_arrival", now.isoformat())
+    if current_location:
+        _handle_location_change(db, current_location, now)
 
-    # Study Mode
-    if data.location_label and data.location_label.lower() in ["library", "class", "school", "campus"]:
-        set_state(db, "study_mode", "active")
-    else:
-        if data.location_label:  # Only clear if we have a definitive location
-            set_state(db, "study_mode", "inactive")
+    _update_sleep_state(db, now, activity_type, data.is_charging)
 
-    # Smart check-in: when location changes, guess what user is doing and ask
-    if current_location and current_location != prev_location and current_location not in ("charging_trigger", "walking_trigger"):
-        last_checkin_str = get_state(db, "last_user_checkin")
-        needs_checkin = True
-        if last_checkin_str:
-            try:
-                last_checkin = datetime.fromisoformat(last_checkin_str)
-                # Don't ask if user checked in within last 15 minutes
-                if (now - last_checkin).total_seconds() < 900:
-                    needs_checkin = False
-            except Exception:
-                pass
 
-        if needs_checkin and not get_state(db, "pending_checkin"):
-            # Build a guess based on location and time
-            guess = _guess_activity(current_location, prev_location, now, db)
-            if guess:
-                checkin_msg = f"Looks like you're at {current_location}. {guess} — is that right?"
-                set_state(db, "pending_checkin", checkin_msg)
-                set_state(db, "checkin_guess", guess)
-                log.info("Check-in generated: %s", checkin_msg)
+async def process_ios_zone_event(data: iOSZoneEvent, db: Session):
+    now = data.event_time or datetime.utcnow()
+    ensure_default_settings(db)
+    _record_ios_event(db, now)
+    _handle_ios_steps(db, data.steps_today)
 
-    # Sleep detection (timezone-aware)
-    tz_name = get_state(db, "user_timezone", DEFAULTS["user_timezone"])
-    try:
-        tz = ZoneInfo(tz_name)
-    except Exception:
-        tz = ZoneInfo("America/Los_Angeles")
-    local_hour = now.replace(tzinfo=ZoneInfo("UTC")).astimezone(tz).hour
-    if local_hour >= 22 or local_hour <= 4:
-        if data.is_charging and data.activity_type == "Stationary":
-            set_state(db, "user_asleep", "true")
-    else:
-        set_state(db, "user_asleep", "false")
+    zone = get_zone(db, data.zone_slug)
+    zone_label = zone.name if zone else data.zone_slug.replace("-", " ").title()
+    zone_type = zone.zone_type if zone else "custom"
+    transition = (data.transition or "").strip().lower()
+    if transition not in {"enter", "exit"}:
+        raise ValueError("transition must be 'enter' or 'exit'")
+
+    if transition == "enter":
+        set_state(db, "seen_arrive_automation", "true")
+        _handle_location_change(db, zone_label, now, zone_type=zone_type)
+        set_state(db, "last_zone_enter", zone.slug if zone else data.zone_slug)
+
+        if get_state(db, "commute_start") and zone_type != "home":
+            commute_start = _parse_iso_dt(get_state(db, "commute_start"))
+            commute_from = get_state(db, "commute_from")
+            if commute_start:
+                duration_min = max(1, int((now - commute_start).total_seconds() / 60))
+                set_state(db, "last_commute_minutes", str(duration_min))
+                set_state(db, "last_commute_route", f"{commute_from} -> {zone_label}")
+            set_state(db, "commute_start", "")
+            set_state(db, "commute_from", "")
+        return
+
+    set_state(db, "seen_leave_automation", "true")
+    if zone_type == "home":
+        set_state(db, "commute_start", now.isoformat())
+        set_state(db, "commute_from", zone_label)
+    if get_state(db, "current_location") == zone_label:
+        _close_current_location_visit(db, now, explicit_location=zone_label)
+    if zone_type == "home":
+        set_state(db, "study_mode", "inactive")

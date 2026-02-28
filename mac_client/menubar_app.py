@@ -151,6 +151,7 @@ class LifeManagerApp(rumps.App):
 
         self._chrome_cache: list = []
         self._chrome_cache_time: float = 0.0
+        self._last_callout: str = ""
 
         self.status_window = StatusWindow(self)
         if CLIENT_CONFIG.get("show_status_window_on_launch", False):
@@ -159,6 +160,7 @@ class LifeManagerApp(rumps.App):
         threading.Thread(target=self._tracker_loop, daemon=True).start()
         interval = int(CLIENT_CONFIG.get("railway_health_check_interval_seconds", 30))
         rumps.Timer(self._refresh_status, max(10, interval)).start()
+        rumps.Timer(self._send_heartbeat, 60).start()
         rumps.Timer(self._watchdog, 60).start()
 
     def _health_ok(self):
@@ -243,6 +245,14 @@ class LifeManagerApp(rumps.App):
                 self.last_status["sleep_note"] = data.get("sleep_status_note", "waiting for iPhone pings")
                 if data.get("service_health") == "offline":
                     self.backend_item.title = "⚙️  Backend: Offline ❌"
+            callout_resp = session.get(f"{BACKEND_URL}/api/callout", timeout=3)
+            if callout_resp.ok:
+                callout = callout_resp.json().get("callout") or ""
+                if callout and callout != self._last_callout:
+                    self._last_callout = callout
+                    notifier.notify(callout, "Life Manager")
+                elif not callout:
+                    self._last_callout = ""
         except Exception:
             self.backend_item.title = "⚙️  Backend: Offline ❌"
 
@@ -251,6 +261,23 @@ class LifeManagerApp(rumps.App):
         if CLIENT_CONFIG.get("recreate_status_icon_on_focus_loss", True) and not self.title:
             self.title = "🧠"
             notifier.notify("Recovered missing menu icon state.", "Life Manager")
+
+    def _send_heartbeat(self, _):
+        try:
+            session.post(
+                f"{BACKEND_URL}/api/mac-heartbeat",
+                json={
+                    "client_id": "python-menubar",
+                    "app_version": "legacy-python",
+                    "agent_state": "running" if self.tracking_enabled else "paused",
+                    "tracking_enabled": self.tracking_enabled,
+                    "permissions_state": "ok",
+                    "last_error": "",
+                },
+                timeout=3,
+            )
+        except Exception:
+            pass
 
     def toggle_tracking(self, _):
         new_state = not self.tracking_enabled
