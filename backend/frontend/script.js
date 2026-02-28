@@ -316,13 +316,20 @@ async function fetchCallout() {
 document.getElementById('callout-submit').addEventListener('click', async () => {
     const reply = calloutReply.value.trim();
     if (!reply) return;
-    await fetch(`${API}/api/prompt-reply`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reply })
-    });
-    await fetch(`${API}/api/callout/dismiss`, { method: 'POST' });
+
+    // Optimistic UI update to feel responsive
     calloutBanner.classList.add('hidden');
     calloutReply.value = '';
+
+    fetch(`${API}/api/prompt-reply`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reply })
+    }).catch(() => { });
+    fetch(`${API}/api/callout/dismiss`, { method: 'POST' }).catch(() => { });
+});
+
+document.getElementById('callout-reply').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('callout-submit').click();
 });
 
 document.getElementById('callout-dismiss').addEventListener('click', async () => {
@@ -816,28 +823,29 @@ async function fetchCheckin() {
 }
 
 checkinConfirm.addEventListener('click', async () => {
-    try {
-        await fetch(`${API}/api/checkin/confirm`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ confirmed: true })
-        });
-    } catch { }
+    // Optimistic UI hide
     checkinBanner.classList.add('hidden');
     lastCheckinNotification = '';
+
+    fetch(`${API}/api/checkin/confirm`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirmed: true })
+    }).catch(() => { });
 });
 
 checkinSend.addEventListener('click', async () => {
     const correction = checkinCorrection.value.trim();
     if (!correction) return;
-    try {
-        await fetch(`${API}/api/checkin/confirm`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ confirmed: false, correction })
-        });
-    } catch { }
+
+    // Optimistic UI hide
     checkinBanner.classList.add('hidden');
     checkinCorrection.value = '';
     lastCheckinNotification = '';
+
+    fetch(`${API}/api/checkin/confirm`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirmed: false, correction })
+    }).catch(() => { });
 });
 
 checkinCorrection.addEventListener('keydown', (e) => {
