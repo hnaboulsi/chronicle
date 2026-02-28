@@ -34,6 +34,7 @@
 		D10D2943E071C40995A10C0D /* NativeAppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9107961FB6D22889BB87D98 /* NativeAppModel.swift */; };
 		E05360E47BBD91E435715E90 /* AppConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54EC3366DE790AA75DBB786C /* AppConstants.swift */; };
 		E850C6938DD9436DEC915C87 /* SharedModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D44D0A5910DAB4633B2E2934 /* SharedModels.swift */; };
+		EDA85AF7130286D127EB5230 /* AgentNotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D851395044BAB88CBFE337F8 /* AgentNotificationManager.swift */; };
 		EF34D4F9C82FC3E51A0035DA /* HelperController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EDC2EC0E9DBC4ABFAB7C784 /* HelperController.swift */; };
 		EFA9B254C137EC06744FC0FB /* LifeManagerAgentApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45FDFF344BA0599DEE3277CF /* LifeManagerAgentApp.swift */; };
 		F184732BA62FD836E9F356F0 /* AppGroupStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C54C8D0BC2D8462DC240F6E3 /* AppGroupStore.swift */; };
@@ -95,6 +96,7 @@
 		CC0B8DC91F5822BE22E4442A /* LifeManager.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LifeManager.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D36CD9A7F87025972E11E544 /* LifeManagerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifeManagerApp.swift; sourceTree = "<group>"; };
 		D44D0A5910DAB4633B2E2934 /* SharedModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedModels.swift; sourceTree = "<group>"; };
+		D851395044BAB88CBFE337F8 /* AgentNotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNotificationManager.swift; sourceTree = "<group>"; };
 		F9D0A96A93A5F85FC8E66734 /* LegacyConfigImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyConfigImporter.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -122,6 +124,7 @@
 		95966BA944DA949A31C471A5 /* LifeManager */ = {
 			isa = PBXGroup;
 			children = (
+				D851395044BAB88CBFE337F8 /* AgentNotificationManager.swift */,
 				4DFFB538363D09993D04021D /* AppDelegate.swift */,
 				32DAEAE7ADD3263BEEE461BE /* Assets.xcassets */,
 				6E29FF7AADB88464D60222E5 /* CalendarView.swift */,
@@ -258,6 +261,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				EDA85AF7130286D127EB5230 /* AgentNotificationManager.swift in Sources */,
 				F8D41CA626E493F8DABF74DC /* AppConstants.swift in Sources */,
 				746AC276964685ACC613AF93 /* AppDelegate.swift in Sources */,
 				45C497C433CEE3619442CD5D /* AppGroupStore.swift in Sources */,

@@ -19,7 +19,6 @@ targets:
     sources:
       - path: LifeManager
         excludes:
-          - AgentNotificationManager.swift
           - AgentRuntime.swift
           - Info.plist
           - MenuBarManager.swift
