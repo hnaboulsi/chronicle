@@ -158,33 +158,40 @@ def get_recent_chrome_history(minutes: int = 15) -> list:
 
 
 def send_telemetry(app_name: str, window_title: str, idle_time: int):
-    """Sends telemetry data to the backend API."""
+    """Sends telemetry data to the backend API. Retries once on connection failure."""
     payload = {
         "app_name": app_name,
         "window_title": window_title,
         "idle_time_seconds": idle_time
     }
-    try:
-        resp = requests.post(f"{BACKEND_URL}/api/mac-telemetry", json=payload, timeout=2.0)
-        
-        if resp.status_code == 200:
-            data = resp.json()
-            prompt = data.get("prompt")
-            if prompt:
-                print(f"Backend triggered prompt: {prompt}")
-                user_reply = notifier.prompt_user(prompt)
-                
-                if user_reply and user_reply != "Canceled" and user_reply != "Error":
-                    requests.post(f"{BACKEND_URL}/api/prompt-reply", json={"reply": user_reply}, timeout=2.0)
-                
-                state_resp = requests.get(f"{BACKEND_URL}/api/state", timeout=2.0)
-                if state_resp.status_code == 200:
-                    states = state_resp.json()
-                    if states.get("study_mode") == "active":
-                        notifier.notify("Study mode is active. Silencing notifications...", "Life Manager")
-                        
-    except requests.exceptions.RequestException as e:
-        print(f"Error connecting to backend: {e}")
+    for attempt in range(2):
+        try:
+            resp = requests.post(f"{BACKEND_URL}/api/mac-telemetry", json=payload, timeout=5.0)
+
+            if resp.status_code == 200:
+                data = resp.json()
+                prompt = data.get("prompt")
+                if prompt:
+                    print(f"Backend triggered prompt: {prompt}")
+                    user_reply = notifier.prompt_user(prompt)
+
+                    if user_reply and user_reply != "Canceled" and user_reply != "Error":
+                        requests.post(f"{BACKEND_URL}/api/prompt-reply", json={"reply": user_reply}, timeout=5.0)
+
+                    state_resp = requests.get(f"{BACKEND_URL}/api/state", timeout=5.0)
+                    if state_resp.status_code == 200:
+                        states = state_resp.json()
+                        if states.get("study_mode") == "active":
+                            notifier.notify("Study mode is active. Silencing notifications...", "Life Manager")
+            break  # success — exit retry loop
+
+        except requests.exceptions.RequestException as e:
+            if attempt == 0:
+                print(f"Telemetry attempt 1 failed ({e}), retrying in 3s...")
+                time.sleep(3)
+            else:
+                print(f"Error connecting to backend after retry: {e}")
+
 
 def main():
     print("Starting Life Manager Mac Tracker with Tab Tracking...")

@@ -77,7 +77,7 @@ async def classify_activity_context(recent_activities: list, user_self_report: s
     Uses gemini-2.5-flash-lite to conserve API quota.
     Returns: {"category": "studying", "summary": "CS 70 problem sets"}
     """
-    if not recent_activities:
+    if not recent_activities or not client:
         return {"category": "unknown", "summary": ""}
 
     lines = []
@@ -153,7 +153,7 @@ async def generate_hourly_summary(logs: list, hour_start: str) -> dict:
     Uses gemini-2.5-flash for better reasoning quality.
     Returns: {"summary": "...", "productivity_score": 7.5}
     """
-    if not logs:
+    if not logs or not client:
         return {"summary": "No activity recorded this hour.", "productivity_score": None}
 
     lines = []

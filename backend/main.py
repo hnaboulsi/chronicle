@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import base64
@@ -6,8 +7,9 @@ from datetime import datetime, timedelta
 from typing import Dict, Any
 
 from fastapi import FastAPI, Depends, BackgroundTasks, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, Response, RedirectResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, text, func
 from database import engine, Base, get_db, SessionLocal
@@ -44,6 +46,13 @@ def _run_migrations():
 _run_migrations()
 
 app = FastAPI(title="Life-Manager Agent API")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 _STARTED_AT = datetime.utcnow()
 
 # Telemetry endpoints are called by Mac tracker and iPhone shortcut — no auth needed
@@ -115,7 +124,6 @@ async def basic_auth_middleware(request: Request, call_next):
     )
 
 # Serve frontend static files
-from fastapi.responses import RedirectResponse
 frontend_path = os.path.join(os.path.dirname(__file__), "frontend")
 os.makedirs(frontend_path, exist_ok=True)
 app.mount("/dashboard", StaticFiles(directory=frontend_path, html=True), name="frontend")
@@ -128,8 +136,8 @@ def _bg_process_mac(data: MacTelemetry):
     """Run mac telemetry processing with its own DB session."""
     db = SessionLocal()
     try:
-        import asyncio
-        asyncio.run(agent_logic.process_mac_telemetry(data, db))
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(agent_logic.process_mac_telemetry(data, db))
     except Exception as e:
         log.error("Background mac telemetry error: %s", e)
     finally:
@@ -140,8 +148,8 @@ def _bg_process_ios(data: iOSTelemetry):
     """Run ios telemetry processing with its own DB session."""
     db = SessionLocal()
     try:
-        import asyncio
-        asyncio.run(agent_logic.process_ios_telemetry(data, db))
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(agent_logic.process_ios_telemetry(data, db))
     except Exception as e:
         log.error("Background ios telemetry error: %s", e)
     finally:
@@ -1200,15 +1208,15 @@ async def event_stream(db: Session = Depends(get_db)):
     """Server-Sent Events stream for real-time dashboard updates.
     Pushes every 5s and auto-closes after 5 minutes to conserve Railway resources.
     Client should reconnect automatically (EventSource handles this)."""
-    import asyncio
     import time as _time
+    import json as _json
     from starlette.responses import StreamingResponse
 
     async def generate():
         start = _time.time()
         max_duration = 300  # 5 minutes then close — client reconnects
-        while _time.time() - start < max_duration:
-            try:
+        try:
+            while _time.time() - start < max_duration:
                 fresh_db = SessionLocal()
                 try:
                     states = agent_logic.get_all_states(fresh_db)
@@ -1228,15 +1236,16 @@ async def event_stream(db: Session = Depends(get_db)):
                         }
                         for l in logs
                     ]
-                    import json
-                    payload = json.dumps({"states": states, "logs": logs_data})
+                    payload = _json.dumps({"states": states, "logs": logs_data})
                     yield f"data: {payload}\n\n"
+                except Exception as e:
+                    log.error("SSE stream error: %s", e)
+                    yield f"data: {{}}\n\n"
                 finally:
                     fresh_db.close()
-            except Exception as e:
-                log.error("SSE stream error: %s", e)
-                yield f"data: {{}}\n\n"
-            await asyncio.sleep(5)
+                await asyncio.sleep(5)
+        except asyncio.CancelledError:
+            log.debug("SSE client disconnected")
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 

@@ -2,18 +2,25 @@
 calendar_sync.py — Write activity sessions and walks to Apple Calendar.
 Apple Calendar auto-syncs to Google Calendar if Google is added in
 System Settings > Internet Accounts.
+
+On non-macOS platforms (e.g. Railway/Linux), all functions no-op gracefully.
 """
 
 import logging
 import subprocess
+import sys
 import datetime
 
 log = logging.getLogger("life_manager.calendar")
 
 CALENDAR_NAME = "Life Manager"
 
+_IS_MACOS = sys.platform == "darwin"
+
 
 def _run_applescript(script: str) -> str:
+    if not _IS_MACOS:
+        return ""
     result = subprocess.run(
         ["osascript", "-e", script],
         capture_output=True, text=True

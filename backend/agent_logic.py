@@ -19,8 +19,8 @@ DEFAULTS = {
     "backend_mode": "railway_primary",
     "llm_mode": "balanced",
     "hourly_summaries_enabled": "true",
-    "classification_interval_seconds": "300",
-    "llm_daily_cap": "200",
+    "classification_interval_seconds": "1800",  # 30-min default to conserve API budget
+    "llm_daily_cap": "30",   # Gemini free tier is generous; 30 is a safe daily default
     "sleep_source": "iphone_only",
     "user_timezone": "America/Los_Angeles",
 }
