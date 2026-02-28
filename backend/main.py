@@ -373,7 +373,7 @@ def _bg_process_ios_zone(data: iOSZoneEvent):
 
 
 @app.post("/api/mac-telemetry")
-async def receive_mac_telemetry(data: MacTelemetry, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+def receive_mac_telemetry(data: MacTelemetry, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     log_entry = ActivityLog(
         device="mac",
         app_name=data.app_name,
@@ -389,7 +389,7 @@ async def receive_mac_telemetry(data: MacTelemetry, background_tasks: Background
 
 
 @app.post("/api/mac-heartbeat")
-async def receive_mac_heartbeat(data: MacHeartbeat, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+def receive_mac_heartbeat(data: MacHeartbeat, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     background_tasks.add_task(_bg_process_heartbeat, data)
     states = _build_state_payload(db)
     return {
@@ -401,7 +401,7 @@ async def receive_mac_heartbeat(data: MacHeartbeat, background_tasks: Background
 
 
 @app.post("/api/ios-telemetry")
-async def receive_ios_telemetry(data: iOSTelemetry, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+def receive_ios_telemetry(data: iOSTelemetry, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     batt_pct = _normalize_battery_level(data.battery_level)
 
     log_entry = ActivityLog(
@@ -421,7 +421,7 @@ async def receive_ios_telemetry(data: iOSTelemetry, background_tasks: Background
 
 
 @app.post("/api/ios-zone-event")
-async def receive_ios_zone_event(data: iOSZoneEvent, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+def receive_ios_zone_event(data: iOSZoneEvent, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     zone = agent_logic.get_zone(db, data.zone_slug)
     zone_label = zone.name if zone else data.zone_slug.replace("-", " ").title()
     log_entry = ActivityLog(
@@ -438,11 +438,11 @@ async def receive_ios_zone_event(data: iOSZoneEvent, background_tasks: Backgroun
 
 
 @app.get("/api/state")
-async def get_state(db: Session = Depends(get_db)):
+def get_state(db: Session = Depends(get_db)):
     return _build_state_payload(db)
 
 @app.get("/api/settings")
-async def get_settings(db: Session = Depends(get_db)):
+def get_settings(db: Session = Depends(get_db)):
     agent_logic.ensure_default_settings(db)
     polling_str = agent_logic.get_state(db, "polling_interval_seconds", "60")
     tracking_enabled_str = agent_logic.get_state(db, "tracking_enabled", "true")
@@ -459,7 +459,7 @@ async def get_settings(db: Session = Depends(get_db)):
     }
 
 @app.post("/api/settings")
-async def update_settings(payload: Dict[str, Any], db: Session = Depends(get_db)):
+def update_settings(payload: Dict[str, Any], db: Session = Depends(get_db)):
     agent_logic.ensure_default_settings(db)
     if "polling_interval_seconds" in payload:
         agent_logic.set_state(db, "polling_interval_seconds", str(payload["polling_interval_seconds"]))
@@ -508,12 +508,12 @@ async def api_version():
 
 
 @app.get("/api/zones")
-async def get_zones(db: Session = Depends(get_db)):
+def get_zones(db: Session = Depends(get_db)):
     return {"zones": agent_logic.list_zones(db)}
 
 
 @app.post("/api/zones")
-async def create_zone(payload: Dict[str, Any], db: Session = Depends(get_db)):
+def create_zone(payload: Dict[str, Any], db: Session = Depends(get_db)):
     try:
         zone = agent_logic.upsert_zone(db, payload)
     except ValueError as exc:
@@ -522,7 +522,7 @@ async def create_zone(payload: Dict[str, Any], db: Session = Depends(get_db)):
 
 
 @app.patch("/api/zones/{zone_id}")
-async def patch_zone(zone_id: int, payload: Dict[str, Any], db: Session = Depends(get_db)):
+def patch_zone(zone_id: int, payload: Dict[str, Any], db: Session = Depends(get_db)):
     try:
         zone = agent_logic.upsert_zone(db, payload, zone_id=zone_id)
     except ValueError as exc:
@@ -531,7 +531,7 @@ async def patch_zone(zone_id: int, payload: Dict[str, Any], db: Session = Depend
 
 
 @app.delete("/api/zones/{zone_id}")
-async def remove_zone(zone_id: int, db: Session = Depends(get_db)):
+def remove_zone(zone_id: int, db: Session = Depends(get_db)):
     zone = db.query(models.LocationZone).filter(models.LocationZone.id == zone_id).first()
     if not zone:
         raise HTTPException(status_code=404, detail="Zone not found")
@@ -543,7 +543,7 @@ async def remove_zone(zone_id: int, db: Session = Depends(get_db)):
 
 
 @app.get("/api/calendar/jobs")
-async def get_calendar_jobs(limit: int = 25, status: str = "pending", db: Session = Depends(get_db)):
+def get_calendar_jobs(limit: int = 25, status: str = "pending", db: Session = Depends(get_db)):
     query = db.query(CalendarEventJob)
     if status and status != "all":
         query = query.filter(CalendarEventJob.status == status)
@@ -552,7 +552,7 @@ async def get_calendar_jobs(limit: int = 25, status: str = "pending", db: Sessio
 
 
 @app.post("/api/calendar/jobs/{job_id}/ack")
-async def ack_calendar_job(job_id: int, db: Session = Depends(get_db)):
+def ack_calendar_job(job_id: int, db: Session = Depends(get_db)):
     job = db.query(CalendarEventJob).filter(CalendarEventJob.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Calendar job not found")
@@ -564,7 +564,7 @@ async def ack_calendar_job(job_id: int, db: Session = Depends(get_db)):
 
 
 @app.post("/api/calendar/jobs/{job_id}/fail")
-async def fail_calendar_job(job_id: int, payload: Dict[str, Any], db: Session = Depends(get_db)):
+def fail_calendar_job(job_id: int, payload: Dict[str, Any], db: Session = Depends(get_db)):
     job = db.query(CalendarEventJob).filter(CalendarEventJob.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Calendar job not found")
@@ -634,7 +634,7 @@ async def mcp_http_transport(payload: Dict[str, Any], db: Session = Depends(get_
     raise HTTPException(status_code=404, detail=f"Unknown MCP method: {method}")
 
 @app.get("/api/logs")
-async def get_logs(limit: int = 50, db: Session = Depends(get_db)):
+def get_logs(limit: int = 50, db: Session = Depends(get_db)):
     logs = db.query(ActivityLog).order_by(desc(ActivityLog.timestamp)).limit(limit).all()
     return logs
 
@@ -657,7 +657,7 @@ async def get_log_summary(log_id: int, db: Session = Depends(get_db)):
         return {"summary": f"User was {entry.activity_type} near {entry.location_label}."}
 
 @app.get("/api/hourly-summaries")
-async def get_hourly_summaries(limit: int = 5, db: Session = Depends(get_db)):
+def get_hourly_summaries(limit: int = 5, db: Session = Depends(get_db)):
     summaries = db.query(HourlySummary).order_by(desc(HourlySummary.hour_start)).limit(limit).all()
     return [
         {
@@ -671,7 +671,7 @@ async def get_hourly_summaries(limit: int = 5, db: Session = Depends(get_db)):
 
 
 @app.post("/api/prompt-reply")
-async def handle_prompt_reply(payload: Dict[str, Any], db: Session = Depends(get_db)):
+def handle_prompt_reply(payload: Dict[str, Any], db: Session = Depends(get_db)):
     reply = payload.get("reply", "")
     agent_logic.clear_pending_prompt(db)
     agent_logic.update_context_with_reply(reply, db)
@@ -679,7 +679,7 @@ async def handle_prompt_reply(payload: Dict[str, Any], db: Session = Depends(get
 
 
 @app.get("/api/callout")
-async def get_callout(db: Session = Depends(get_db)):
+def get_callout(db: Session = Depends(get_db)):
     """Returns a call-out if the AI thinks you're being unproductive."""
     category = agent_logic.get_state(db, "callout_category")
     summary = agent_logic.get_state(db, "callout_summary")
@@ -698,7 +698,7 @@ async def get_callout(db: Session = Depends(get_db)):
 
 
 @app.post("/api/callout/dismiss")
-async def dismiss_callout(db: Session = Depends(get_db)):
+def dismiss_callout(db: Session = Depends(get_db)):
     agent_logic.set_state(db, "callout_category", "")
     agent_logic.set_state(db, "callout_summary", "")
     return {"status": "dismissed"}
@@ -808,7 +808,7 @@ async def chat_message(payload: Dict[str, Any], db: Session = Depends(get_db)):
 
 
 @app.get("/api/chat/history")
-async def chat_history(db: Session = Depends(get_db)):
+def chat_history(db: Session = Depends(get_db)):
     """Get today's chat history."""
     import json
     now = datetime.utcnow()
@@ -822,7 +822,7 @@ async def chat_history(db: Session = Depends(get_db)):
 
 
 @app.get("/api/checkin")
-async def get_checkin(db: Session = Depends(get_db)):
+def get_checkin(db: Session = Depends(get_db)):
     """Check if there's a pending check-in question for the user."""
     checkin = agent_logic.get_state(db, "pending_checkin")
     guess = agent_logic.get_state(db, "checkin_guess")
@@ -832,7 +832,7 @@ async def get_checkin(db: Session = Depends(get_db)):
 
 
 @app.post("/api/checkin/confirm")
-async def confirm_checkin(payload: Dict[str, Any], db: Session = Depends(get_db)):
+def confirm_checkin(payload: Dict[str, Any], db: Session = Depends(get_db)):
     """User confirms or corrects the check-in guess."""
     confirmed = payload.get("confirmed", False)
     correction = (payload.get("correction") or "").strip()
@@ -963,7 +963,7 @@ async def healthz():
 
 
 @app.get("/api/ios-setup-status")
-async def ios_setup_status(db: Session = Depends(get_db)):
+def ios_setup_status(db: Session = Depends(get_db)):
     states = _build_state_payload(db)
     last_ios_ping_age = states.get("last_ios_event_age_seconds")
     checklist = [
