@@ -32,4 +32,4 @@ Notes:
 - The helper is scaffolded as a background-only app target.
 - Embedding the helper under `Contents/Library/LoginItems` should be finalized in Xcode once full Xcode is installed.
 - The native sources typecheck with the macOS SDK, but `xcodebuild` will fail until the Xcode license is accepted on the machine.
-- The repo's existing Python client remains available during the migration period.
+- The intended product path is the native app plus hidden helper; the old Python client should not be treated as the primary install path.

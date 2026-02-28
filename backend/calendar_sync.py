@@ -1,9 +1,9 @@
 """
-calendar_sync.py — Write activity sessions and walks to Apple Calendar.
-Apple Calendar auto-syncs to Google Calendar if Google is added in
-System Settings > Internet Accounts.
+Legacy local calendar helpers.
 
-On non-macOS platforms (e.g. Railway/Linux), all functions no-op gracefully.
+Production calendar sync now works through queued calendar jobs that are
+executed by the native macOS helper via EventKit. Railway must never rely on
+this module for active calendar writes.
 """
 
 import logging

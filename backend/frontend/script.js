@@ -32,6 +32,15 @@ const logsBody = document.getElementById('logs-body');
 const refreshBtn = document.getElementById('refresh-btn');
 const pollingSlider = document.getElementById('polling-slider');
 const pollingLabel = document.getElementById('polling-label');
+const serviceStatusEl = document.getElementById('service-status');
+const serviceDetailEl = document.getElementById('service-detail');
+const calendarStatusEl = document.getElementById('calendar-status');
+const calendarDetailEl = document.getElementById('calendar-detail');
+const iosSetupStatusEl = document.getElementById('ios-setup-status');
+const iosSetupDetailEl = document.getElementById('ios-setup-detail');
+const nextStepStatusEl = document.getElementById('next-step-status');
+const nextStepDetailEl = document.getElementById('next-step-detail');
+let latestStates = null;
 
 // ── Clock ──
 function updateClock() {
@@ -99,6 +108,7 @@ async function fetchData() {
 
 // ── Update all UI ──
 function updateUI(logs, states) {
+    latestStates = states;
     // Mac Card
     const isMacBrowser = /Mac/.test(navigator.platform || navigator.userAgent || '');
     const macState = states.mac_status || (states.mac_online === true ? 'online' : 'offline');
@@ -634,10 +644,10 @@ async function checkOnboarding() {
         const macOk = states.mac_online === true;
         const macStatusEl = document.getElementById('onboard-mac-status');
         if (macOk) {
-            macStatusEl.innerHTML = '&#10003; Mac tracker is connected and sending data.';
+            macStatusEl.innerHTML = '&#10003; The hidden Mac agent is connected and sending data.';
         } else {
             const launchHref = states.mac_launch_url || 'lifemanager://open';
-            macStatusEl.innerHTML = `Mac tracker not detected. <a href="${launchHref}" style="color:#58a6ff;text-decoration:underline;">Open Life Manager</a> or <a href="/setup/mac" target="_blank" style="color:#58a6ff;text-decoration:underline;">Mac Setup Guide &rarr;</a>`;
+            macStatusEl.innerHTML = `The hidden Mac agent is not connected. <a href="${launchHref}" style="color:#58a6ff;text-decoration:underline;">Open Life Manager</a> or <a href="/setup/mac" target="_blank" style="color:#58a6ff;text-decoration:underline;">Install / Repair &rarr;</a>`;
         }
         // Check iOS shortcut status
         try {
@@ -850,11 +860,94 @@ async function checkIosSetupStatus() {
             const warning = document.createElement('div');
             warning.id = 'ios-setup-warning';
             warning.style.cssText = 'margin-top:0.5rem;padding:0.4rem 0.7rem;background:rgba(210,153,34,0.15);border:1px solid rgba(210,153,34,0.4);border-radius:8px;font-size:0.75rem;color:#d29922;cursor:pointer;';
-            warning.innerHTML = `⚠ ${unconfigured.length} iPhone automation${unconfigured.length > 1 ? 's' : ''} not set up — <u>tap to fix</u>`;
+            warning.innerHTML = `⚠ ${unconfigured.length} iPhone automation${unconfigured.length > 1 ? 's' : ''} still need setup — <u>tap to fix</u>`;
             warning.onclick = () => window.open('/setup/ios', '_blank');
             cardIos.appendChild(warning);
         }
     } catch {}
+}
+
+async function fetchControlCenterStatus() {
+    try {
+        const [healthRes, iosRes, calendarRes] = await Promise.all([
+            fetch(`${API}/api/healthz`),
+            fetch(`${API}/api/ios-setup-status`),
+            fetch(`${API}/api/calendar/jobs?limit=25&status=pending`),
+        ]);
+
+        const health = healthRes.ok ? await healthRes.json() : null;
+        const iosSetup = iosRes.ok ? await iosRes.json() : null;
+        const calendar = calendarRes.ok ? await calendarRes.json() : { jobs: [] };
+
+        if (serviceStatusEl && serviceDetailEl) {
+            const status = health?.status || 'unknown';
+            serviceStatusEl.textContent = status === 'ok' ? 'Healthy' : (status === 'degraded' ? 'Degraded' : 'Unknown');
+            serviceStatusEl.style.color = status === 'ok' ? 'var(--success)' : 'var(--warning)';
+            if (status === 'ok') {
+                serviceDetailEl.textContent = `Railway is serving traffic. Build ${health?.build?.git_sha || 'unknown'} is live.`;
+            } else {
+                const startupError = (health?.startup_errors || [])[0];
+                serviceDetailEl.textContent = startupError || 'The service is reachable, but startup or database checks need attention.';
+            }
+        }
+
+        const pendingJobs = Array.isArray(calendar?.jobs) ? calendar.jobs.length : 0;
+        if (calendarStatusEl && calendarDetailEl) {
+            if (!latestStates || latestStates.mac_status === 'offline') {
+                calendarStatusEl.textContent = 'Waiting for Mac';
+                calendarStatusEl.style.color = 'var(--warning)';
+                calendarDetailEl.textContent = 'The Mac helper is the only calendar writer. Open Life Manager so it can pull queued calendar jobs.';
+            } else if (pendingJobs > 0) {
+                calendarStatusEl.textContent = `${pendingJobs} Queued`;
+                calendarStatusEl.style.color = 'var(--warning)';
+                calendarDetailEl.textContent = 'Recommended: System Settings > Apple Account > iCloud > Calendar ON, then keep the Life Manager calendar under the iCloud section in Calendar.app.';
+            } else {
+                calendarStatusEl.textContent = 'Ready';
+                calendarStatusEl.style.color = 'var(--success)';
+                calendarDetailEl.textContent = 'The Mac helper will write new sessions to Apple Calendar locally. For cloud sync, keep iCloud Calendar ON and the Life Manager calendar under iCloud.';
+            }
+        }
+
+        if (iosSetupStatusEl && iosSetupDetailEl) {
+            const checklist = iosSetup?.checklist || [];
+            const configured = checklist.filter(item => item.configured).length;
+            if (!checklist.length) {
+                iosSetupStatusEl.textContent = 'Not configured';
+                iosSetupStatusEl.style.color = 'var(--warning)';
+                iosSetupDetailEl.textContent = 'Set up zone enter/leave automations first. Walking and charging automations are optional quality-of-life signals.';
+            } else if (configured === checklist.length) {
+                iosSetupStatusEl.textContent = `${configured}/${checklist.length} Ready`;
+                iosSetupStatusEl.style.color = 'var(--success)';
+                iosSetupDetailEl.textContent = 'Zone automations are configured. Geofencing is the low-battery default and is more accurate than periodic GPS polling.';
+            } else {
+                iosSetupStatusEl.textContent = `${configured}/${checklist.length} Ready`;
+                iosSetupStatusEl.style.color = 'var(--warning)';
+                iosSetupDetailEl.textContent = 'Finish the missing automations in iPhone Setup. Start with zone enter/leave events, then add walking and charging if you want more context.';
+            }
+        }
+
+        if (nextStepStatusEl && nextStepDetailEl) {
+            if (!latestStates || latestStates.mac_status === 'offline') {
+                nextStepStatusEl.textContent = 'Open the Mac app';
+                nextStepDetailEl.textContent = 'Install or repair the native app first. Once it runs once, the hidden login helper should stay on in the background.';
+            } else if (latestStates.mac_status === 'degraded') {
+                nextStepStatusEl.textContent = 'Grant permissions';
+                nextStepDetailEl.textContent = 'Open Life Manager and finish Accessibility, Notifications, and Calendar access so the helper can classify activity and sync events.';
+            } else if (pendingJobs > 0) {
+                nextStepStatusEl.textContent = 'Enable iCloud Calendar';
+                nextStepDetailEl.textContent = 'Turn on iCloud Calendar on your Mac, then make sure the Life Manager calendar sits under iCloud in Calendar.app rather than only On My Mac.';
+            } else if ((iosSetup?.checklist || []).some(item => !item.configured)) {
+                nextStepStatusEl.textContent = 'Finish iPhone Setup';
+                nextStepDetailEl.textContent = 'Use the iPhone Setup page to add zone enter/leave automations. That gives you better location data with much less battery drain.';
+            } else {
+                nextStepStatusEl.textContent = 'Everything is in place';
+                nextStepDetailEl.textContent = 'The Mac helper is online, calendar sync is queued correctly, and your iPhone setup is in place. Use this page for status, quick fixes, and analytics.';
+            }
+        }
+    } catch {
+        if (serviceStatusEl) serviceStatusEl.textContent = 'Unknown';
+        if (serviceDetailEl) serviceDetailEl.textContent = 'Could not load Control Center health details.';
+    }
 }
 
 // ── Setup ──
@@ -868,6 +961,7 @@ fetchCallout();
 fetchCheckin();
 fetchChatHistory();
 checkIosSetupStatus();
+fetchControlCenterStatus();
 
 if (!localStorage.getItem('lm_onboarded')) checkOnboarding();
 
@@ -881,6 +975,7 @@ setInterval(fetchAnalytics, 30000);
 setInterval(fetchCheckin, 15000);
 setInterval(fetchChatHistory, 30000);
 setInterval(checkIosSetupStatus, 120000); // re-check every 2 min
+setInterval(fetchControlCenterStatus, 30000);
 
 // ── Service Worker ──
 if ('serviceWorker' in navigator) {

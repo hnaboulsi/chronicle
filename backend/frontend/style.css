@@ -550,6 +550,40 @@ tr:hover td { background: rgba(88, 166, 255, 0.04); }
     border: 1px solid rgba(88, 166, 255, 0.15);
 }
 
+/* Control Center */
+.control-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+}
+
+.control-card {
+    padding: 1rem;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.control-label {
+    font-size: 0.7rem;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    margin-bottom: 0.45rem;
+}
+
+.control-status {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 0.3rem;
+}
+
+.control-detail {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
 /* Check-In Banner */
 .checkin-banner {
     background: rgba(88, 166, 255, 0.06);
@@ -1075,6 +1109,94 @@ tr:hover td { background: rgba(88, 166, 255, 0.04); }
 
 .footer-link:hover { color: var(--accent); }
 
+/* Info Details (How Mac App Works) */
+.info-details {
+    padding: 0;
+    overflow: hidden;
+}
+
+.info-summary {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 1rem 1.25rem;
+    cursor: pointer;
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    list-style: none;
+    user-select: none;
+    border-bottom: 1px solid transparent;
+    transition: border-color 0.2s;
+}
+
+.info-summary::-webkit-details-marker { display: none; }
+
+.info-summary-icon { font-size: 1.1rem; }
+
+.info-chevron {
+    margin-left: auto;
+    width: 8px;
+    height: 8px;
+    border-right: 2px solid var(--text-tertiary);
+    border-bottom: 2px solid var(--text-tertiary);
+    transform: rotate(45deg);
+    transition: transform 0.2s;
+}
+
+.info-details[open] .info-chevron {
+    transform: rotate(-135deg);
+}
+
+.info-details[open] .info-summary {
+    border-bottom-color: var(--glass-border);
+}
+
+.info-body {
+    padding: 1.25rem;
+    animation: fadeIn 0.25s ease;
+}
+
+.info-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+.info-card {
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+}
+
+.info-card h4 {
+    font-size: 0.8rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: var(--accent);
+}
+
+.info-card p {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+.info-card ul {
+    margin: 0;
+    padding-left: 1.2rem;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    line-height: 1.7;
+}
+
+.info-card li { margin-bottom: 0.2rem; }
+
+@media (max-width: 768px) {
+    .info-grid { grid-template-columns: 1fr; }
+}
+
 /* Empty state */
 .empty-state {
     color: var(--text-tertiary);
@@ -1127,6 +1249,7 @@ tr:hover td { background: rgba(88, 166, 255, 0.04); }
 @media (max-width: 1024px) {
     .device-states { grid-template-columns: repeat(2, 1fr); }
     .stats-row { grid-template-columns: repeat(2, 1fr); }
+    .control-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
 @media (max-width: 768px) {
@@ -1150,6 +1273,7 @@ tr:hover td { background: rgba(88, 166, 255, 0.04); }
 
     .stats-row { grid-template-columns: repeat(2, 1fr); gap: 0.75rem; }
     .stat-number { font-size: 1.2rem; }
+    .control-grid { grid-template-columns: 1fr; gap: 0.75rem; }
 
     .chart-label { width: 70px; font-size: 0.65rem; }
 
@@ -1172,6 +1296,7 @@ tr:hover td { background: rgba(88, 166, 255, 0.04); }
 @media (max-width: 420px) {
     .device-states { grid-template-columns: 1fr; }
     .stats-row { grid-template-columns: repeat(2, 1fr); }
+    .control-grid { grid-template-columns: 1fr; }
     .card-content h3 { font-size: 0.65rem; }
 }
 

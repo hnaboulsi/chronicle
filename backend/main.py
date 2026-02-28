@@ -27,11 +27,17 @@ logging.basicConfig(
 )
 log = logging.getLogger("life_manager")
 
-# Create tables (new tables only; doesn't ALTER existing ones)
-Base.metadata.create_all(bind=engine)
+_STARTUP_STATUS = {
+    "process_ready": False,
+    "database_ready": False,
+    "startup_migrations_ok": False,
+    "startup_errors": [],
+}
+
 
 # Lightweight column migrations — add missing columns to existing tables
-def _run_migrations():
+def _run_migrations() -> list[str]:
+    errors: list[str] = []
     with engine.connect() as conn:
         dialect = engine.dialect.name
         try:
@@ -42,10 +48,9 @@ def _run_migrations():
                 if "battery_pct" not in cols:
                     conn.execute(text("ALTER TABLE activity_logs ADD COLUMN battery_pct INTEGER"))
             conn.commit()
-        except Exception:
-            pass  # column may already exist in some SQLite versions
-
-_run_migrations()
+        except Exception as exc:
+            errors.append(str(exc))
+    return errors
 
 app = FastAPI(title="Life-Manager Agent API")
 app.add_middleware(
@@ -72,14 +77,21 @@ try:
 except Exception:
     _GIT_SHA = "unknown"
 
-# Telemetry endpoints are called by Mac tracker and iPhone shortcut — no auth needed
+# iOS shortcut endpoints can't send auth headers; Mac clients send auth natively
 _NO_AUTH_PATHS = {
-    "/api/mac-telemetry",
-    "/api/mac-heartbeat",
     "/api/ios-telemetry",
     "/api/ios-zone-event",
     "/api/healthz",
+    "/dashboard/manifest.json",
+    "/dashboard/sw.js",
+    "/dashboard/icon.svg",
+    "/dashboard/apple-touch-icon.svg",
+    "/dashboard/favicon.svg",
+    "/dashboard/favicon.ico",
 }
+_NO_AUTH_PREFIXES = (
+    "/dashboard/icons/",
+)
 
 # Brute-force protection: track failed attempts per IP
 # { ip: {"count": int, "blocked_until": float} }
@@ -115,7 +127,12 @@ def _clear_failures(ip: str):
 
 @app.middleware("http")
 async def basic_auth_middleware(request: Request, call_next):
-    if request.url.path in _NO_AUTH_PATHS or request.url.path.startswith("/setup/"):
+    path = request.url.path
+    if (
+        path in _NO_AUTH_PATHS
+        or path.startswith("/setup/")
+        or any(path.startswith(prefix) for prefix in _NO_AUTH_PREFIXES)
+    ):
         return await call_next(request)
 
     username = os.environ.get("DASHBOARD_USER", "admin")
@@ -154,6 +171,56 @@ app.mount("/dashboard", StaticFiles(directory=frontend_path, html=True), name="f
 @app.get("/")
 async def redirect_to_dashboard():
     return RedirectResponse(url="/dashboard/index.html")
+
+
+@app.on_event("startup")
+async def initialize_runtime():
+    _STARTUP_STATUS["process_ready"] = True
+    _STARTUP_STATUS["database_ready"] = False
+    _STARTUP_STATUS["startup_migrations_ok"] = False
+    _STARTUP_STATUS["startup_errors"] = []
+    try:
+        Base.metadata.create_all(bind=engine)
+        _STARTUP_STATUS["database_ready"] = True
+    except Exception as exc:
+        msg = f"Schema init failed: {exc}"
+        _STARTUP_STATUS["startup_errors"].append(msg)
+        log.error(msg)
+
+    try:
+        migration_errors = _run_migrations()
+        if migration_errors:
+            for migration_error in migration_errors:
+                msg = f"Lightweight migrations failed: {migration_error}"
+                _STARTUP_STATUS["startup_errors"].append(msg)
+                log.error(msg)
+            _STARTUP_STATUS["startup_migrations_ok"] = False
+        else:
+            _STARTUP_STATUS["startup_migrations_ok"] = True
+    except Exception as exc:
+        msg = f"Lightweight migrations failed: {exc}"
+        _STARTUP_STATUS["startup_errors"].append(msg)
+        log.error(msg)
+
+    try:
+        with SessionLocal() as db:
+            agent_logic.ensure_default_settings(db)
+        _STARTUP_STATUS["database_ready"] = True
+    except Exception as exc:
+        msg = f"Default settings init failed: {exc}"
+        _STARTUP_STATUS["startup_errors"].append(msg)
+        log.error(msg)
+
+
+def _run_async(coro):
+    try:
+        return asyncio.run(coro)
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(coro)
+        finally:
+            loop.close()
 
 
 def _normalize_battery_level(battery_level: float | None) -> int | None:
@@ -234,8 +301,6 @@ def _build_state_payload(db: Session) -> dict:
 
 def _bg_process_mac(data: MacTelemetry):
     """Run mac telemetry processing in its own thread + event loop (FastAPI-safe)."""
-    import threading
-
     def _run():
         db = SessionLocal()
         try:
@@ -244,14 +309,11 @@ def _bg_process_mac(data: MacTelemetry):
             log.error("Background mac telemetry error: %s", e)
         finally:
             db.close()
-
     threading.Thread(target=_run, daemon=True).start()
 
 
 def _bg_process_ios(data: iOSTelemetry):
     """Run ios telemetry processing in its own thread + event loop (FastAPI-safe)."""
-    import threading
-
     def _run():
         db = SessionLocal()
         try:
@@ -260,7 +322,6 @@ def _bg_process_ios(data: iOSTelemetry):
             log.error("Background ios telemetry error: %s", e)
         finally:
             db.close()
-
     threading.Thread(target=_run, daemon=True).start()
 
 
@@ -771,24 +832,50 @@ async def confirm_checkin(payload: Dict[str, Any], db: Session = Depends(get_db)
 
 
 @app.get("/api/healthz")
-async def healthz(db: Session = Depends(get_db)):
-    agent_logic.ensure_default_settings(db)
-    db_ok = True
+async def healthz():
+    now = datetime.utcnow()
+    db_ok = False
     db_error = ""
+    llm_stats = {"daily_used": 0, "daily_remaining": 0, "daily_cap": 0}
+    ai_provider = os.environ.get("LIFE_MANAGER_AI_PROVIDER", "auto")
+    states = {
+        "llm_mode": "balanced",
+        "last_mac_ping": "",
+        "last_mac_heartbeat": "",
+        "last_ios_ping": "",
+        "last_ios_event": "",
+        "mac_status": "offline",
+        "mac_status_reason": "Waiting for database readiness.",
+    }
+    pending_calendar_jobs = None
+    db = SessionLocal()
     try:
         db.execute(text("SELECT 1"))
-    except Exception as e:
-        db_ok = False
-        db_error = str(e)
+        db_ok = True
+        agent_logic.ensure_default_settings(db)
+        states = _build_state_payload(db)
+        llm_stats = agent_logic.llm_usage_snapshot(db, now)
+        ai_provider = agent_logic.get_state(db, "ai_provider", "auto")
+        pending_calendar_jobs = db.query(func.count(CalendarEventJob.id)).filter(CalendarEventJob.status == "pending").scalar()
+        _STARTUP_STATUS["database_ready"] = True
+    except Exception as exc:
+        db_error = str(exc)
+        _STARTUP_STATUS["database_ready"] = False
+    finally:
+        db.close()
 
-    now = datetime.utcnow()
-    states = _build_state_payload(db)
-    llm_stats = agent_logic.llm_usage_snapshot(db, now)
-    ai_provider = agent_logic.get_state(db, "ai_provider", "auto")
     llm_configured = bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("OPENAI_API_KEY"))
+    startup_errors = list(_STARTUP_STATUS["startup_errors"])
+    if db_error:
+        startup_errors = startup_errors + [f"Runtime DB check failed: {db_error}"]
+    overall_status = "ok" if db_ok else "degraded"
 
     return {
-        "status": "ok" if db_ok else "degraded",
+        "status": overall_status,
+        "process_ready": bool(_STARTUP_STATUS["process_ready"]),
+        "database_ready": db_ok,
+        "startup_migrations_ok": bool(_STARTUP_STATUS["startup_migrations_ok"]),
+        "startup_errors": startup_errors,
         "started_at": _STARTED_AT.isoformat(),
         "uptime_seconds": int((now - _STARTED_AT).total_seconds()),
         "backend_url": _get_backend_url(),
@@ -815,6 +902,11 @@ async def healthz(db: Session = Depends(get_db)):
             "last_ios_ping": states.get("last_ios_ping", ""),
             "last_ios_event": states.get("last_ios_event", ""),
         },
+        "calendar": {
+            "pending_jobs": pending_calendar_jobs,
+            "last_job_enqueued_at": states.get("last_calendar_job_at", ""),
+            "executor": "mac_helper_only",
+        },
         "build": {
             "build_version": _BUILD_VERSION,
             "deployment_channel": _DEPLOYMENT_CHANNEL,
@@ -834,8 +926,6 @@ async def ios_setup_status(db: Session = Depends(get_db)):
     checklist = [
         {"id": "zone_arrive", "label": "Zone arrive automations", "configured": states.get("seen_arrive_automation") == "true"},
         {"id": "zone_leave", "label": "Zone leave automations", "configured": states.get("seen_leave_automation") == "true"},
-        {"id": "periodic_ping", "label": "Legacy GPS ping automation", "configured": states.get("seen_periodic_automation") == "true"},
-        {"id": "arrive_location", "label": "Arrive location automation", "configured": states.get("seen_arrive_automation") == "true"},
         {"id": "walking", "label": "Walking automation", "configured": states.get("seen_walking_automation") == "true"},
         {"id": "charging_stationary", "label": "Charging on/off automations", "configured": states.get("seen_charging_automation") == "true"},
     ]
@@ -908,24 +998,24 @@ function copyCmd(btn) {{
     ← Dashboard
   </a>
 </nav>
-<h1>💻 Mac Tracker Setup <span class="badge-remote" style="{remote_only}">☁️ Cloud</span></h1>
-<p>Install the Life Manager menu bar tracker on your Mac — takes about 2 minutes.</p>
+<h1>💻 Mac App Setup <span class="badge-remote" style="{remote_only}">☁️ Cloud</span></h1>
+<p>Install the native Life Manager app once, then let the hidden login helper run quietly in the background.</p>
 
 <h2>Prerequisites</h2>
 <div class="step">
   <ul class="checklist">
-    <li><span>→</span>macOS 12 Monterey or later</li>
-    <li><span>→</span>Python 3.10+ &nbsp;<code>python3 --version</code></li>
-    <li><span>→</span>Git &nbsp;<code>git --version</code></li>
+    <li><span>→</span>macOS 13 Ventura or later</li>
+    <li><span>→</span>Xcode installed from the App Store</li>
+    <li><span>→</span>Xcode Command Line Tools ready &nbsp;<code>xcodebuild -version</code></li>
   </ul>
-  <p class="note">Python and Git come pre-installed on modern Macs. If missing: <code>xcode-select --install</code></p>
+  <p class="note">You only need to run the visible app once. After that, the login helper should keep the agent alive in the background.</p>
 </div>
 
-<h2>Step 1 — Install (one command)</h2>
+<h2>Step 1 — Open the native project</h2>
 <div class="step">
-  <div class="step-num">Paste this into Terminal and press Enter</div>
-  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>git clone https://github.com/naboulsi/life-manager-agent.git ~/life-manager-agent 2>/dev/null || git -C ~/life-manager-agent pull && cd ~/life-manager-agent && bash mac_client/install_and_enable_mac_client.sh "{backend_url}"</pre>
-  <p class="note">This clones the repo, creates a Python venv, builds <code>Life Manager.app</code>, and registers it as a Login Item so the menu bar agent stays on after login.</p>
+  <div class="step-num">Paste this into Terminal and let Xcode open the app project</div>
+  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>git clone https://github.com/naboulsi/life-manager-agent.git ~/life-manager-agent 2>/dev/null || git -C ~/life-manager-agent pull && (brew list xcodegen >/dev/null 2>&1 || brew install xcodegen) && cd ~/life-manager-agent/mac_native && xcodegen generate && open LifeManager.xcodeproj</pre>
+  <p class="note">This updates the repo, ensures XcodeGen is installed, generates the native macOS project, and opens it in Xcode.</p>
 </div>
 
 <h2>Step 2 — Configure authentication</h2>
@@ -938,11 +1028,11 @@ function copyCmd(btn) {{
   <p>Auth not required for local setup — the tracker connects directly to <code>localhost:8000</code>.</p>
 </div>
 
-<h2>Step 3 — Start the tracker</h2>
+<h2>Step 3 — Run it once, then close it</h2>
 <div class="step">
-  <div class="step-num">Launch it now (it auto-starts on future logins)</div>
-  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>open -a "Life Manager"</pre>
-  <p class="note">You should see a 🧠 icon appear in your menu bar. If you don't see it, check System Settings → Privacy &amp; Security → Accessibility and allow Life Manager.</p>
+  <div class="step-num">In Xcode, choose the <strong>LifeManager</strong> scheme and press Run once</div>
+  <p>When the app opens, grant the permissions it asks for, then close the window. The goal is to register the hidden login helper, not keep a visible app open.</p>
+  <p class="note">If you already have <code>Life Manager.app</code> in Applications, you can launch it directly with <code>open -a "Life Manager"</code>.</p>
 </div>
 
 <hr class="divider">
@@ -950,15 +1040,16 @@ function copyCmd(btn) {{
 <h2>Verify</h2>
 <div class="step">
   <div class="step-num">Check that data is arriving</div>
-  <p>Go back to the <a href="/" style="color:#58a6ff">dashboard</a> — the Mac card should show <strong>Active</strong> within 60 seconds. The 🧠 menu bar icon should appear on your Mac.</p>
+  <p>Go back to the <a href="/" style="color:#58a6ff">Control Center</a> — the Mac card should show <strong>Online</strong> within 60 seconds. If the app window is closed and the Mac stays online, the hidden helper is doing its job.</p>
 </div>
 
 <h2>Troubleshooting</h2>
 <div class="step">
-  <p><strong>Menu bar icon not showing?</strong> macOS may have hidden it. Check the overflow menu (≫ icon, far right of menu bar).</p>
+  <p><strong>Mac still offline?</strong> Open Life Manager again and use the diagnostics view to check helper registration and permissions.</p>
+  <p><strong>Missing permissions?</strong> Re-open the app and grant Accessibility, Notifications, and Calendar access.</p>
   <p><strong>Backend offline error?</strong> Check your backend URL is correct: <code>cat ~/.config/life-manager/backend.url</code></p>
   <p><strong>Auth errors?</strong> Check your password: <code>cat ~/.config/life-manager/auth</code></p>
-  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>tail -50 ~/.local/state/life-manager/menubar.err.log</pre>
+  <p class="note">If the helper still will not connect, reopen the app and use the built-in diagnostics screen before digging into local logs.</p>
 </div>
 </body>
 </html>"""
@@ -1041,10 +1132,10 @@ function copyCmd(btn) {{
   </a>
 </nav>
 <h1>📱 iPhone Setup <span class="badge-remote" style="{remote_only}">☁️ Cloud</span></h1>
-<p>Follow these steps to set up Life Manager on your iPhone — takes under 3 minutes.</p>
+<p>Follow these steps to set up low-battery iPhone automations. The default model is zone enter/leave events, not periodic GPS polling.</p>
 
 <!-- ── Step 1: Download ─────────────────────────────── -->
-<h2>Step 1 — Download helper shortcuts to your Mac</h2>
+<h2>Step 1 — Download only the helper shortcuts you actually need</h2>
 <div class="step">
   <div class="step-num">On your Mac — open this page in Safari or Chrome</div>
   <p>
@@ -1052,19 +1143,19 @@ function copyCmd(btn) {{
     <span style="{signing_section_display}" class="badge-signed" style="background:rgba(210,153,34,0.15);color:#d29922;border-color:rgba(210,153,34,0.3);">⚠️ Requires signing — see Step 2</span>
   </p>
   <p style="margin: 0.75rem 0 1rem; font-size:0.88rem; line-height:1.7;">
-    <strong style="color:#f0f6fc;">Walking</strong> <span style="color:#8b949e;">— Fires when your iPhone detects a walking workout (great for Apple Watch-triggered walks).</span><br>
-    <strong style="color:#f0f6fc;">Charging On/Off</strong> <span style="color:#8b949e;">— Logs when you plug in/unplug (used for sleep detection).</span><br>
-    <strong style="color:#f0f6fc;">GPS Ping</strong> <span style="color:#8b949e;">— Legacy fallback heartbeat only. The preferred setup is zone enter/leave automations in Step 4.</span><br>
-    <strong style="color:#f0f6fc;">Arrive</strong> <span style="color:#8b949e;">— Legacy shortcut retained for compatibility; zone automations are preferred.</span>
+    <strong style="color:#f0f6fc;">Walking</strong> <span style="color:#8b949e;">— Fires when your iPhone detects a walking workout (best when triggered by Apple Watch walking workouts).</span><br>
+    <strong style="color:#f0f6fc;">Charging On/Off</strong> <span style="color:#8b949e;">— Logs when you plug in or unplug (used for sleep inference).</span><br>
+    <strong style="color:#f0f6fc;">GPS Ping / Arrive</strong> <span style="color:#8b949e;">— Legacy helpers only. Zone enter/leave automations in Step 4 are the recommended default.</span>
   </p>
   <p style="margin-top:1rem">
-    <a class="action-btn" href="/setup/shortcut/download?kind=gps">⬇ GPS Ping</a>&nbsp;
-    <a class="action-btn" href="/setup/shortcut/download?kind=arrive">⬇ Arrive</a>&nbsp;
-    <a class="action-btn" href="/setup/shortcut/download?kind=walking">⬇ Walking</a>
-  </p>
-  <p style="margin-top:0.5rem">
+    <a class="action-btn" href="/setup/shortcut/download?kind=walking">⬇ Walking</a>&nbsp;
     <a class="action-btn" href="/setup/shortcut/download?kind=charge_on">⬇ Charging On</a>&nbsp;
     <a class="action-btn" href="/setup/shortcut/download?kind=charge_off">⬇ Charging Off</a>
+  </p>
+  <p class="note" style="margin-top:0.75rem;">Only download the legacy helpers if you intentionally want them:</p>
+  <p style="margin-top:0.5rem">
+    <a class="action-btn" href="/setup/shortcut/download?kind=gps" style="font-size:0.85rem;padding:0.55rem 1rem;">Legacy GPS Ping</a>&nbsp;
+    <a class="action-btn" href="/setup/shortcut/download?kind=arrive" style="font-size:0.85rem;padding:0.55rem 1rem;">Legacy Arrive</a>
   </p>
   <!-- One-click sign all — only shows when running locally on Mac -->
   <div style="{sign_all_display}; margin-top:1rem;">
@@ -1130,11 +1221,12 @@ done && echo "All 5 shortcuts ready on your Desktop."</pre>
   <p class="note">If you still want a periodic heartbeat, you can keep the old Focus-loop GPS Ping shortcut, but it is no longer the recommended setup.</p>
 </div>
 
-<h2>Step 5 — iCloud Calendar sync on your Mac</h2>
+<h2>Step 5 — Calendar sync (recommended setup)</h2>
 <div class="step">
-  <div class="step-num">Make sure Apple Calendar is syncing through iCloud</div>
-  <p>On your Mac, go to <strong>System Settings → Apple Account → iCloud</strong> and make sure <strong>Calendar</strong> is enabled.</p>
-  <p>Then open the Calendar app and confirm the <strong>Life Manager</strong> calendar lives under your iCloud account, not only <strong>On My Mac</strong>. That is what lets your logged study sessions, walks, and location visits sync across devices.</p>
+  <div class="step-num">Recommended</div>
+  <p>On your Mac, go to <strong>System Settings → Apple Account → iCloud</strong> and make sure <strong>Calendar</strong> is turned <strong>On</strong>.</p>
+  <p><strong>Detected target:</strong> the Mac helper writes to Apple Calendar locally. For cloud sync, the <strong>Life Manager</strong> calendar should live under the <strong>iCloud</strong> section in Calendar.app, not only under <strong>On My Mac</strong>.</p>
+  <p><strong>Fix this if needed:</strong> if you want Google visibility too, add Google under <strong>System Settings → Internet Accounts</strong>, enable Calendar for that account, and let Apple Calendar handle the sync. Life Manager still writes only to Apple Calendar on the Mac.</p>
 </div>
 
 <h2>Your backend URL</h2>

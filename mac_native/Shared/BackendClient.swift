@@ -130,7 +130,8 @@ final class BackendClient {
         return try decode(CheckinResponse.self, from: data)
     }
 
-    func sendHeartbeat(clientID: String, appVersion: String, agentState: String, trackingEnabled: Bool, permissionsState: String, lastError: String) async throws {
+    @discardableResult
+    func sendHeartbeat(clientID: String, appVersion: String, agentState: String, trackingEnabled: Bool, permissionsState: String, lastError: String) async throws -> HeartbeatResponse {
         let body: [String: Any] = [
             "client_id": clientID,
             "app_version": appVersion,
@@ -139,15 +140,21 @@ final class BackendClient {
             "permissions_state": permissionsState,
             "last_error": lastError,
         ]
-        _ = try await perform(try request(path: "api/mac-heartbeat", method: "POST", jsonBody: body))
+        let data = try await perform(try request(path: "api/mac-heartbeat", method: "POST", jsonBody: body))
+        return try decode(HeartbeatResponse.self, from: data)
     }
 
-    func sendTelemetry(appName: String, windowTitle: String, idleTimeSeconds: Int) async throws {
+    func sendTelemetry(appName: String, windowTitle: String, idleTimeSeconds: Int) async throws -> TelemetryResponse {
         let body: [String: Any] = [
             "app_name": appName,
             "window_title": windowTitle,
             "idle_time_seconds": idleTimeSeconds,
         ]
-        _ = try await perform(try request(path: "api/mac-telemetry", method: "POST", jsonBody: body))
+        let data = try await perform(try request(path: "api/mac-telemetry", method: "POST", jsonBody: body))
+        return try decode(TelemetryResponse.self, from: data)
+    }
+
+    func replyToPrompt(_ reply: String) async throws {
+        _ = try await perform(try request(path: "api/prompt-reply", method: "POST", jsonBody: ["reply": reply]))
     }
 }

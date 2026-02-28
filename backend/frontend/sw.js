@@ -1,5 +1,13 @@
-const CACHE = 'lm-v1';
-const ASSETS = ['/dashboard/index.html', '/dashboard/style.css', '/dashboard/script.js'];
+const CACHE = 'lm-v2';
+const ASSETS = [
+    '/dashboard/index.html',
+    '/dashboard/style.css',
+    '/dashboard/script.js',
+    '/dashboard/manifest.json',
+    '/dashboard/icon.svg',
+    '/dashboard/apple-touch-icon.svg',
+    '/dashboard/favicon.svg'
+];
 
 self.addEventListener('install', (e) => {
     e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));

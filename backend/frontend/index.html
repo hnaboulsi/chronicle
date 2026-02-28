@@ -4,14 +4,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>Life Manager</title>
-    <meta name="description" content="AI-powered personal productivity tracker">
+    <title>Life Manager Control Center</title>
+    <meta name="description" content="Control Center for your Life Manager Mac agent, iPhone automations, and calendar sync.">
     <meta name="theme-color" content="#0d1117">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Life Manager">
     <link rel="manifest" href="manifest.json">
-    <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="apple-touch-icon" href="apple-touch-icon.svg">
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
@@ -23,13 +24,13 @@
             <div class="onboarding-step" id="onboard-step-1">
                 <div class="onboard-icon">🧠</div>
                 <h2>Welcome to Life Manager</h2>
-                <p>Your AI-powered personal productivity tracker. It learns what you're doing, logs your day to your calendar, and helps you stay focused.</p>
+                <p>This Control Center keeps your hidden Mac agent, iPhone automations, and calendar sync in one place.</p>
                 <button class="btn-primary" onclick="nextOnboardStep(2)">Get Started</button>
             </div>
             <div class="onboarding-step hidden" id="onboard-step-2">
                 <div class="onboard-icon">💻</div>
-                <h2>Mac Tracker</h2>
-                <p id="onboard-mac-status">Checking if Mac tracker is connected...</p>
+                <h2>Mac Agent</h2>
+                <p id="onboard-mac-status">Checking if the background agent is connected...</p>
                 <button class="btn-primary" onclick="nextOnboardStep(3)">Next</button>
             </div>
             <div class="onboarding-step hidden" id="onboard-step-3">
@@ -55,7 +56,7 @@
         <header class="glass-header">
             <div class="header-left">
                 <div class="pulse-ring" id="tracking-pulse"></div>
-                <h1>Life Manager <span class="badge" id="tracking-badge">Live</span></h1>
+                <h1>Life Manager Control Center <span class="badge" id="tracking-badge">Live</span></h1>
             </div>
             <div class="header-right">
                 <button id="toggle-tracking-btn" class="toggle-btn active" title="Toggle tracking">Tracking: ON</button>
@@ -111,10 +112,10 @@
                 <div class="card-content">
                     <h3>MacBook</h3>
                     <p class="status-value" id="mac-status">Waiting...</p>
-                    <p class="sub-text" id="mac-detail">Connecting to tracker</p>
+                    <p class="sub-text" id="mac-detail">Checking the background agent</p>
                     <div class="state-card-actions">
                         <a id="mac-open-app" class="state-card-action hidden" href="lifemanager://open">Open Life Manager</a>
-                        <a id="mac-setup-link" class="state-card-link" href="/setup/mac" target="_blank">Mac Setup</a>
+                        <a id="mac-setup-link" class="state-card-link" href="/setup/mac" target="_blank">Install / Repair</a>
                     </div>
                 </div>
             </div>
@@ -216,53 +217,77 @@
             </div>
         </section>
 
-        <!-- Mac App Info -->
-        <section class="hourly-summaries glass-panel" id="mac-app-info">
-            <div class="feed-header">
-                <h2>Mac App</h2>
-            </div>
-            <div style="padding: 0.25rem 0 0.75rem; color: #8b949e; line-height: 1.7; font-size: 0.9rem;">
-
-                <p style="margin: 0 0 0.5rem; color: #c9d1d9; font-weight: 600;">What it tracks</p>
-                <p style="margin: 0 0 0.5rem;">Every polling cycle (default: 1 min) the menu bar app captures:</p>
-                <ul style="margin: 0 0 1rem; padding-left: 1.25rem;">
-                    <li><strong style="color:#f0f6fc;">Active app</strong> — frontmost application name</li>
-                    <li><strong style="color:#f0f6fc;">Window title</strong> — via AppleScript (e.g. document name, tab title)</li>
-                    <li><strong style="color:#f0f6fc;">Idle time</strong> — seconds since last keyboard/mouse input; marked idle after 30 min</li>
-                    <li><strong style="color:#f0f6fc;">Chrome history</strong> — refreshed every 30 min; sends domain + page title only (no full URLs)</li>
-                </ul>
-
-                <p style="margin: 0 0 0.5rem; color: #c9d1d9; font-weight: 600;">Menu bar icon</p>
-                <p style="margin: 0 0 0.5rem;">The 🧠 icon in your menu bar changes to reflect your current activity category:</p>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.25rem 1rem;margin:0 0 1rem;font-size:0.85rem;">
-                    <span>📚 Studying</span><span>💼 Working</span>
-                    <span>🎬 Entertainment</span><span>📲 Social media</span>
-                    <span>🎮 Gaming</span><span>🎨 Creative</span>
-                    <span>☕ Break</span><span>💤 Idle</span>
+        <!-- How the Mac App Works -->
+        <details class="info-details glass-panel">
+            <summary class="info-summary">
+                <span class="info-summary-icon">💻</span>
+                <span>How the Mac App Works</span>
+                <span class="info-chevron"></span>
+            </summary>
+            <div class="info-body">
+                <div class="info-grid">
+                    <div class="info-card">
+                        <h4>Architecture</h4>
+                        <p>Life Manager uses a <strong>two-app model</strong>: a visible Settings app for configuration and a hidden background agent that launches at login. The agent has no dock icon or window — it runs silently in the background.</p>
+                    </div>
+                    <div class="info-card">
+                        <h4>What the Agent Does</h4>
+                        <ul>
+                            <li>Sends a heartbeat every 60 seconds to keep the "Online" status.</li>
+                            <li>Captures the active app and window title each polling interval (default 60s).</li>
+                            <li>Reads Chrome browsing history every 30 minutes for richer activity context.</li>
+                            <li>Pulls calendar jobs from the backend and writes them to Apple Calendar via EventKit.</li>
+                            <li>Delivers check-in and focus nudge notifications.</li>
+                        </ul>
+                    </div>
+                    <div class="info-card">
+                        <h4>Battery Impact</h4>
+                        <p>Minimal. The agent sleeps most of the time. Chrome history reads are throttled to every 30 minutes. CPU usage is negligible in Activity Monitor.</p>
+                    </div>
+                    <div class="info-card">
+                        <h4>Permissions Needed</h4>
+                        <ul>
+                            <li><strong>Accessibility</strong> — reading window titles for activity tracking.</li>
+                            <li><strong>Calendar</strong> — writing study/work sessions to Apple Calendar.</li>
+                            <li><strong>Notifications</strong> — delivering check-ins and focus nudges.</li>
+                        </ul>
+                    </div>
                 </div>
-                <p style="margin: 0 0 1rem;">Click the icon to access: <em>Backend status · Tracking ON/Paused · Pause/Resume · Open Dashboard · Status Window · Set Backend URL · Restart · Quit</em></p>
+            </div>
+        </details>
 
-                <p style="margin: 0 0 0.5rem; color: #c9d1d9; font-weight: 600;">Prompts &amp; check-ins</p>
-                <p style="margin: 0 0 1rem;">When the backend wants to ask you something (e.g. "you've been idle 30 min — sleeping?"), a native macOS dialog pops up. Your reply is sent back to the AI.</p>
-
-                <p style="margin: 0 0 0.5rem; color: #c9d1d9; font-weight: 600;">Config files</p>
-                <ul style="margin: 0 0 1rem; padding-left: 1.25rem; font-family: monospace; font-size: 0.82rem;">
-                    <li><span style="color:#58a6ff;">~/.config/life-manager/backend.url</span> — backend URL</li>
-                    <li><span style="color:#58a6ff;">~/.config/life-manager/auth</span> — credentials (user:password)</li>
-                    <li><span style="color:#58a6ff;">~/.config/life-manager/client.json</span> — advanced options</li>
-                    <li><span style="color:#58a6ff;">~/.local/state/life-manager/menubar.err.log</span> — error log</li>
-                </ul>
-
-                <p style="margin: 0 0 0.5rem; color: #c9d1d9; font-weight: 600;">Auto-start</p>
-                <p style="margin: 0 0 1rem;">Installed as a macOS app and registered as a Login Item, so the menu bar agent starts automatically at login. Re-run the Mac installer if the login item is removed.</p>
-
-                <p style="margin: 0;"><a href="/setup/mac" style="color: #58a6ff;">Mac setup guide →</a></p>
+        <!-- Setup & Repair -->
+        <section class="hourly-summaries glass-panel" id="control-center-repair">
+            <div class="feed-header">
+                <h2>Setup &amp; Repair</h2>
+            </div>
+            <div class="control-grid">
+                <div class="control-card">
+                    <p class="control-label">Service Health</p>
+                    <p class="control-status" id="service-status">Checking…</p>
+                    <p class="control-detail" id="service-detail">Waiting for Railway health.</p>
+                </div>
+                <div class="control-card">
+                    <p class="control-label">Calendar Sync</p>
+                    <p class="control-status" id="calendar-status">Checking…</p>
+                    <p class="control-detail" id="calendar-detail">The Mac helper writes queued events into Apple Calendar locally.</p>
+                </div>
+                <div class="control-card">
+                    <p class="control-label">iPhone Setup</p>
+                    <p class="control-status" id="ios-setup-status">Checking…</p>
+                    <p class="control-detail" id="ios-setup-detail">Zone enter/leave automations are the recommended low-battery setup.</p>
+                </div>
+                <div class="control-card">
+                    <p class="control-label">Recommended Next Step</p>
+                    <p class="control-status" id="next-step-status">Open the Mac app</p>
+                    <p class="control-detail" id="next-step-detail">Install the native app once, then let the hidden login helper run quietly in the background.</p>
+                </div>
             </div>
         </section>
 
         <!-- Footer -->
         <footer class="app-footer">
-            <span>Life Manager v1.0</span>
+            <span>Life Manager Control Center</span>
             <a href="/api/export?days=30" class="footer-link">Export CSV</a>
             <a href="/setup/ios" class="footer-link">iPhone Setup</a>
             <a href="/setup/mac" class="footer-link">Mac Setup</a>

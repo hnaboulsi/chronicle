@@ -13,6 +13,7 @@ final class AgentRuntime {
     private var telemetryTask: Task<Void, Never>?
     private var refreshTask: Task<Void, Never>?
     private var isRunning = false
+    private var consecutiveHeartbeatFailures = 0
 
     func start() {
         guard !isRunning else { return }
@@ -83,7 +84,7 @@ final class AgentRuntime {
 
     private func sendHeartbeat() async {
         do {
-            try await backend.sendHeartbeat(
+            let response = try await backend.sendHeartbeat(
                 clientID: store.clientID,
                 appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev",
                 agentState: currentAgentState,
@@ -92,20 +93,29 @@ final class AgentRuntime {
                 lastError: store.helperLastError
             )
             store.helperLastSeenAt = Date()
+            consecutiveHeartbeatFailures = 0
+            // Sync tracking state from backend (e.g. user toggled via web dashboard)
+            if let serverTracking = response.tracking_enabled {
+                store.trackingEnabled = serverTracking
+            }
         } catch {
+            consecutiveHeartbeatFailures += 1
             store.helperLastError = error.localizedDescription
-            notifier.deliver(
-                kind: .critical,
-                title: "Life Manager Agent",
-                body: "The background agent could not reach the backend."
-            )
+            // Only notify after 3+ consecutive failures to avoid spam during brief outages
+            if consecutiveHeartbeatFailures >= 3 {
+                notifier.deliver(
+                    kind: .callout,
+                    title: "Life Manager Agent",
+                    body: "The background agent has not reached the backend for several minutes."
+                )
+            }
         }
     }
 
     private func sendTelemetry() async {
         let snapshot = captureSnapshot()
         do {
-            try await backend.sendTelemetry(
+            let response = try await backend.sendTelemetry(
                 appName: snapshot.appName,
                 windowTitle: snapshot.windowTitle,
                 idleTimeSeconds: snapshot.idleTimeSeconds
@@ -113,6 +123,10 @@ final class AgentRuntime {
             store.helperLastSeenAt = Date()
             if !store.helperLastError.isEmpty {
                 store.helperLastError = ""
+            }
+            // Show backend prompts (idle alerts, focus nudges)
+            if let prompt = response.prompt, !prompt.isEmpty {
+                notifier.deliver(kind: .callout, title: "Life Manager", body: prompt)
             }
         } catch {
             store.helperLastError = error.localizedDescription

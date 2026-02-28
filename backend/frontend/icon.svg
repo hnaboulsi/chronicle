@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Life Manager">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0d1117"/>
+      <stop offset="100%" stop-color="#161b22"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#58a6ff"/>
+      <stop offset="100%" stop-color="#3fb950"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="url(#bg)"/>
+  <circle cx="44" cy="52" r="12" fill="#58a6ff"/>
+  <circle cx="84" cy="52" r="12" fill="#3fb950"/>
+  <path d="M34 84c7-13 17-20 30-20s23 7 30 20" fill="none" stroke="url(#accent)" stroke-width="10" stroke-linecap="round"/>
+  <path d="M64 22v20" stroke="#f0f6fc" stroke-width="8" stroke-linecap="round"/>
+</svg>

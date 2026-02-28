@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Foundation
 import SwiftUI
 
@@ -53,11 +54,26 @@ final class NativeAppModel: ObservableObject {
     @Published var statusMessage = ""
     @Published var notificationLevel = AppGroupStore.shared.notificationLevel
 
+    // Diagnostic props (reactive, refreshed from AppGroupStore on each cycle)
+    @Published var helperDesiredState: String = AppGroupStore.shared.helperDesiredState
+    @Published var helperLastSeenAt: Date? = AppGroupStore.shared.helperLastSeenAt
+    @Published var helperLastError: String = AppGroupStore.shared.helperLastError
+
     let backend = BackendClient.shared
     let store = AppGroupStore.shared
 
+    private var refreshTimer: AnyCancellable?
+
     func startup() async {
         await refreshAll()
+        // Auto-refresh every 30 seconds so the UI stays current
+        refreshTimer = Timer.publish(every: 30, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] _ in
+                Task { [weak self] in
+                    await self?.refreshAll()
+                }
+            }
     }
 
     func refreshAll() async {
@@ -82,6 +98,12 @@ final class NativeAppModel: ObservableObject {
             store.aiProvider = settings.ai_provider
             store.pollingInterval = settings.polling_interval_seconds
             store.classificationInterval = settings.classification_interval_seconds
+
+            // Sync diagnostic props from AppGroupStore
+            helperDesiredState = store.helperDesiredState
+            helperLastSeenAt = store.helperLastSeenAt
+            helperLastError = store.helperLastError
+
             statusMessage = ""
         } catch {
             statusMessage = error.localizedDescription
@@ -123,21 +145,27 @@ final class NativeAppModel: ObservableObject {
 
     func enableHelper() {
         HelperController.shared.ensureHelperEnabled()
+        helperDesiredState = store.helperDesiredState
         statusMessage = "Background agent enabled."
     }
 
     func disableHelper() {
         HelperController.shared.disableHelper()
+        helperDesiredState = store.helperDesiredState
         statusMessage = "Background agent disabled."
     }
 
     func repairHelper() {
         HelperController.shared.repairHelper()
+        helperDesiredState = store.helperDesiredState
         statusMessage = "Background agent re-registered."
     }
 
     func openWebDashboard() {
         if let target = state.backend_target_url, let url = URL(string: target + "/dashboard/index.html") {
+            NSWorkspace.shared.open(url)
+        } else {
+            let url = store.backendURL.appendingPathComponent("dashboard/index.html")
             NSWorkspace.shared.open(url)
         }
     }

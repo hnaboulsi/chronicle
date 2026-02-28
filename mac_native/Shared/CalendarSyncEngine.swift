@@ -14,11 +14,34 @@ final class CalendarSyncEngine {
 
     func requestAccessIfNeeded() async {
         guard authorizationStatus() == .notDetermined else { return }
-        _ = try? await store.requestFullAccessToEvents()
+        if #available(macOS 14.0, *) {
+            _ = try? await store.requestFullAccessToEvents()
+        } else {
+            await withCheckedContinuation { continuation in
+                store.requestAccess(to: .event) { _, _ in
+                    continuation.resume()
+                }
+            }
+        }
     }
 
     func preferredCalendarName() -> String {
         calendar()?.title ?? AppConstants.calendarName
+    }
+
+    func hasICloudSource() -> Bool {
+        preferredSource()?.sourceType == .calDAV && (preferredSource()?.title.localizedCaseInsensitiveContains("icloud") ?? false)
+    }
+
+    func targetDescription() -> String {
+        hasICloudSource() ? "iCloud Calendar" : "On My Mac fallback"
+    }
+
+    func setupRecommendation() -> String {
+        if hasICloudSource() {
+            return "Keep iCloud Calendar enabled and make sure the Life Manager calendar stays under the iCloud section in Calendar.app."
+        }
+        return "Turn on System Settings > Apple Account > iCloud > Calendar, then create or move the Life Manager calendar under the iCloud section in Calendar.app."
     }
 
     func syncPendingJobs(client: BackendClient = .shared) async {

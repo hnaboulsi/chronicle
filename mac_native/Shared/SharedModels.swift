@@ -71,15 +71,47 @@ struct CalendarJobsResponse: Codable {
     let jobs: [CalendarJob]
 }
 
+struct TelemetryResponse: Codable {
+    let status: String
+    let prompt: String?
+}
+
+struct HeartbeatResponse: Codable {
+    let status: String
+    let mac_status: String?
+    let mac_status_reason: String?
+    let tracking_enabled: Bool?
+}
+
 struct HealthResponse: Codable {
     struct Build: Codable {
-        let build_version: String
-        let deployment_channel: String
-        let git_sha: String
+        let build_version: String?
+        let deployment_channel: String?
+        let git_sha: String?
+    }
+
+    struct DatabaseStatus: Codable {
+        let ok: Bool?
+        let error: String?
+    }
+
+    struct MacStatus: Codable {
+        let status: String?
+        let reason: String?
+    }
+
+    struct CalendarStatus: Codable {
+        let pending_jobs: Int?
+        let executor: String?
     }
 
     let status: String
     let build: Build?
+    let database: DatabaseStatus?
+    let startup_errors: [String]?
+    let uptime_seconds: Int?
+    let mac: MacStatus?
+    let calendar: CalendarStatus?
 }
 
 struct ChatTurn: Codable, Hashable {

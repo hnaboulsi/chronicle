@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Life Manager">
+  <rect width="64" height="64" rx="14" fill="#0d1117"/>
+  <circle cx="22" cy="26" r="7" fill="#58a6ff"/>
+  <circle cx="42" cy="26" r="7" fill="#3fb950"/>
+  <path d="M16 42c4-8 10-12 16-12s12 4 16 12" fill="none" stroke="#58a6ff" stroke-width="5" stroke-linecap="round"/>
+</svg>
