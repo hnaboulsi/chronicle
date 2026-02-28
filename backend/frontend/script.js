@@ -266,28 +266,139 @@ function renderAnalytics(data) {
     }).join('');
 }
 
-// ── Hourly Summaries ──
+// ── Category Inference from App Names ──
+function inferCategory(appName, windowTitle) {
+    const text = `${appName} ${windowTitle}`.toLowerCase();
+    const keywords = {
+        studying: ['notion', 'anki', 'pdf', 'lecture', 'coursera', 'udemy', 'research', 'textbook', 'academia'],
+        working: ['vscode', 'xcode', 'terminal', 'github', 'linear', 'jira', 'slack', 'gmail', 'outlook'],
+        creative: ['figma', 'photoshop', 'blender', 'premiere', 'after effects', 'adobe', 'procreate', 'illustrator'],
+        entertainment: ['netflix', 'youtube', 'reddit', 'tiktok', 'twitch', 'gaming', 'steam', 'epic', 'game'],
+        social_media: ['twitter', 'instagram', 'facebook', 'linkedin', 'discord', 'telegram', 'whatsapp'],
+        gaming: ['league', 'valorant', 'cs:go', 'minecraft', 'fortnite', 'genshin', 'roblox', 'game'],
+        break: ['spotify', 'apple music', 'coffee', 'news', 'hacker news'],
+    };
+    for (const [cat, kws] of Object.entries(keywords)) {
+        if (kws.some(kw => text.includes(kw))) return cat;
+    }
+    return 'unknown';
+}
+
+// ── Hourly Summaries (Enhanced) ──
+let allLogsCache = [];
 async function fetchHourlySummaries() {
     try {
-        const res = await fetch(`${API}/api/hourly-summaries?limit=4`);
+        const res = await fetch(`${API}/api/hourly-summaries?limit=8`);
         const data = await res.json();
         const list = document.getElementById('summaries-list');
         if (!data.length) {
             list.innerHTML = '<p class="empty-state">No summaries yet — they generate each hour.</p>';
             return;
         }
+        // Also fetch logs for app breakdown (cache for efficiency)
+        if (allLogsCache.length === 0) {
+            try {
+                const logsRes = await fetch(`${API}/api/logs?limit=200`);
+                allLogsCache = await logsRes.json();
+            } catch { }
+        }
         list.innerHTML = data.map(s => {
             let ts = s.hour_start;
             if (ts && !ts.endsWith('Z')) ts += 'Z';
-            const time = ts ? new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+            const date = new Date(ts);
+            const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const hour = date.getHours();
+            const nextHour = (hour + 1) % 24;
+
+            // Get app breakdown for this hour
+            const hourLogs = allLogsCache.filter(log => {
+                const logDate = new Date(log.timestamp + (log.timestamp.endsWith('Z') ? '' : 'Z'));
+                return logDate.getHours() === hour && log.device === 'mac';
+            });
+            const appCounts = {};
+            hourLogs.forEach(log => {
+                appCounts[log.app_name || 'unknown'] = (appCounts[log.app_name || 'unknown'] || 0) + 1;
+            });
+            const topApps = Object.entries(appCounts)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 3)
+                .map(([app]) => app)
+                .join(', ');
+
             const score = s.productivity_score != null ? s.productivity_score.toFixed(1) : '\u2014';
+            const scoreColor = s.productivity_score >= 7 ? '#22C55E' : s.productivity_score >= 4 ? '#F59E0B' : '#EF4444';
             return `<div class="summary-card">
-                <span class="summary-time">${esc(time)}</span>
-                <span class="summary-score">${esc(score)}/10</span>
-                <p>${esc(s.summary_text)}</p>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                    <span class="summary-time">${esc(timeStr)} — ${esc((nextHour < 10 ? '0' : '') + nextHour + ':00')}</span>
+                    <span style="background:${scoreColor}20;color:${scoreColor};padding:4px 8px;border-radius:4px;font-weight:600;font-size:12px;">${esc(score)}/10</span>
+                </div>
+                <p style="margin-bottom:8px;">${esc(s.summary_text)}</p>
+                <div style="font-size:12px;color:#6B7280;display:flex;gap:6px;flex-wrap:wrap;">
+                    ${topApps ? `<span style="padding:2px 8px;background:rgba(255,255,255,0.08);border-radius:4px;">📱 ${esc(topApps)}</span>` : ''}
+                </div>
             </div>`;
         }).join('');
     } catch { }
+}
+
+// ── Calendar View (Weekly activity grid) ──
+async function renderCalendar() {
+    try {
+        const calView = document.getElementById('calendar-view');
+        if (!calView) return;
+
+        // Fetch logs for calendar (if not already cached)
+        if (allLogsCache.length === 0) {
+            const logsRes = await fetch(`${API}/api/logs?limit=500`);
+            allLogsCache = await logsRes.json();
+        }
+
+        // Group logs by day + hour
+        const dayMap = {}; // date ISO string -> { hour -> entries }
+        allLogsCache.forEach(log => {
+            const logDate = new Date(log.timestamp + (log.timestamp.endsWith('Z') ? '' : 'Z'));
+            const dateKey = logDate.toISOString().split('T')[0];
+            const hour = logDate.getHours();
+            if (!dayMap[dateKey]) dayMap[dateKey] = {};
+            if (!dayMap[dateKey][hour]) dayMap[dateKey][hour] = [];
+            dayMap[dateKey][hour].push(log);
+        });
+
+        // Build last 7 days calendar
+        const days = [];
+        for (let i = 6; i >= 0; i--) {
+            const d = new Date();
+            d.setDate(d.getDate() - i);
+            days.push(d.toISOString().split('T')[0]);
+        }
+
+        let html = '<div style="display:grid;grid-template-columns:60px repeat(7,1fr);gap:8px;align-items:start;">';
+        // Header row with day names
+        html += '<div style="font-size:12px;color:#6B7280;font-weight:600;"></div>';
+        days.forEach((day, i) => {
+            const d = new Date(day);
+            const dayName = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][d.getDay()];
+            html += `<div style="font-size:12px;color:#6B7280;font-weight:600;text-align:center;">${dayName}</div>`;
+        });
+
+        // Hour rows (8am-10pm)
+        for (let hour = 8; hour < 22; hour++) {
+            const hourStr = (hour < 10 ? '0' : '') + hour + ':00';
+            html += `<div style="font-size:11px;color:#6B7280;text-align:right;padding-right:8px;">${hourStr}</div>`;
+            days.forEach(day => {
+                const logs = dayMap[day]?.[hour] || [];
+                const categories = logs.map(l => inferCategory(l.app_name || '', l.window_title || '')).filter(c => c !== 'unknown');
+                const topCat = categories.length ? categories[0] : null;
+                const color = topCat && CAT_COLORS[topCat] ? CAT_COLORS[topCat] : 'rgba(255,255,255,0.05)';
+                const actualColor = topCat && CAT_COLORS[topCat] ? `var(${topCat === 'studying' ? '--cat-studying' : topCat === 'working' ? '--cat-working' : topCat === 'creative' ? '--cat-creative' : topCat === 'entertainment' ? '--cat-entertainment' : topCat === 'social_media' ? '--cat-social-media' : topCat === 'gaming' ? '--cat-gaming' : topCat === 'break' ? '--cat-break' : '--cat-idle'})` : 'rgba(255,255,255,0.05)';
+                html += `<div style="min-height:30px;background:${actualColor}30;border:1px solid ${actualColor}40;border-radius:4px;cursor:pointer;" title="${topCat || 'inactive'}"></div>`;
+            });
+        }
+        html += '</div>';
+        calView.innerHTML = html;
+    } catch (e) {
+        console.error('Calendar render error:', e);
+    }
 }
 
 // ── Call-Out Banner ──
@@ -970,6 +1081,7 @@ fetchCheckin();
 fetchChatHistory();
 checkIosSetupStatus();
 fetchControlCenterStatus();
+renderCalendar();
 
 if (!localStorage.getItem('lm_onboarded')) checkOnboarding();
 
@@ -978,6 +1090,7 @@ setInterval(() => {
     if (!sseConnected) fetchData();
 }, 5000);
 setInterval(fetchHourlySummaries, 60000);
+setInterval(renderCalendar, 120000); // refresh calendar every 2 min
 setInterval(fetchCallout, 60000);
 setInterval(fetchAnalytics, 120000);
 setInterval(fetchCheckin, 30000);
