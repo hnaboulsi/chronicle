@@ -20,10 +20,18 @@ if [ ! -d "$APP" ]; then
   exit 1
 fi
 
+# Re-sign the app to fix signature issues
+echo "Re-signing app..."
+codesign --remove-signature "$APP" 2>/dev/null || true
+codesign -s - "$APP" --force --deep 2>&1 | grep -v "code has no resources" || true
+
 echo "Installing to /Applications..."
-# Use rsync to preserve bundle identity (macOS Accessibility is tied to the bundle path)
-# This prevents macOS from revoking Accessibility permission on each install
-rsync -a --delete "$APP/" "/Applications/Vero.app/"
+rm -rf "/Applications/Vero.app"
+cp -R "$APP" "/Applications/Vero.app"
+
+# Re-sign the installed app as well
+codesign --remove-signature "/Applications/Vero.app" 2>/dev/null || true
+codesign -s - "/Applications/Vero.app" --force --deep 2>&1 | grep -v "code has no resources" || true
 
 echo "Launching Vero..."
 # Kill existing instance if running
