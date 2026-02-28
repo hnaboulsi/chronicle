@@ -755,7 +755,7 @@ function copyCmd(btn) {{
     <span style="{signing_section_display}" class="badge-signed" style="background:rgba(210,153,34,0.15);color:#d29922;border-color:rgba(210,153,34,0.3);">⚠️ Requires signing — see Step 2</span>
   </p>
   <p style="margin: 0.75rem 0 1rem; font-size:0.88rem; line-height:1.7;">
-    <strong style="color:#f0f6fc;">GPS Ping</strong> <span style="color:#8b949e;">— Runs every 15 min, sends your location &amp; battery level.</span><br>
+    <strong style="color:#f0f6fc;">GPS Ping</strong> <span style="color:#8b949e;">— Runs every 30 min, sends your location &amp; battery level.</span><br>
     <strong style="color:#f0f6fc;">Arrive</strong> <span style="color:#8b949e;">— Triggers when you reach a saved location (home, campus).</span><br>
     <strong style="color:#f0f6fc;">Walking</strong> <span style="color:#8b949e;">— Fires when your phone detects a walking workout.</span><br>
     <strong style="color:#f0f6fc;">Charging On/Off</strong> <span style="color:#8b949e;">— Logs when you plug in/unplug (used for sleep detection).</span>
@@ -811,7 +811,7 @@ done && echo "All 5 shortcuts ready on your Desktop."</pre>
 <h2>Step 4 — Create automations on iPhone</h2>
 <div class="step">
   <div class="step-num">In the Shortcuts app → Automation tab → + New Automation</div>
-  <p><strong>1.</strong> <em>Time of Day</em> — every 15 min → Run Shortcut <strong>Life Manager GPS</strong></p>
+  <p><strong>1.</strong> <em>Time of Day</em> — every 30 min → Run Shortcut <strong>Life Manager GPS</strong></p>
   <p><strong>2.</strong> <em>Arrive</em> — your campus/home → Run Shortcut <strong>Life Manager Arrive</strong></p>
   <p><strong>3.</strong> <em>Workout: Walking starts</em> → Run Shortcut <strong>Life Manager Walking</strong></p>
   <p><strong>4.</strong> <em>Charger connected</em> → Run Shortcut <strong>Life Manager Charging On</strong></p>

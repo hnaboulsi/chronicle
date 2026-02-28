@@ -149,6 +149,9 @@ class LifeManagerApp(rumps.App):
             self.quit_item,
         ]
 
+        self._chrome_cache: list = []
+        self._chrome_cache_time: float = 0.0
+
         self.status_window = StatusWindow(self)
         if CLIENT_CONFIG.get("show_status_window_on_launch", False):
             self.status_window.start()
@@ -201,7 +204,11 @@ class LifeManagerApp(rumps.App):
                 window_title = tracker.get_window_title(app_name)
                 recent_history = []
                 try:
-                    recent_history = tracker.get_recent_chrome_history(minutes=15)
+                    now = time.time()
+                    if now - self._chrome_cache_time >= 1800:  # 30-min throttle
+                        self._chrome_cache = tracker.get_recent_chrome_history(minutes=30)
+                        self._chrome_cache_time = now
+                    recent_history = self._chrome_cache
                 except Exception:
                     pass
                 resp = session.post(
