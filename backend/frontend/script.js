@@ -310,6 +310,9 @@ async function fetchHourlySummaries() {
             const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
             const hour = date.getHours();
             const nextHour = (hour + 1) % 24;
+            const nextH12 = nextHour % 12 || 12;
+            const nextAmpm = nextHour < 12 ? 'AM' : 'PM';
+            const endTimeStr = `${nextH12} ${nextAmpm}`;
 
             // Get app breakdown for this hour
             const hourLogs = allLogsCache.filter(log => {
@@ -330,7 +333,7 @@ async function fetchHourlySummaries() {
             const scoreColor = s.productivity_score >= 7 ? '#22C55E' : s.productivity_score >= 4 ? '#F59E0B' : '#EF4444';
             return `<div class="summary-card">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-                    <span class="summary-time">${esc(timeStr)} — ${esc((nextHour < 10 ? '0' : '') + nextHour + ':00')}</span>
+                    <span class="summary-time">${esc(timeStr)} — ${esc(endTimeStr)}</span>
                     <span style="background:${scoreColor}20;color:${scoreColor};padding:4px 8px;border-radius:4px;font-weight:600;font-size:12px;">${esc(score)}/10</span>
                 </div>
                 <p style="margin-bottom:8px;">${esc(s.summary_text)}</p>
