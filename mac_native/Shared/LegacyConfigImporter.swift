@@ -6,6 +6,28 @@ struct LegacyImportResult {
 }
 
 enum LegacyConfigImporter {
+    static func migrateAppGroupIfNeeded() {
+        let newSuite = UserDefaults(suiteName: AppConstants.appGroupIdentifier)!
+        guard newSuite.bool(forKey: "app_group_migrated") == false else { return }
+        guard let oldSuite = UserDefaults(suiteName: "group.com.naboulsi.lifemanager") else {
+            newSuite.set(true, forKey: "app_group_migrated")
+            return
+        }
+
+        let keysToMigrate = [
+            "backend_url", "auth_value", "tracking_enabled", "ai_provider",
+            "notification_level", "polling_interval_seconds", "classification_interval_seconds",
+            "migration_complete", "helper_desired_state", "helper_last_error",
+            "helper_last_seen_at", "legacy_python_warning_shown", "client_id"
+        ]
+        for key in keysToMigrate {
+            if let value = oldSuite.object(forKey: key) {
+                newSuite.set(value, forKey: key)
+            }
+        }
+        newSuite.set(true, forKey: "app_group_migrated")
+    }
+
     static func importIfNeeded(into store: AppGroupStore = .shared) -> LegacyImportResult {
         if store.migrationComplete {
             return LegacyImportResult(imported: false, legacyPythonRunning: isLegacyPythonAgentRunning())

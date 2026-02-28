@@ -27,6 +27,7 @@
 		A243EFD7F9775EED11091FAF /* LegacyConfigImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9D0A96A93A5F85FC8E66734 /* LegacyConfigImporter.swift */; };
 		A71CD654F5DEC83C2F855B40 /* PermissionSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0992E558992636F3211E8110 /* PermissionSnapshot.swift */; };
 		A7FBBA5B17559CB45DA54646 /* AgentRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F60DDBAD4A6EBC3A9BAD704 /* AgentRuntime.swift */; };
+		AB54E615437533CD6DDB3DF6 /* iPhoneSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8F0687AA756D1F86F28FFC6 /* iPhoneSetupView.swift */; };
 		AE9DEBF43C2DC8D5B24FBCFC /* OverviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0668EA4ADEEC760DE5EFFBE8 /* OverviewView.swift */; };
 		AEB6752F7BBFC85C5F4756A6 /* CalendarSyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60124C15103D2000CDD418A2 /* CalendarSyncEngine.swift */; };
 		CD3DB194E24D24DEF063D6FE /* CalendarSyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60124C15103D2000CDD418A2 /* CalendarSyncEngine.swift */; };
@@ -89,6 +90,7 @@
 		AF277F211733889618E45E2F /* DiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsView.swift; sourceTree = "<group>"; };
 		BC5281B9CF413DD4F8A02670 /* ZonesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZonesView.swift; sourceTree = "<group>"; };
 		C54C8D0BC2D8462DC240F6E3 /* AppGroupStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppGroupStore.swift; sourceTree = "<group>"; };
+		C8F0687AA756D1F86F28FFC6 /* iPhoneSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iPhoneSetupView.swift; sourceTree = "<group>"; };
 		C9107961FB6D22889BB87D98 /* NativeAppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAppModel.swift; sourceTree = "<group>"; };
 		CC0B8DC91F5822BE22E4442A /* LifeManager.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LifeManager.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D36CD9A7F87025972E11E544 /* LifeManagerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifeManagerApp.swift; sourceTree = "<group>"; };
@@ -125,6 +127,7 @@
 				6E29FF7AADB88464D60222E5 /* CalendarView.swift */,
 				AF277F211733889618E45E2F /* DiagnosticsView.swift */,
 				9EDC2EC0E9DBC4ABFAB7C784 /* HelperController.swift */,
+				C8F0687AA756D1F86F28FFC6 /* iPhoneSetupView.swift */,
 				D36CD9A7F87025972E11E544 /* LifeManagerApp.swift */,
 				C9107961FB6D22889BB87D98 /* NativeAppModel.swift */,
 				0668EA4ADEEC760DE5EFFBE8 /* OverviewView.swift */,
@@ -275,6 +278,7 @@
 				71A9FF6F3DF5CBECE0AB2CAA /* Theme.swift in Sources */,
 				569303B7AB380C63A0C448D9 /* TrackingView.swift in Sources */,
 				5548359362B3346FF9CE24CA /* ZonesView.swift in Sources */,
+				AB54E615437533CD6DDB3DF6 /* iPhoneSetupView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -319,7 +323,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.naboulsi.lifemanager;
+				PRODUCT_BUNDLE_IDENTIFIER = com.naboulsi.vero;
 				SDKROOT = macosx;
 			};
 			name = Debug;
@@ -336,7 +340,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.naboulsi.lifemanager;
+				PRODUCT_BUNDLE_IDENTIFIER = com.naboulsi.vero;
 				SDKROOT = macosx;
 			};
 			name = Release;
@@ -472,7 +476,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.naboulsi.lifemanager.agent;
+				PRODUCT_BUNDLE_IDENTIFIER = com.naboulsi.vero.agent;
 				SDKROOT = macosx;
 				SKIP_INSTALL = YES;
 			};
@@ -490,7 +494,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.naboulsi.lifemanager.agent;
+				PRODUCT_BUNDLE_IDENTIFIER = com.naboulsi.vero.agent;
 				SDKROOT = macosx;
 				SKIP_INSTALL = YES;
 			};

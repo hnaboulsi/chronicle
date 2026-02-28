@@ -7,6 +7,7 @@ struct LifeManagerApp: App {
     @State private var requiresSetup: Bool
 
     init() {
+        LegacyConfigImporter.migrateAppGroupIfNeeded()
         let store = AppGroupStore.shared
         store.clearInvalidConfiguration()
         _requiresSetup = State(initialValue: !store.isConfigured)

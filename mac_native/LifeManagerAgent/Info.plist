@@ -7,7 +7,7 @@
     <key>CFBundleName</key>
     <string>Vero Agent</string>
     <key>CFBundleIdentifier</key>
-    <string>com.naboulsi.lifemanager.agent</string>
+    <string>com.naboulsi.vero.agent</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>LSUIElement</key>
