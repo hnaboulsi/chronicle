@@ -52,7 +52,7 @@ def _run_migrations() -> list[str]:
             errors.append(str(exc))
     return errors
 
-app = FastAPI(title="Life-Manager Agent API")
+app = FastAPI(title="Vero API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -160,7 +160,7 @@ async def basic_auth_middleware(request: Request, call_next):
     return Response(
         content="Unauthorized",
         status_code=401,
-        headers={"WWW-Authenticate": 'Basic realm="Life Manager"'},
+        headers={"WWW-Authenticate": 'Basic realm="Vero"'},
     )
 
 # Serve frontend static files
@@ -790,7 +790,7 @@ async def chat_message(payload: Dict[str, Any], db: Session = Depends(get_db)):
         agent_logic.register_llm_call(db, now)
         import llm_client
         prompt = (
-            f"You are Life Manager, a personal productivity AI. The user just told you:\n"
+            f"You are Vero, a personal productivity AI. The user just told you:\n"
             f'"{message}"\n\n'
             f"Current context: {context_str}\n\n"
             f"Recent chat context:\n{prior_context or '- No recent conversation.'}\n\n"
@@ -1021,7 +1021,7 @@ async def mac_setup_page():
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Mac Setup — Life Manager</title>
+<title>Mac Setup — Vero</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
 <style>
   body {{ font-family: 'Inter', sans-serif; background: #0d1117; color: #f0f6fc; padding: 2rem; max-width: 600px; margin: 0 auto; }}
@@ -1070,7 +1070,7 @@ function copyCmd(btn) {{
   </a>
 </nav>
 <h1>💻 Mac App Setup <span class="badge-remote" style="{remote_only}">☁️ Cloud</span></h1>
-<p>Install the native Life Manager app once, then let the hidden login helper run quietly in the background.</p>
+<p>Install the native Vero app once, then let the hidden login helper run quietly in the background.</p>
 
 <h2>Prerequisites</h2>
 <div class="step">
@@ -1085,7 +1085,7 @@ function copyCmd(btn) {{
 <h2>Step 1 — Open the native project</h2>
 <div class="step">
   <div class="step-num">Paste this into Terminal and let Xcode open the app project</div>
-  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>git clone https://github.com/naboulsi/life-manager-agent.git ~/life-manager-agent 2>/dev/null || git -C ~/life-manager-agent pull && (brew list xcodegen >/dev/null 2>&1 || brew install xcodegen) && cd ~/life-manager-agent/mac_native && xcodegen generate && open LifeManager.xcodeproj</pre>
+  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>git clone https://github.com/hnaboulsi/vero.git ~/life-manager-agent 2>/dev/null || git -C ~/vero pull && (brew list xcodegen >/dev/null 2>&1 || brew install xcodegen) && cd ~/vero/mac_native && xcodegen generate && open LifeManager.xcodeproj</pre>
   <p class="note">This updates the repo, ensures XcodeGen is installed, generates the native macOS project, and opens it in Xcode.</p>
 </div>
 
@@ -1103,7 +1103,7 @@ function copyCmd(btn) {{
 <div class="step">
   <div class="step-num">In Xcode, choose the <strong>LifeManager</strong> scheme and press Run once</div>
   <p>When the app opens, grant the permissions it asks for, then close the window. The goal is to register the hidden login helper, not keep a visible app open.</p>
-  <p class="note">If you already have <code>Life Manager.app</code> in Applications, you can launch it directly with <code>open -a "Life Manager"</code>.</p>
+  <p class="note">If you already have <code>Vero.app</code> in Applications, you can launch it directly with <code>open -a "Vero"</code>.</p>
 </div>
 
 <hr class="divider">
@@ -1116,7 +1116,7 @@ function copyCmd(btn) {{
 
 <h2>Troubleshooting</h2>
 <div class="step">
-  <p><strong>Mac still offline?</strong> Open Life Manager again and use the diagnostics view to check helper registration and permissions.</p>
+  <p><strong>Mac still offline?</strong> Open Vero again and use the diagnostics view to check helper registration and permissions.</p>
   <p><strong>Missing permissions?</strong> Re-open the app and grant Accessibility, Notifications, and Calendar access.</p>
   <p><strong>Backend offline error?</strong> Check your backend URL is correct: <code>cat ~/.config/life-manager/backend.url</code></p>
   <p><strong>Auth errors?</strong> Check your password: <code>cat ~/.config/life-manager/auth</code></p>
@@ -1147,7 +1147,7 @@ async def ios_setup_page():
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>iPhone Setup — Life Manager</title>
+<title>iPhone Setup — Vero</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
 <style>
   body {{ font-family: 'Inter', sans-serif; background: #0d1117; color: #f0f6fc; padding: 2rem; max-width: 600px; margin: 0 auto; }}
@@ -1244,8 +1244,8 @@ function copyCmd(btn) {{
 <div class="step">
   <div class="step-num">Open Terminal on your Mac and paste this command</div>
   <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>cd ~/Desktop && for kind in gps arrive walking charge_on charge_off; do
-  curl -s "{backend_url}/setup/shortcut/download?kind=$kind" -o "LifeManager-$kind.shortcut" && \\
-  shortcuts sign -m anyone -i "LifeManager-$kind.shortcut" -o "LifeManager-$kind.shortcut" && \\
+  curl -s "{backend_url}/setup/shortcut/download?kind=$kind" -o "Vero-$kind.shortcut" && \\
+  shortcuts sign -m anyone -i "Vero-$kind.shortcut" -o "Vero-$kind.shortcut" && \\
   echo "Signed: $kind"
 done && echo "All 5 shortcuts ready on your Desktop."</pre>
   <p class="note">This saves 5 signed <code>.shortcut</code> files to your Desktop. Then AirDrop them to your iPhone.</p>
@@ -1261,7 +1261,7 @@ done && echo "All 5 shortcuts ready on your Desktop."</pre>
 <div class="step" style="{local_only}">
   <div class="step-num">Method B — iCloud Drive (no AirDrop needed)</div>
   <p><a class="action-btn" href="/setup/save-to-icloud" style="font-size:0.9rem;padding:0.5rem 1rem;">Save helper shortcut to iCloud Drive →</a></p>
-  <p class="note">On iPhone: <strong>Files app → iCloud Drive → LifeManager.shortcut → Add Shortcut</strong>. Use this for the walking helper if you do not want to AirDrop.</p>
+  <p class="note">On iPhone: <strong>Files app → iCloud Drive → Vero.shortcut → Add Shortcut</strong>. Use this for the walking helper if you do not want to AirDrop.</p>
 </div>
 
 <hr class="divider">
@@ -1284,10 +1284,10 @@ done && echo "All 5 shortcuts ready on your Desktop."</pre>
   <p class="note">Apple supports automatic run for these trigger types when <strong>Ask Before Running</strong> is turned off, so <em>Arrive</em>, <em>Leave</em>, <em>Workout</em>, and <em>Charger</em> automations can stay hands-off once you set them up.</p>
 
   <p><strong>Apple Watch walking signal</strong></p>
-  <p class="note">Create one more automation: <em>Workout → Walking → Starts</em> → Run Shortcut <strong>Life Manager Walking</strong>. In the Watch app on iPhone, enable <strong>Workout Start Reminder</strong> and <strong>Workout End Reminder</strong>.</p>
+  <p class="note">Create one more automation: <em>Workout → Walking → Starts</em> → Run Shortcut <strong>Vero Walking</strong>. In the Watch app on iPhone, enable <strong>Workout Start Reminder</strong> and <strong>Workout End Reminder</strong>.</p>
 
   <p><strong>Sleep signal</strong></p>
-  <p class="note"><em>Charger connected</em> → Run Shortcut <strong>Life Manager Charging On</strong>; <em>Charger disconnected</em> → Run Shortcut <strong>Life Manager Charging Off</strong>.</p>
+  <p class="note"><em>Charger connected</em> → Run Shortcut <strong>Vero Charging On</strong>; <em>Charger disconnected</em> → Run Shortcut <strong>Vero Charging Off</strong>.</p>
 
   <p><strong>Legacy fallback only</strong></p>
   <p class="note">If you still want a periodic heartbeat, you can keep the old Focus-loop GPS Ping shortcut, but it is no longer the recommended setup.</p>
@@ -1297,8 +1297,8 @@ done && echo "All 5 shortcuts ready on your Desktop."</pre>
 <div class="step">
   <div class="step-num">Recommended</div>
   <p>On your Mac, go to <strong>System Settings → Apple Account → iCloud</strong> and make sure <strong>Calendar</strong> is turned <strong>On</strong>.</p>
-  <p><strong>Detected target:</strong> the Mac helper writes to Apple Calendar locally. For cloud sync, the <strong>Life Manager</strong> calendar should live under the <strong>iCloud</strong> section in Calendar.app, not only under <strong>On My Mac</strong>.</p>
-  <p><strong>Fix this if needed:</strong> if you want Google visibility too, add Google under <strong>System Settings → Internet Accounts</strong>, enable Calendar for that account, and let Apple Calendar handle the sync. Life Manager still writes only to Apple Calendar on the Mac.</p>
+  <p><strong>Detected target:</strong> the Mac helper writes to Apple Calendar locally. For cloud sync, the <strong>Vero</strong> calendar should live under the <strong>iCloud</strong> section in Calendar.app, not only under <strong>On My Mac</strong>.</p>
+  <p><strong>Fix this if needed:</strong> if you want Google visibility too, add Google under <strong>System Settings → Internet Accounts</strong>, enable Calendar for that account, and let Apple Calendar handle the sync. Vero still writes only to Apple Calendar on the Mac.</p>
 </div>
 
 <h2>Your backend URL</h2>
@@ -1360,35 +1360,35 @@ def _build_shortcut_bytes(kind: str = "gps", sign: bool = True) -> bytes:
     kind = (kind or "gps").lower()
     templates = {
         "gps": {
-            "name": "Life Manager GPS",
+            "name": "Vero GPS",
             "activity": "ios_ping",
             "is_charging": None,
             "use_location_action": True,
             "location_label": "current_location",
         },
         "arrive": {
-            "name": "Life Manager Arrive",
+            "name": "Vero Arrive",
             "activity": "Arrive",
             "is_charging": "false",
             "use_location_action": False,
             "location_label": "arrive_trigger",
         },
         "walking": {
-            "name": "Life Manager Walking",
+            "name": "Vero Walking",
             "activity": "Walking",
             "is_charging": "false",
             "use_location_action": False,
             "location_label": "walking_trigger",
         },
         "charge_on": {
-            "name": "Life Manager Charging On",
+            "name": "Vero Charging On",
             "activity": "Stationary",
             "is_charging": "true",
             "use_location_action": False,
             "location_label": "charging_trigger",
         },
         "charge_off": {
-            "name": "Life Manager Charging Off",
+            "name": "Vero Charging Off",
             "activity": "Stationary",
             "is_charging": "false",
             "use_location_action": False,
@@ -1499,7 +1499,7 @@ async def save_shortcut_to_icloud():
     icloud_path = os.path.expanduser("~/Library/Mobile Documents/com~apple~CloudDocs")
     if not os.path.isdir(icloud_path):
         return HR("<p style='font-family:sans-serif;color:#f85149'>iCloud Drive not found. Make sure iCloud Drive is enabled in System Settings → Apple ID → iCloud.</p>")
-    dest = os.path.join(icloud_path, "LifeManager-walking.shortcut")
+    dest = os.path.join(icloud_path, "Vero-walking.shortcut")
     with open(dest, "wb") as f:
         f.write(_build_shortcut_bytes(kind="walking"))
     subprocess.run(["open", icloud_path])
@@ -1509,7 +1509,7 @@ async def save_shortcut_to_icloud():
       p{color:#8b949e;} a{color:#58a6ff;}
     </style></head><body>
     <h2 style='color:#3fb950'>✅ Saved to iCloud Drive!</h2>
-    <p>Finder opened. On your iPhone: open <strong>Files → iCloud Drive → LifeManager-walking.shortcut</strong></p>
+    <p>Finder opened. On your iPhone: open <strong>Files → iCloud Drive → Vero-walking.shortcut</strong></p>
     <a href='/setup/ios'>← Back to setup</a>
     </body></html>""")
 
@@ -1519,7 +1519,7 @@ async def save_shortcut_to_desktop():
     """Save the walking helper shortcut to the Mac Desktop and reveal it in Finder."""
     import subprocess, os
     from fastapi.responses import HTMLResponse as HR
-    dest = os.path.expanduser("~/Desktop/LifeManager-walking.shortcut")
+    dest = os.path.expanduser("~/Desktop/Vero-walking.shortcut")
     with open(dest, "wb") as f:
         f.write(_build_shortcut_bytes(kind="walking"))
     subprocess.run(["open", "-R", dest])  # Reveal in Finder
@@ -1537,7 +1537,7 @@ async def save_shortcut_to_desktop():
 @app.get("/setup/shortcut/download")
 async def download_shortcut(kind: str = "gps"):
     from fastapi.responses import Response
-    filename = f"LifeManager-{kind}.shortcut"
+    filename = f"Vero-{kind}.shortcut"
     try:
         shortcut_bytes = _build_shortcut_bytes(kind)
     except ValueError:
@@ -1563,10 +1563,10 @@ async def sign_all_shortcuts():
     for kind in kinds:
         try:
             signed_bytes = _build_shortcut_bytes(kind, sign=True)
-            dest = os.path.join(desktop, f"LifeManager-{kind}.shortcut")
+            dest = os.path.join(desktop, f"Vero-{kind}.shortcut")
             with open(dest, "wb") as f:
                 f.write(signed_bytes)
-            saved.append(f"LifeManager-{kind}.shortcut")
+            saved.append(f"Vero-{kind}.shortcut")
         except Exception as e:
             failed.append(f"{kind}: {e}")
     # Reveal Desktop in Finder
@@ -1673,7 +1673,7 @@ async def export_data(days: int = 30, db: Session = Depends(get_db)):
     return Response(
         content=output.getvalue(),
         media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename=life-manager-export-{days}d.csv"},
+        headers={"Content-Disposition": f"attachment; filename=vero-export-{days}d.csv"},
     )
 
 

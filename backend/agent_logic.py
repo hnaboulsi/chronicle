@@ -355,7 +355,7 @@ def _queue_session_event(db: Session, category: str, summary: str, start_dt: dat
     label = label_map.get(category, category.replace("_", " ").title())
     display = summary if summary else label
     title = f"{display} ({duration_min} min)"
-    notes = f"Auto-logged by Life Manager | Category: {category}"
+    notes = f"Auto-logged by Vero | Category: {category}"
     queue_calendar_job(
         db,
         kind="session",

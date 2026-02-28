@@ -112,7 +112,7 @@ final class AgentRuntime {
             if consecutiveHeartbeatFailures >= 3 {
                 notifier.deliver(
                     kind: .callout,
-                    title: "Life Manager Agent",
+                    title: "Vero",
                     body: "The background agent has not reached the backend for several minutes."
                 )
             }
@@ -137,7 +137,7 @@ final class AgentRuntime {
             }
             // Show backend prompts (idle alerts, focus nudges)
             if let prompt = response.prompt, !prompt.isEmpty {
-                notifier.deliver(kind: .callout, title: "Life Manager", body: prompt)
+                notifier.deliver(kind: .callout, title: "Vero", body: prompt)
             }
         } catch {
             store.helperLastError = error.localizedDescription
@@ -159,7 +159,7 @@ final class AgentRuntime {
 
             let checkin = try? await backend.fetchCheckin()
             if let checkinText = checkin?.checkin, !checkinText.isEmpty {
-                notifier.deliver(kind: .checkin, title: "Life Manager Check-in", body: checkinText)
+                notifier.deliver(kind: .checkin, title: "Vero", body: checkinText)
             }
         } catch {
             store.helperLastError = error.localizedDescription

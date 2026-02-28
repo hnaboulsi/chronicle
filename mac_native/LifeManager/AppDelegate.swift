@@ -18,7 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     let alert = NSAlert()
                     alert.messageText = "Legacy Python Agent Stopped"
-                    alert.informativeText = "The old Python-based Life Manager menu bar/login item was detected and stopped. Remove it from System Settings > General > Login Items so it does not relaunch."
+                    alert.informativeText = "The old Python-based Vero menu bar/login item was detected and stopped. Remove it from System Settings > General > Login Items so it does not relaunch."
                     alert.alertStyle = .warning
                     alert.addButton(withTitle: "OK")
                     alert.runModal()
@@ -29,7 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HelperController.shared.ensureHelperEnabled()
     }
 
-    func applicationShouldTerminateWhenLastWindowClosed(_ sender: NSApplication) -> Bool {
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return false
     }
 

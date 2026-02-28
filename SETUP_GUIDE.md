@@ -1,4 +1,4 @@
-# Life Manager Setup (Railway-First)
+# Vero Setup (Railway-First)
 
 ## 1. Deploy backend to Railway
 1. Create Railway project from this repo using `backend/` as service root.
@@ -9,27 +9,18 @@
 3. Confirm health endpoint works:
 - `https://<your-railway-domain>/api/healthz`
 
-## 2. Install Mac client in one command
+## 2. Install Mac app
+Run `./install.sh` from the `mac_native/` directory:
 ```bash
-cd mac_client
-./install_and_enable_mac_client.sh https://<your-railway-domain>
-```
-Optional auth:
-```bash
-LIFE_MANAGER_AUTH="<user>:<pass>" ./install_and_enable_mac_client.sh https://<your-railway-domain>
+cd mac_native
+./install.sh
 ```
 
-## 3. Run diagnostics
-```bash
-cd mac_client
-./life-manager doctor
-```
-
-## 4. iPhone setup check
-- Open: `https://<your-railway-domain>/api/ios-setup-status`
+## 3. iPhone setup
+- Open the web dashboard and navigate to **iPhone Setup** for step-by-step instructions.
 - Sleep detection remains inactive until iPhone automations start pinging `POST /api/ios-telemetry`.
 
-## 5. Budget defaults
+## 4. Budget defaults
 - `llm_mode=ultra_save`
 - hourly summaries disabled by default
 - strict daily LLM cap enabled

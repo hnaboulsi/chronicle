@@ -1,35 +1,29 @@
-# Life Manager Native macOS Scaffold
+# Vero Native macOS
 
-This directory contains the native macOS app scaffold for the hidden helper rollout:
+This directory contains the native macOS app for Vero:
 
-- `LifeManager`: the visible SwiftUI settings app
-- `LifeManagerAgent`: the hidden login helper
+- `LifeManager`: the visible SwiftUI settings app (builds as **Vero.app**)
+- `LifeManagerAgent`: the hidden login helper (background tracking agent)
 - `Shared`: code compiled into both targets
 
 The project is generated from `project.yml` using XcodeGen.
 
-Requirements:
-
-1. Full Xcode installed
-2. `xcode-select` pointed at `/Applications/Xcode.app/Contents/Developer`
-3. Accept the Xcode license and finish first-launch setup:
-
-```bash
-sudo xcodebuild -license accept
-sudo xcodebuild -runFirstLaunch
-```
-
-4. Run:
+## Build & Install
 
 ```bash
 cd mac_native
+./install.sh
+```
+
+This runs XcodeGen, builds, copies to `/Applications/Vero.app`, and launches the app.
+
+## Manual Xcode workflow
+
+Requirements:
+1. Full Xcode installed
+2. `xcode-select` pointed at `/Applications/Xcode.app/Contents/Developer`
+
+```bash
 xcodegen generate
 open LifeManager.xcodeproj
 ```
-
-Notes:
-
-- The helper is scaffolded as a background-only app target.
-- Embedding the helper under `Contents/Library/LoginItems` should be finalized in Xcode once full Xcode is installed.
-- The native sources typecheck with the macOS SDK, but `xcodebuild` will fail until the Xcode license is accepted on the machine.
-- The intended product path is the native app plus hidden helper; the old Python client should not be treated as the primary install path.

@@ -23,7 +23,7 @@ struct PermissionsView: View {
                     status: model.permissionSnapshot.notifications,
                     action: {
                         Task {
-                            await AgentNotificationManager.shared.requestAuthorizationIfNeeded()
+                            AgentNotificationManager.shared.requestAuthorizationIfNeeded()
                             model.permissionSnapshot = await PermissionSnapshot.capture()
                         }
                     }

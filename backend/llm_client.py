@@ -237,7 +237,7 @@ async def generate_hourly_summary(logs: list, hour_start: str) -> dict:
 
 async def generate_daily_recap(logs_summary: str) -> str:
     prompt = (
-        "You are a personal life-manager AI. Based on the following activity logs from today, "
+        "You are Vero, a personal productivity AI. Based on the following activity logs from today, "
         "provide a concise daily summary and a productivity score out of 10.\n\n"
         f"Logs:\n{logs_summary}"
     )

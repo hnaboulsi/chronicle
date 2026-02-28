@@ -1,4 +1,4 @@
-# Life Manager
+# Vero
 
 AI-powered personal productivity tracker that understands your day. It watches what you're doing on your Mac, tracks your iPhone location, logs everything to your calendar, and proactively asks what you're up to when it doesn't know.
 
@@ -42,7 +42,7 @@ Verify health at: `GET https://your-app.railway.app/api/healthz`
 
 ### 2. Install the Mac App
 
-The Mac client has been rewritten in native Swift for maximum efficiency and stability.
+The Mac client is a native Swift app built with Xcode.
 1. Open the `mac_native/LifeManager.xcodeproj` in Xcode.
 2. Build and run the app.
 3. Configure your backend URL and auth credentials.
@@ -51,13 +51,13 @@ The Mac client has been rewritten in native Swift for maximum efficiency and sta
 
 ### 3. Set Up iPhone Geofences
 
-Open the Control Center Web Dashboard and navigate to **Settings -> Zones** to configure your locations. Then generate and secure the required iOS Shortcuts via the `/setup/ios` page. 
+Open the Control Center Web Dashboard and navigate to **Settings -> Zones** to configure your locations. Then generate and secure the required iOS Shortcuts via the `/setup/ios` page.
 
-Instead of draining your battery with GPS polling, Life Manager uses highly efficient Enter/Leave automations for your Zones via the Apple Shortcuts app.
+Instead of draining your battery with GPS polling, Vero uses highly efficient Enter/Leave automations for your Zones via the Apple Shortcuts app.
 
 ### 4. Control Center Dashboard
 
-Open the dashboard URL in Safari on your iPhone → Share → Add to Home Screen. It works like a native app. Or, open it on your Mac directly from the Life Manager app.
+Open the dashboard URL in Safari on your iPhone → Share → Add to Home Screen. It works like a native app. Or, open it on your Mac directly from the Vero app.
 
 ## Features
 

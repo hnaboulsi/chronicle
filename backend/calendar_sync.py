@@ -13,7 +13,7 @@ import datetime
 
 log = logging.getLogger("life_manager.calendar")
 
-CALENDAR_NAME = "Life Manager"
+CALENDAR_NAME = "Vero"
 
 _IS_MACOS = sys.platform == "darwin"
 
@@ -29,7 +29,7 @@ def _run_applescript(script: str) -> str:
 
 
 def ensure_life_manager_calendar():
-    """Create the 'Life Manager' calendar if it doesn't already exist."""
+    """Create the 'Vero' calendar if it doesn't already exist."""
     script = f'''
     tell application "Calendar"
         if not (exists calendar "{CALENDAR_NAME}") then
@@ -41,7 +41,7 @@ def ensure_life_manager_calendar():
 
 
 def create_event(title: str, start_dt: datetime.datetime, end_dt: datetime.datetime, notes: str = ""):
-    """Add an event to the Life Manager calendar via AppleScript."""
+    """Add an event to the Vero calendar via AppleScript."""
     fmt = "%A, %B %d, %Y at %I:%M:%S %p"
     start_str = start_dt.strftime(fmt)
     end_str = end_dt.strftime(fmt)
@@ -78,7 +78,7 @@ def create_session_event(category: str, summary: str, start_dt: datetime.datetim
     duration_min = max(1, int((end_dt - start_dt).total_seconds() / 60))
     display = summary if summary else label
     title = f"{display} ({duration_min} min)"
-    notes = f"Auto-logged by Life Manager | Category: {category}"
+    notes = f"Auto-logged by Vero | Category: {category}"
     create_event(title, start_dt, end_dt, notes)
 
 

@@ -73,11 +73,7 @@ struct MenuBarView: View {
             // Actions
             VStack(spacing: 0) {
                 Button(action: {
-                    if let url = NSApplication.shared.windows.first?.windowScene?.windows.first?.windowLevel {
-                        NSApplication.shared.windows.first?.makeKeyAndOrderFront(nil)
-                    } else {
-                        openURL(URL(string: "lifemanager://open")!)
-                    }
+                    openURL(URL(string: "lifemanager://open")!)
                 }) {
                     HStack {
                         Image(systemName: "rectangle.portrait")
@@ -102,7 +98,7 @@ struct MenuBarView: View {
                 Button(role: .destructive, action: { NSApplication.shared.terminate(nil) }) {
                     HStack {
                         Image(systemName: "xmark.circle")
-                        Text("Quit Life Manager")
+                        Text("Quit Vero")
                         Spacer()
                     }
                     .contentShape(Rectangle())

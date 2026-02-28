@@ -304,7 +304,7 @@ async function fetchCallout() {
             calloutBanner.classList.remove('hidden');
             if (data.callout !== lastCalloutNotification) {
                 lastCalloutNotification = data.callout;
-                maybeNotify('Life Manager', data.callout, 'callout');
+                maybeNotify('Vero', data.callout, 'callout');
             }
         } else {
             calloutBanner.classList.add('hidden');
@@ -654,7 +654,7 @@ async function checkOnboarding() {
             macStatusEl.innerHTML = '&#10003; The hidden Mac agent is connected and sending data.';
         } else {
             const launchHref = states.mac_launch_url || 'lifemanager://open';
-            macStatusEl.innerHTML = `The hidden Mac agent is not connected. <a href="${launchHref}" style="color:#58a6ff;text-decoration:underline;">Open Life Manager</a> or <a href="/setup/mac" target="_blank" style="color:#58a6ff;text-decoration:underline;">Install / Repair &rarr;</a>`;
+            macStatusEl.innerHTML = `The hidden Mac agent is not connected. <a href="${launchHref}" style="color:#58a6ff;text-decoration:underline;">Open Vero</a> or <a href="/setup/mac" target="_blank" style="color:#58a6ff;text-decoration:underline;">Install / Repair &rarr;</a>`;
         }
         // Check iOS shortcut status
         try {
@@ -760,7 +760,7 @@ async function sendChat() {
             chatReplyEl.classList.remove('hidden');
             if (data.reply && data.reply !== lastChatNotification) {
                 lastChatNotification = data.reply;
-                maybeNotify('Life Manager Reply', data.reply, 'chat');
+                maybeNotify('Vero', data.reply, 'chat');
             }
             fetchChatHistory();
             // Auto-hide reply after 8 seconds
@@ -789,7 +789,7 @@ async function fetchChatHistory() {
             <div class="chat-turn">
                 <div class="chat-turn-time">${esc(turn.time || '')}</div>
                 <div class="chat-turn-line"><strong>You:</strong> ${esc(turn.user || '')}</div>
-                <div class="chat-turn-line"><strong>Life Manager:</strong> ${esc(turn.reply || '')}</div>
+                <div class="chat-turn-line"><strong>Vero:</strong> ${esc(turn.reply || '')}</div>
             </div>
         `).join('');
     } catch {
@@ -813,7 +813,7 @@ async function fetchCheckin() {
             checkinBanner.classList.remove('hidden');
             if (data.checkin !== lastCheckinNotification) {
                 lastCheckinNotification = data.checkin;
-                maybeNotify('Life Manager', data.checkin, 'checkin');
+                maybeNotify('Vero', data.checkin, 'checkin');
             }
         } else {
             checkinBanner.classList.add('hidden');
@@ -904,15 +904,15 @@ async function fetchControlCenterStatus() {
             if (!latestStates || latestStates.mac_status === 'offline') {
                 calendarStatusEl.textContent = 'Waiting for Mac';
                 calendarStatusEl.style.color = 'var(--warning)';
-                calendarDetailEl.textContent = 'The Mac helper is the only calendar writer. Open Life Manager so it can pull queued calendar jobs.';
+                calendarDetailEl.textContent = 'The Mac helper is the only calendar writer. Open Vero so it can pull queued calendar jobs.';
             } else if (pendingJobs > 0) {
                 calendarStatusEl.textContent = `${pendingJobs} Queued`;
                 calendarStatusEl.style.color = 'var(--warning)';
-                calendarDetailEl.textContent = 'Recommended: System Settings > Apple Account > iCloud > Calendar ON, then keep the Life Manager calendar under the iCloud section in Calendar.app.';
+                calendarDetailEl.textContent = 'Recommended: System Settings > Apple Account > iCloud > Calendar ON, then keep the Vero calendar under the iCloud section in Calendar.app.';
             } else {
                 calendarStatusEl.textContent = 'Ready';
                 calendarStatusEl.style.color = 'var(--success)';
-                calendarDetailEl.textContent = 'The Mac helper will write new sessions to Apple Calendar locally. For cloud sync, keep iCloud Calendar ON and the Life Manager calendar under iCloud.';
+                calendarDetailEl.textContent = 'The Mac helper will write new sessions to Apple Calendar locally. For cloud sync, keep iCloud Calendar ON and the Vero calendar under iCloud.';
             }
         }
 
@@ -940,10 +940,10 @@ async function fetchControlCenterStatus() {
                 nextStepDetailEl.textContent = 'Install or repair the native app first. Once it runs once, the hidden login helper should stay on in the background.';
             } else if (latestStates.mac_status === 'degraded') {
                 nextStepStatusEl.textContent = 'Grant permissions';
-                nextStepDetailEl.textContent = 'Open Life Manager and finish Accessibility, Notifications, and Calendar access so the helper can classify activity and sync events.';
+                nextStepDetailEl.textContent = 'Open Vero and finish Accessibility, Notifications, and Calendar access so the helper can classify activity and sync events.';
             } else if (pendingJobs > 0) {
                 nextStepStatusEl.textContent = 'Enable iCloud Calendar';
-                nextStepDetailEl.textContent = 'Turn on iCloud Calendar on your Mac, then make sure the Life Manager calendar sits under iCloud in Calendar.app rather than only On My Mac.';
+                nextStepDetailEl.textContent = 'Turn on iCloud Calendar on your Mac, then make sure the Vero calendar sits under iCloud in Calendar.app rather than only On My Mac.';
             } else if ((iosSetup?.checklist || []).some(item => !item.configured)) {
                 nextStepStatusEl.textContent = 'Finish iPhone Setup';
                 nextStepDetailEl.textContent = 'Use the iPhone Setup page to add zone enter/leave automations. That gives you better location data with much less battery drain.';

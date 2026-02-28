@@ -11,6 +11,7 @@ enum AppScreen: String, CaseIterable, Identifiable {
     case diagnostics
     case calendar
     case iphone
+    case chat
 
     var id: String { rawValue }
 
@@ -30,6 +31,8 @@ enum AppScreen: String, CaseIterable, Identifiable {
             return "Calendar"
         case .iphone:
             return "iPhone Setup"
+        case .chat:
+            return "Chat"
         }
     }
 }
@@ -84,7 +87,7 @@ final class NativeAppModel: ObservableObject {
     func startup() async {
         guard !didStart else { return }
         didStart = true
-        await AgentNotificationManager.shared.requestAuthorizationIfNeeded()
+        AgentNotificationManager.shared.requestAuthorizationIfNeeded()
         await refreshAll()
         // Auto-refresh every 30 seconds so the UI stays current
         refreshTimer = Timer.publish(every: 30, on: .main, in: .common)
@@ -202,6 +205,15 @@ final class NativeAppModel: ObservableObject {
             NSWorkspace.shared.open(url)
         } else {
             statusMessage = BackendError.notConfigured.localizedDescription
+        }
+    }
+
+    func sendReply(_ text: String) async {
+        do {
+            try await backend.replyToPrompt(text)
+            await refreshAll()
+        } catch {
+            statusMessage = error.localizedDescription
         }
     }
 

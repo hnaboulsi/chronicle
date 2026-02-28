@@ -28,7 +28,7 @@ struct SetupView: View {
                         .font(.system(size: 48, weight: .semibold))
                         .foregroundStyle(Color.indigo)
 
-                    Text("Life Manager")
+                    Text("Vero")
                         .font(.system(size: 32, weight: .bold))
                         .foregroundStyle(.primary)
 

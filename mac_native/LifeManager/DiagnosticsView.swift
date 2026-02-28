@@ -7,12 +7,24 @@ struct DiagnosticsView: View {
         Form {
             Section {
                 HStack {
-                    Text("Status")
+                    Text("Desired State")
                     Spacer()
                     StatusBadge(
                         label: model.helperDesiredState.capitalized,
                         color: model.helperDesiredState == "enabled" ? .green : .orange
                     )
+                }
+                HStack {
+                    Text("Actual Status")
+                    Spacer()
+                    StatusBadge(
+                        label: model.helperActualStatus.capitalized,
+                        color: model.helperActualStatus == "running" ? .green : .orange
+                    )
+                }
+                if model.helperActualStatus == "needs approval" {
+                    Link("Open Login Items", destination: URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_LoginItems")!)
+                        .foregroundStyle(.blue)
                 }
                 InfoRow(label: "Last Seen", value: model.helperLastSeenAt?.formatted() ?? "Never")
                 if !model.helperLastError.isEmpty {
@@ -129,8 +141,10 @@ struct DiagnosticsView: View {
         .navigationTitle("Diagnostics")
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
-                Button(action: { model.repairHelper() }) {
-                    Label("Repair", systemImage: "wrench.and.screwdriver")
+                if model.helperActualStatus != "running" {
+                    Button(action: { model.repairHelper() }) {
+                        Label("Repair", systemImage: "wrench.and.screwdriver")
+                    }
                 }
             }
         }

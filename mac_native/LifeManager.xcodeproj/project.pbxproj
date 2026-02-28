@@ -20,6 +20,7 @@
 		5A1EC3E40520880733010096 /* SetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D4A46D9AA14565D748541C2 /* SetupView.swift */; };
 		71A9FF6F3DF5CBECE0AB2CAA /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5455FC38A7A22993B7F8FE63 /* Theme.swift */; };
 		746AC276964685ACC613AF93 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DFFB538363D09993D04021D /* AppDelegate.swift */; };
+		7B0644694116D795AB305467 /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0AAEA50201A135BC0FC948D /* ChatView.swift */; };
 		827D04F8C66999ECAD667C7C /* PermissionSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0992E558992636F3211E8110 /* PermissionSnapshot.swift */; };
 		8A23550D4649CC1948D9458C /* StatusItemController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4C0B8CADC0B92E1B6BB9C4C /* StatusItemController.swift */; };
 		8E7CE961EC5C9B1D8C1C2993 /* PermissionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DB0D19D2FE8377916297EB5 /* PermissionsView.swift */; };
@@ -97,6 +98,7 @@
 		D36CD9A7F87025972E11E544 /* LifeManagerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifeManagerApp.swift; sourceTree = "<group>"; };
 		D44D0A5910DAB4633B2E2934 /* SharedModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedModels.swift; sourceTree = "<group>"; };
 		D851395044BAB88CBFE337F8 /* AgentNotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNotificationManager.swift; sourceTree = "<group>"; };
+		E0AAEA50201A135BC0FC948D /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		F9D0A96A93A5F85FC8E66734 /* LegacyConfigImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyConfigImporter.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -128,6 +130,7 @@
 				4DFFB538363D09993D04021D /* AppDelegate.swift */,
 				32DAEAE7ADD3263BEEE461BE /* Assets.xcassets */,
 				6E29FF7AADB88464D60222E5 /* CalendarView.swift */,
+				E0AAEA50201A135BC0FC948D /* ChatView.swift */,
 				AF277F211733889618E45E2F /* DiagnosticsView.swift */,
 				9EDC2EC0E9DBC4ABFAB7C784 /* HelperController.swift */,
 				C8F0687AA756D1F86F28FFC6 /* iPhoneSetupView.swift */,
@@ -268,6 +271,7 @@
 				5222DFA8F4FB44880EA4229B /* BackendClient.swift in Sources */,
 				AEB6752F7BBFC85C5F4756A6 /* CalendarSyncEngine.swift in Sources */,
 				F67977DF35D2B71651F3F72D /* CalendarView.swift in Sources */,
+				7B0644694116D795AB305467 /* ChatView.swift in Sources */,
 				FE231DD653987530D9B6F1D0 /* DiagnosticsView.swift in Sources */,
 				EF34D4F9C82FC3E51A0035DA /* HelperController.swift in Sources */,
 				46937CBA8CCE320E0E6C94F6 /* LegacyConfigImporter.swift in Sources */,
@@ -326,6 +330,7 @@
 					"@executable_path/../Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.naboulsi.vero;
+				PRODUCT_NAME = Vero;
 				SDKROOT = macosx;
 			};
 			name = Debug;
@@ -341,6 +346,7 @@
 					"@executable_path/../Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.naboulsi.vero;
+				PRODUCT_NAME = Vero;
 				SDKROOT = macosx;
 			};
 			name = Release;

@@ -14,7 +14,7 @@ struct CalendarView: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                             Spacer()
-                            Text("iCloud-backed Life Manager calendar")
+                            Text("iCloud-backed Vero calendar")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }

@@ -8,7 +8,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     private var summaryItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private var lastSeenItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-    private var openAppItem = NSMenuItem(title: "Open Life Manager", action: #selector(openApp), keyEquivalent: "")
+    private var openAppItem = NSMenuItem(title: "Open Vero", action: #selector(openApp), keyEquivalent: "")
     private var openDashboardItem = NSMenuItem(title: "Open Web Dashboard", action: #selector(openDashboard), keyEquivalent: "")
     private var toggleTrackingItem = NSMenuItem(title: "", action: #selector(toggleTracking), keyEquivalent: "")
     private var quitItem = NSMenuItem(title: "Quit Helper", action: #selector(quitHelper), keyEquivalent: "")
@@ -16,10 +16,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     func start() {
         if let button = statusItem.button {
             let config = NSImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
-            let image = NSImage(systemSymbolName: "waveform.path.ecg", accessibilityDescription: "Life Manager")
+            let image = NSImage(systemSymbolName: "waveform.path.ecg", accessibilityDescription: "Vero")
             image?.isTemplate = true
             button.image = image?.withSymbolConfiguration(config)
-            button.toolTip = "Life Manager"
+            button.toolTip = "Vero"
         }
 
         menu.delegate = self

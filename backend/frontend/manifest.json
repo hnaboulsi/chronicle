@@ -1,6 +1,6 @@
 {
-    "name": "Life Manager",
-    "short_name": "Life Manager",
+    "name": "Vero",
+    "short_name": "Vero",
     "description": "AI-powered personal productivity tracker",
     "start_url": "/dashboard/index.html",
     "display": "standalone",

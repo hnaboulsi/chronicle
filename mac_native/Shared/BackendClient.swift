@@ -8,7 +8,7 @@ enum BackendError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .notConfigured:
-            return "Life Manager is not connected to a cloud backend yet."
+            return "Vero is not connected to a cloud backend yet."
         case .invalidConfiguration:
             return "The saved backend configuration is invalid. Reconnect to your cloud backend."
         case let .invalidResponse(statusCode):

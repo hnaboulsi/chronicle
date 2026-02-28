@@ -13,7 +13,7 @@ struct RootView: View {
                             .font(.system(size: 22, weight: .semibold))
                             .foregroundStyle(.indigo)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Life Manager")
+                            Text("Vero")
                                 .font(.headline)
                             Text("Cloud Agent")
                                 .font(.caption)
@@ -35,6 +35,9 @@ struct RootView: View {
                         }
                         NavigationLink(value: AppScreen.zones) {
                             Label("Zones", systemImage: "location")
+                        }
+                        NavigationLink(value: AppScreen.chat) {
+                            Label("Chat", systemImage: "bubble.left.and.bubble.right.fill")
                         }
                     }
                     Section("System") {
@@ -58,6 +61,9 @@ struct RootView: View {
                                     StatusBadge(label: "\(model.calendarJobs.count)", color: .indigo)
                                 }
                             }
+                        }
+                        NavigationLink(value: AppScreen.iphone) {
+                            Label("iPhone Setup", systemImage: "iphone")
                         }
                     }
                 }
@@ -118,6 +124,10 @@ struct RootView: View {
             DiagnosticsView()
         case .calendar:
             CalendarView()
+        case .iphone:
+            iPhoneSetupView()
+        case .chat:
+            ChatView()
         }
     }
 }

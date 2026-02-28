@@ -14,40 +14,6 @@ struct OverviewView: View {
                     }
                 }
 
-                VStack(alignment: .leading, spacing: Spacing.md) {
-                    SectionHeaderLabel("Recent Chat", icon: "bubble.left.and.bubble.right", color: .brand)
-                        .padding(.horizontal, Spacing.lg)
-
-                    if model.chatTurns.isEmpty {
-                        HStack {
-                            Spacer()
-                            VStack(spacing: Spacing.sm) {
-                                Image(systemName: "bubble.left.and.bubble.right")
-                                    .font(.system(size: 28))
-                                    .foregroundStyle(.secondary)
-                                Text("No conversations yet")
-                                    .foregroundStyle(.secondary)
-                                    .font(.subheadline)
-                            }
-                            Spacer()
-                        }
-                        .padding(.vertical, 32)
-                    } else {
-                        VStack(spacing: Spacing.md) {
-                            ForEach(Array(model.chatTurns.suffix(5).reversed()), id: \.self) { turn in
-                                VStack(spacing: Spacing.xs) {
-                                    ChatBubble(text: turn.user, isUser: true)
-                                    ChatBubble(text: turn.reply, isUser: false)
-                                    Text(turn.time)
-                                        .font(.caption2)
-                                        .foregroundStyle(.tertiary)
-                                        .frame(maxWidth: .infinity)
-                                }
-                            }
-                        }
-                        .padding(.horizontal, Spacing.lg)
-                    }
-                }
 
             }
             .padding(Spacing.xl)
