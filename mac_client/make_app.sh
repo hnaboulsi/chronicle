@@ -45,6 +45,16 @@ cat > "${APP_BUNDLE}/Contents/Info.plist" << 'PLIST'
     <key>CFBundleVersion</key>         <string>1.0</string>
     <key>CFBundlePackageType</key>     <string>APPL</string>
     <key>CFBundleIconFile</key>        <string>AppIcon</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key> <string>com.lifemanager.menubar</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>lifemanager</string>
+            </array>
+        </dict>
+    </array>
     <key>LSUIElement</key>             <true/>
     <key>NSHighResolutionCapable</key> <true/>
 </dict>

@@ -300,6 +300,47 @@ h1 {
     max-width: 180px;
 }
 
+.state-card-actions {
+    display: flex;
+    gap: 0.6rem;
+    margin-top: 0.7rem;
+    flex-wrap: wrap;
+}
+
+.state-card-action,
+.state-card-link {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-decoration: none;
+    border-radius: 999px;
+    padding: 0.35rem 0.7rem;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.state-card-action {
+    background: var(--accent);
+    color: #000;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.state-card-action:hover {
+    background: #79b8ff;
+}
+
+.state-card-link {
+    color: var(--accent);
+    border: 1px solid rgba(88, 166, 255, 0.3);
+    background: rgba(88, 166, 255, 0.08);
+}
+
+.state-card-link:hover {
+    background: rgba(88, 166, 255, 0.16);
+}
+
+.state-card-action.hidden {
+    display: none;
+}
+
 /* Stats Row */
 .stats-row {
     display: grid;
@@ -623,6 +664,38 @@ tr:hover td { background: rgba(88, 166, 255, 0.04); }
 
 .chat-reply.hidden { display: none; }
 
+.chat-history-panel {
+    padding: 1rem 1.25rem;
+}
+
+.chat-history-list {
+    display: grid;
+    gap: 0.75rem;
+}
+
+.chat-turn {
+    padding: 0.75rem;
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.chat-turn-time {
+    font-size: 0.72rem;
+    color: var(--text-tertiary);
+    margin-bottom: 0.35rem;
+}
+
+.chat-turn-line {
+    font-size: 0.82rem;
+    line-height: 1.5;
+    color: var(--text-secondary);
+}
+
+.chat-turn-line strong {
+    color: var(--text-primary);
+}
+
 /* Call-Out Banner */
 .callout-banner {
     background: var(--danger-bg);
@@ -841,6 +914,64 @@ tr:hover td { background: rgba(88, 166, 255, 0.04); }
     font-size: 0.8rem;
     color: var(--accent);
     text-decoration: none;
+}
+
+.settings-note {
+    font-size: 0.78rem;
+    color: var(--text-tertiary);
+    line-height: 1.5;
+    margin: 0 0 0.8rem;
+}
+
+.setting-action-btn {
+    background: rgba(88, 166, 255, 0.12);
+    border: 1px solid rgba(88, 166, 255, 0.28);
+    border-radius: 8px;
+    color: var(--accent);
+    font-size: 0.78rem;
+    font-weight: 600;
+    padding: 0.35rem 0.65rem;
+    cursor: pointer;
+}
+
+.setting-action-btn:hover {
+    background: rgba(88, 166, 255, 0.2);
+}
+
+.zones-list {
+    display: grid;
+    gap: 0.7rem;
+    margin-bottom: 0.8rem;
+}
+
+.zone-editor {
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+    padding: 0.75rem;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.zone-editor-row {
+    display: grid;
+    grid-template-columns: 1.3fr 0.9fr 0.9fr;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.zone-editor-row:last-child {
+    margin-bottom: 0;
+}
+
+.zone-editor .setting-input,
+.zone-editor select {
+    width: 100%;
+    max-width: none;
+}
+
+.zone-editor-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
 }
 
 .settings-save {

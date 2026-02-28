@@ -8,10 +8,20 @@ function esc(str) {
     return d.innerHTML;
 }
 
+function escAttr(str) {
+    return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
 // ── DOM refs ──
 const clockEl = document.getElementById('clock');
 const macStatus = document.getElementById('mac-status');
 const macDetail = document.getElementById('mac-detail');
+const macOpenApp = document.getElementById('mac-open-app');
+const macSetupLink = document.getElementById('mac-setup-link');
 const iosStatus = document.getElementById('ios-status');
 const iosDetail = document.getElementById('ios-detail');
 const focusStatus = document.getElementById('focus-status');
@@ -90,23 +100,46 @@ async function fetchData() {
 // ── Update all UI ──
 function updateUI(logs, states) {
     // Mac Card
-    const macOnline = states.mac_online === true;
+    const isMacBrowser = /Mac/.test(navigator.platform || navigator.userAgent || '');
+    const macState = states.mac_status || (states.mac_online === true ? 'online' : 'offline');
     const latestMac = logs.find(l => l.device === 'mac');
-    if (!macOnline) {
+    const latestMacApp = latestMac && latestMac.app_name ? latestMac.app_name : '';
+    const launchUrl = states.mac_launch_url || 'lifemanager://open';
+    if (macOpenApp) {
+        macOpenApp.href = launchUrl;
+        macOpenApp.classList.toggle('hidden', !(isMacBrowser && macState === 'offline'));
+    }
+
+    if (macState === 'offline') {
         macStatus.textContent = 'Offline';
         macStatus.style.color = 'var(--danger)';
-        if (states.last_mac_ping_age_seconds != null) {
-            const mins = Math.max(1, Math.ceil(states.last_mac_ping_age_seconds / 60));
-            macDetail.textContent = `Last seen ${mins}m ago`;
+        if (states.last_mac_heartbeat_age_seconds != null) {
+            const mins = Math.max(1, Math.ceil(states.last_mac_heartbeat_age_seconds / 60));
+            macDetail.textContent = states.mac_status_reason || `Last heartbeat ${mins}m ago`;
         } else {
-            macDetail.textContent = 'Not connected';
+            macDetail.textContent = states.mac_status_reason || 'Not connected';
         }
         macDetail.style.color = 'var(--text-tertiary)';
-    } else if (latestMac) {
-        macStatus.textContent = latestMac.app_name || 'Active';
+    } else if (macState === 'degraded') {
+        macStatus.textContent = 'Needs Access';
+        macStatus.style.color = 'var(--warning)';
+        macDetail.textContent = states.mac_status_reason || 'Grant Accessibility and browser permissions';
+        macDetail.style.color = 'var(--text-secondary)';
+    } else if (macState === 'paused') {
+        macStatus.textContent = 'Paused';
+        macStatus.style.color = 'var(--warning)';
+        macDetail.textContent = states.mac_status_reason || 'Tracking is paused';
+        macDetail.style.color = 'var(--text-secondary)';
+    } else if (macState === 'online_idle') {
+        macStatus.textContent = 'Online, idle';
         macStatus.style.color = 'var(--text-primary)';
-        macDetail.textContent = latestMac.is_idle ? 'Idle > 30 min' : 'Active';
-        macDetail.style.color = latestMac.is_idle ? 'var(--warning)' : 'var(--text-secondary)';
+        macDetail.textContent = latestMacApp || states.mac_status_reason || 'Agent connected';
+        macDetail.style.color = 'var(--text-secondary)';
+    } else {
+        macStatus.textContent = 'Online';
+        macStatus.style.color = 'var(--text-primary)';
+        macDetail.textContent = latestMacApp || states.mac_status_reason || 'Agent connected';
+        macDetail.style.color = 'var(--text-secondary)';
     }
 
     // iOS Card
@@ -259,8 +292,13 @@ async function fetchCallout() {
         if (data.callout) {
             calloutMessage.textContent = data.callout;
             calloutBanner.classList.remove('hidden');
+            if (data.callout !== lastCalloutNotification) {
+                lastCalloutNotification = data.callout;
+                maybeNotify('Life Manager', data.callout, 'callout');
+            }
         } else {
             calloutBanner.classList.add('hidden');
+            lastCalloutNotification = '';
         }
     } catch {}
 }
@@ -280,6 +318,7 @@ document.getElementById('callout-submit').addEventListener('click', async () => 
 document.getElementById('callout-dismiss').addEventListener('click', async () => {
     await fetch(`${API}/api/callout/dismiss`, { method: 'POST' });
     calloutBanner.classList.add('hidden');
+    lastCalloutNotification = '';
 });
 
 // ── Tracking Toggle ──
@@ -388,17 +427,164 @@ function closeSettings() {
     document.querySelectorAll('.mobile-nav-item').forEach(b => b.classList.toggle('active', b.dataset.view === 'dashboard'));
 }
 
+function updateNotificationPermissionUI() {
+    const statusEl = document.getElementById('notification-status');
+    const btn = document.getElementById('enable-notifications-btn');
+    if (!statusEl || !btn) return;
+    if (!('Notification' in window)) {
+        statusEl.textContent = 'Unsupported';
+        btn.disabled = true;
+        btn.textContent = 'Unavailable';
+        return;
+    }
+    const perm = Notification.permission;
+    if (perm === 'granted') {
+        statusEl.textContent = 'Enabled';
+        statusEl.style.color = 'var(--success)';
+        btn.textContent = 'Enabled';
+        btn.disabled = true;
+    } else if (perm === 'denied') {
+        statusEl.textContent = 'Blocked in browser';
+        statusEl.style.color = 'var(--warning)';
+        btn.textContent = 'Blocked';
+        btn.disabled = true;
+    } else {
+        statusEl.textContent = 'Not enabled';
+        statusEl.style.color = 'var(--text-secondary)';
+        btn.textContent = 'Enable';
+        btn.disabled = false;
+    }
+}
+
+async function requestNotifications() {
+    if (!('Notification' in window)) return;
+    try {
+        await Notification.requestPermission();
+    } catch {}
+    updateNotificationPermissionUI();
+}
+
+function renderZones(zones) {
+    const list = document.getElementById('zones-list');
+    if (!list) return;
+    if (!zones.length) {
+        list.innerHTML = '<p class="settings-note">No zones configured.</p>';
+        return;
+    }
+    list.innerHTML = zones.map((zone) => `
+        <div class="zone-editor" data-zone-id="${zone.id || ''}" data-is-default="${zone.is_default ? 'true' : 'false'}">
+            <div class="zone-editor-row">
+                <input class="setting-input zone-name" value="${escAttr(zone.name || '')}" placeholder="Zone name" />
+                <input class="setting-input zone-radius" type="number" min="25" max="500" value="${zone.radius_meters || 75}" />
+                <select class="zone-type">
+                    ${['home', 'lecture', 'study', 'gym', 'custom'].map((opt) => `<option value="${opt}" ${zone.zone_type === opt ? 'selected' : ''}>${opt}</option>`).join('')}
+                </select>
+            </div>
+            <div class="zone-editor-row">
+                <input class="setting-input zone-slug" value="${escAttr(zone.slug || '')}" placeholder="slug" ${zone.is_default ? 'readonly' : ''} />
+                <input class="setting-input zone-focus" value="${escAttr(zone.focus_mode || '')}" placeholder="Focus hint" />
+                <select class="zone-enabled">
+                    <option value="true" ${zone.enabled ? 'selected' : ''}>Enabled</option>
+                    <option value="false" ${!zone.enabled ? 'selected' : ''}>Disabled</option>
+                </select>
+            </div>
+            <div class="zone-editor-actions">
+                <button class="setting-action-btn zone-save-btn" type="button">Save</button>
+                ${zone.is_default ? '<span class="settings-note" style="margin:0;">Default zone</span>' : '<button class="setting-action-btn zone-delete-btn" type="button">Delete</button>'}
+            </div>
+        </div>
+    `).join('');
+
+    list.querySelectorAll('.zone-save-btn').forEach((btn) => btn.addEventListener('click', async () => {
+        const editor = btn.closest('.zone-editor');
+        const payload = {
+            name: editor.querySelector('.zone-name').value.trim(),
+            radius_meters: parseInt(editor.querySelector('.zone-radius').value || '75', 10),
+            zone_type: editor.querySelector('.zone-type').value,
+            slug: editor.querySelector('.zone-slug').value.trim(),
+            focus_mode: editor.querySelector('.zone-focus').value.trim(),
+            enabled: editor.querySelector('.zone-enabled').value === 'true',
+        };
+        const zoneId = editor.dataset.zoneId;
+        const url = zoneId ? `${API}/api/zones/${zoneId}` : `${API}/api/zones`;
+        const method = zoneId ? 'PATCH' : 'POST';
+        try {
+            const res = await fetch(url, {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            if (res.ok) loadZones();
+        } catch {}
+    }));
+
+    list.querySelectorAll('.zone-delete-btn').forEach((btn) => btn.addEventListener('click', async () => {
+        const editor = btn.closest('.zone-editor');
+        const zoneId = editor.dataset.zoneId;
+        if (!zoneId) {
+            editor.remove();
+            return;
+        }
+        try {
+            const res = await fetch(`${API}/api/zones/${zoneId}`, { method: 'DELETE' });
+            if (res.ok) loadZones();
+        } catch {}
+    }));
+}
+
+async function loadZones() {
+    const list = document.getElementById('zones-list');
+    if (!list) return;
+    try {
+        const res = await fetch(`${API}/api/zones`);
+        if (!res.ok) throw new Error('zones');
+        const data = await res.json();
+        renderZones(data.zones || []);
+    } catch {
+        list.innerHTML = '<p class="settings-note">Could not load zones.</p>';
+    }
+}
+
+function addZoneDraft() {
+    const list = document.getElementById('zones-list');
+    if (!list) return;
+    const existing = Array.from(list.querySelectorAll('.zone-editor')).map((el) => ({
+        id: el.dataset.zoneId ? parseInt(el.dataset.zoneId, 10) : null,
+        is_default: el.dataset.isDefault === 'true',
+        name: el.querySelector('.zone-name')?.value || '',
+        radius_meters: parseInt(el.querySelector('.zone-radius')?.value || '75', 10),
+        zone_type: el.querySelector('.zone-type')?.value || 'custom',
+        slug: el.querySelector('.zone-slug')?.value || '',
+        focus_mode: el.querySelector('.zone-focus')?.value || '',
+        enabled: (el.querySelector('.zone-enabled')?.value || 'true') === 'true',
+    }));
+    existing.push({
+        id: null,
+        is_default: false,
+        name: '',
+        radius_meters: 75,
+        zone_type: 'custom',
+        slug: '',
+        focus_mode: '',
+        enabled: true,
+    });
+    renderZones(existing);
+}
+
 async function loadSettings() {
     try {
         const res = await fetch(`${API}/api/settings`);
         const s = await res.json();
         document.getElementById('setting-tracking').checked = s.tracking_enabled;
         document.getElementById('setting-polling').value = String(s.polling_interval_seconds);
+        document.getElementById('setting-ai-provider').value = s.ai_provider || 'auto';
         document.getElementById('setting-llm-mode').value = s.llm_mode;
         document.getElementById('setting-llm-cap').value = s.llm_daily_cap;
         document.getElementById('setting-class-interval').value = String(s.classification_interval_seconds);
         document.getElementById('setting-hourly').checked = s.hourly_summaries_enabled;
         if (s.user_timezone) document.getElementById('setting-timezone').value = s.user_timezone;
+        updateNotificationPermissionUI();
+        loadZones();
         // Health check
         const hRes = await fetch(`${API}/api/healthz`);
         if (hRes.ok) {
@@ -413,6 +599,7 @@ document.getElementById('settings-save-btn').addEventListener('click', async () 
     const payload = {
         tracking_enabled: document.getElementById('setting-tracking').checked,
         polling_interval_seconds: parseInt(document.getElementById('setting-polling').value),
+        ai_provider: document.getElementById('setting-ai-provider').value,
         llm_mode: document.getElementById('setting-llm-mode').value,
         llm_daily_cap: parseInt(document.getElementById('setting-llm-cap').value),
         classification_interval_seconds: parseInt(document.getElementById('setting-class-interval').value),
@@ -432,6 +619,8 @@ document.getElementById('settings-save-btn').addEventListener('click', async () 
 });
 
 document.getElementById('settings-btn').addEventListener('click', openSettings);
+document.getElementById('enable-notifications-btn').addEventListener('click', requestNotifications);
+document.getElementById('add-zone-btn').addEventListener('click', addZoneDraft);
 
 // ── Onboarding ──
 async function checkOnboarding() {
@@ -447,7 +636,8 @@ async function checkOnboarding() {
         if (macOk) {
             macStatusEl.innerHTML = '&#10003; Mac tracker is connected and sending data.';
         } else {
-            macStatusEl.innerHTML = 'Mac tracker not detected. <a href="/setup/mac" target="_blank" style="color:#58a6ff;text-decoration:underline;">Open Mac Setup Guide &rarr;</a>';
+            const launchHref = states.mac_launch_url || 'lifemanager://open';
+            macStatusEl.innerHTML = `Mac tracker not detected. <a href="${launchHref}" style="color:#58a6ff;text-decoration:underline;">Open Life Manager</a> or <a href="/setup/mac" target="_blank" style="color:#58a6ff;text-decoration:underline;">Mac Setup Guide &rarr;</a>`;
         }
         // Check iOS shortcut status
         try {
@@ -517,6 +707,23 @@ const chatInput = document.getElementById('chat-input');
 const chatSendBtn = document.getElementById('chat-send');
 const chatReplyEl = document.getElementById('chat-reply');
 const chatReplyText = document.getElementById('chat-reply-text');
+const chatHistoryList = document.getElementById('chat-history-list');
+let lastCheckinNotification = '';
+let lastCalloutNotification = '';
+let lastChatNotification = '';
+
+function maybeNotify(title, body, kind) {
+    if (!('Notification' in window)) return;
+    if (Notification.permission === 'default') {
+        Notification.requestPermission();
+        return;
+    }
+    if (Notification.permission !== 'granted') return;
+    if (kind === 'checkin' && body === lastCheckinNotification) return;
+    if (kind === 'callout' && body === lastCalloutNotification) return;
+    if (kind === 'chat' && body === lastChatNotification) return;
+    new Notification(title, { body });
+}
 
 async function sendChat() {
     const msg = chatInput.value.trim();
@@ -534,6 +741,11 @@ async function sendChat() {
             const data = await res.json();
             chatReplyText.textContent = data.reply;
             chatReplyEl.classList.remove('hidden');
+            if (data.reply && data.reply !== lastChatNotification) {
+                lastChatNotification = data.reply;
+                maybeNotify('Life Manager Reply', data.reply, 'chat');
+            }
+            fetchChatHistory();
             // Auto-hide reply after 8 seconds
             setTimeout(() => chatReplyEl.classList.add('hidden'), 8000);
         }
@@ -544,6 +756,29 @@ async function sendChat() {
 
 chatSendBtn.addEventListener('click', sendChat);
 chatInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChat(); });
+
+async function fetchChatHistory() {
+    if (!chatHistoryList) return;
+    try {
+        const res = await fetch(`${API}/api/chat/history`);
+        if (!res.ok) throw new Error('chat-history');
+        const data = await res.json();
+        const messages = (data.messages || []).slice(-4).reverse();
+        if (!messages.length) {
+            chatHistoryList.innerHTML = '<p class="empty-state">No chat yet.</p>';
+            return;
+        }
+        chatHistoryList.innerHTML = messages.map((turn) => `
+            <div class="chat-turn">
+                <div class="chat-turn-time">${esc(turn.time || '')}</div>
+                <div class="chat-turn-line"><strong>You:</strong> ${esc(turn.user || '')}</div>
+                <div class="chat-turn-line"><strong>Life Manager:</strong> ${esc(turn.reply || '')}</div>
+            </div>
+        `).join('');
+    } catch {
+        chatHistoryList.innerHTML = '<p class="empty-state">Could not load chat history.</p>';
+    }
+}
 
 // ── Check-In System ──
 const checkinBanner = document.getElementById('checkin-banner');
@@ -559,16 +794,13 @@ async function fetchCheckin() {
         if (data.checkin) {
             checkinMessage.textContent = data.checkin;
             checkinBanner.classList.remove('hidden');
-            // Request notification permission if we haven't
-            if ('Notification' in window && Notification.permission === 'default') {
-                Notification.requestPermission();
-            }
-            // Show browser notification
-            if ('Notification' in window && Notification.permission === 'granted') {
-                new Notification('Life Manager', { body: data.checkin, icon: '🧠' });
+            if (data.checkin !== lastCheckinNotification) {
+                lastCheckinNotification = data.checkin;
+                maybeNotify('Life Manager', data.checkin, 'checkin');
             }
         } else {
             checkinBanner.classList.add('hidden');
+            lastCheckinNotification = '';
         }
     } catch {}
 }
@@ -581,6 +813,7 @@ checkinConfirm.addEventListener('click', async () => {
         });
     } catch {}
     checkinBanner.classList.add('hidden');
+    lastCheckinNotification = '';
 });
 
 checkinSend.addEventListener('click', async () => {
@@ -594,6 +827,7 @@ checkinSend.addEventListener('click', async () => {
     } catch {}
     checkinBanner.classList.add('hidden');
     checkinCorrection.value = '';
+    lastCheckinNotification = '';
 });
 
 checkinCorrection.addEventListener('keydown', (e) => {
@@ -616,7 +850,7 @@ async function checkIosSetupStatus() {
             const warning = document.createElement('div');
             warning.id = 'ios-setup-warning';
             warning.style.cssText = 'margin-top:0.5rem;padding:0.4rem 0.7rem;background:rgba(210,153,34,0.15);border:1px solid rgba(210,153,34,0.4);border-radius:8px;font-size:0.75rem;color:#d29922;cursor:pointer;';
-            warning.innerHTML = `⚠ ${unconfigured.length} shortcut${unconfigured.length > 1 ? 's' : ''} not set up — <u>tap to fix</u>`;
+            warning.innerHTML = `⚠ ${unconfigured.length} iPhone automation${unconfigured.length > 1 ? 's' : ''} not set up — <u>tap to fix</u>`;
             warning.onclick = () => window.open('/setup/ios', '_blank');
             cardIos.appendChild(warning);
         }
@@ -632,6 +866,7 @@ fetchAnalytics();
 fetchHourlySummaries();
 fetchCallout();
 fetchCheckin();
+fetchChatHistory();
 checkIosSetupStatus();
 
 if (!localStorage.getItem('lm_onboarded')) checkOnboarding();
@@ -644,6 +879,7 @@ setInterval(() => {
 setInterval(fetchCallout, 30000);
 setInterval(fetchAnalytics, 30000);
 setInterval(fetchCheckin, 15000);
+setInterval(fetchChatHistory, 30000);
 setInterval(checkIosSetupStatus, 120000); // re-check every 2 min
 
 // ── Service Worker ──

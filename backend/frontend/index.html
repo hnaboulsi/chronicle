@@ -95,6 +95,14 @@
         <div id="chat-reply" class="chat-reply hidden">
             <span id="chat-reply-text"></span>
         </div>
+        <section class="chat-history-panel glass-panel">
+            <div class="feed-header">
+                <h2>Recent Chat</h2>
+            </div>
+            <div id="chat-history-list" class="chat-history-list">
+                <p class="empty-state">No chat yet.</p>
+            </div>
+        </section>
 
         <!-- Current States -->
         <section class="device-states">
@@ -104,6 +112,10 @@
                     <h3>MacBook</h3>
                     <p class="status-value" id="mac-status">Waiting...</p>
                     <p class="sub-text" id="mac-detail">Connecting to tracker</p>
+                    <div class="state-card-actions">
+                        <a id="mac-open-app" class="state-card-action hidden" href="lifemanager://open">Open Life Manager</a>
+                        <a id="mac-setup-link" class="state-card-link" href="/setup/mac" target="_blank">Mac Setup</a>
+                    </div>
                 </div>
             </div>
             <div class="state-card glass-panel" id="card-ios">
@@ -207,16 +219,43 @@
         <!-- Mac App Info -->
         <section class="hourly-summaries glass-panel" id="mac-app-info">
             <div class="feed-header">
-                <h2>About the Mac App</h2>
+                <h2>Mac App</h2>
             </div>
             <div style="padding: 0.25rem 0 0.75rem; color: #8b949e; line-height: 1.7; font-size: 0.9rem;">
-                <p style="margin: 0 0 0.75rem;">The <strong style="color: #f0f6fc;">Life Manager menu bar app</strong> runs silently in the background on your Mac. Every minute it:</p>
-                <ul style="margin: 0 0 0.75rem; padding-left: 1.25rem;">
-                    <li>Detects the active app and window title</li>
-                    <li>Reads your Chrome browsing history every 30 min for richer context</li>
-                    <li>Sends a telemetry snapshot to the backend for AI classification</li>
+
+                <p style="margin: 0 0 0.5rem; color: #c9d1d9; font-weight: 600;">What it tracks</p>
+                <p style="margin: 0 0 0.5rem;">Every polling cycle (default: 1 min) the menu bar app captures:</p>
+                <ul style="margin: 0 0 1rem; padding-left: 1.25rem;">
+                    <li><strong style="color:#f0f6fc;">Active app</strong> — frontmost application name</li>
+                    <li><strong style="color:#f0f6fc;">Window title</strong> — via AppleScript (e.g. document name, tab title)</li>
+                    <li><strong style="color:#f0f6fc;">Idle time</strong> — seconds since last keyboard/mouse input; marked idle after 30 min</li>
+                    <li><strong style="color:#f0f6fc;">Chrome history</strong> — refreshed every 30 min; sends domain + page title only (no full URLs)</li>
                 </ul>
-                <p style="margin: 0 0 0.5rem;">You can pause tracking, open the dashboard, or change the backend URL from the <strong style="color: #f0f6fc;">🧠 menu bar icon</strong>.</p>
+
+                <p style="margin: 0 0 0.5rem; color: #c9d1d9; font-weight: 600;">Menu bar icon</p>
+                <p style="margin: 0 0 0.5rem;">The 🧠 icon in your menu bar changes to reflect your current activity category:</p>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.25rem 1rem;margin:0 0 1rem;font-size:0.85rem;">
+                    <span>📚 Studying</span><span>💼 Working</span>
+                    <span>🎬 Entertainment</span><span>📲 Social media</span>
+                    <span>🎮 Gaming</span><span>🎨 Creative</span>
+                    <span>☕ Break</span><span>💤 Idle</span>
+                </div>
+                <p style="margin: 0 0 1rem;">Click the icon to access: <em>Backend status · Tracking ON/Paused · Pause/Resume · Open Dashboard · Status Window · Set Backend URL · Restart · Quit</em></p>
+
+                <p style="margin: 0 0 0.5rem; color: #c9d1d9; font-weight: 600;">Prompts &amp; check-ins</p>
+                <p style="margin: 0 0 1rem;">When the backend wants to ask you something (e.g. "you've been idle 30 min — sleeping?"), a native macOS dialog pops up. Your reply is sent back to the AI.</p>
+
+                <p style="margin: 0 0 0.5rem; color: #c9d1d9; font-weight: 600;">Config files</p>
+                <ul style="margin: 0 0 1rem; padding-left: 1.25rem; font-family: monospace; font-size: 0.82rem;">
+                    <li><span style="color:#58a6ff;">~/.config/life-manager/backend.url</span> — backend URL</li>
+                    <li><span style="color:#58a6ff;">~/.config/life-manager/auth</span> — credentials (user:password)</li>
+                    <li><span style="color:#58a6ff;">~/.config/life-manager/client.json</span> — advanced options</li>
+                    <li><span style="color:#58a6ff;">~/.local/state/life-manager/menubar.err.log</span> — error log</li>
+                </ul>
+
+                <p style="margin: 0 0 0.5rem; color: #c9d1d9; font-weight: 600;">Auto-start</p>
+                <p style="margin: 0 0 1rem;">Installed as a macOS app and registered as a Login Item, so the menu bar agent starts automatically at login. Re-run the Mac installer if the login item is removed.</p>
+
                 <p style="margin: 0;"><a href="/setup/mac" style="color: #58a6ff;">Mac setup guide →</a></p>
             </div>
         </section>
@@ -266,6 +305,14 @@
             <div class="settings-section">
                 <h3>AI & Budget</h3>
                 <div class="setting-row">
+                    <label>AI Provider</label>
+                    <select id="setting-ai-provider">
+                        <option value="auto">Auto</option>
+                        <option value="gemini">Gemini</option>
+                        <option value="openai">OpenAI</option>
+                    </select>
+                </div>
+                <div class="setting-row">
                     <label>LLM Mode</label>
                     <select id="setting-llm-mode">
                         <option value="ultra_save">Ultra Save</option>
@@ -293,6 +340,25 @@
                         <span class="switch-slider"></span>
                     </label>
                 </div>
+            </div>
+            <div class="settings-section">
+                <h3>Notifications</h3>
+                <div class="setting-row">
+                    <label>Browser Notifications</label>
+                    <button class="setting-action-btn" id="enable-notifications-btn" type="button">Enable</button>
+                </div>
+                <div class="setting-row">
+                    <label>Status</label>
+                    <span id="notification-status" class="setting-value">Checking...</span>
+                </div>
+            </div>
+            <div class="settings-section">
+                <h3>Zones</h3>
+                <p class="settings-note">These zones drive low-battery iPhone geofencing. Edit names, radius, and mode hints here.</p>
+                <div id="zones-list" class="zones-list">
+                    <p class="settings-note">Loading zones...</p>
+                </div>
+                <button class="setting-action-btn" id="add-zone-btn" type="button">Add Zone</button>
             </div>
             <div class="settings-section">
                 <h3>Service</h3>

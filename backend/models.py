@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, Text
 from database import Base
 import datetime
 from pydantic import BaseModel
@@ -29,6 +29,38 @@ class AgentState(Base):
     value = Column(String)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 
+
+class LocationZone(Base):
+    __tablename__ = "location_zones"
+
+    id = Column(Integer, primary_key=True, index=True)
+    slug = Column(String, unique=True, index=True, nullable=False)
+    name = Column(String, nullable=False)
+    radius_meters = Column(Integer, nullable=False, default=75)
+    enabled = Column(Boolean, default=True)
+    zone_type = Column(String, nullable=False, default="custom")
+    focus_mode = Column(String, nullable=True)
+    sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+
+class CalendarEventJob(Base):
+    __tablename__ = "calendar_event_jobs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    kind = Column(String, nullable=False)
+    title = Column(String, nullable=False)
+    notes = Column(Text, nullable=True)
+    start_at = Column(DateTime, nullable=False)
+    end_at = Column(DateTime, nullable=False)
+    payload_json = Column(Text, nullable=True)
+    status = Column(String, nullable=False, default="pending", index=True)
+    attempts = Column(Integer, nullable=False, default=0)
+    last_error = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
 # Pydantic Schemas
 class MacTelemetry(BaseModel):
     app_name: str
@@ -53,4 +85,21 @@ class iOSTelemetry(BaseModel):
     is_charging: Optional[bool] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    steps_today: Optional[int] = None
+
+
+class MacHeartbeat(BaseModel):
+    client_id: Optional[str] = None
+    app_version: Optional[str] = None
+    agent_state: Optional[str] = "running"
+    tracking_enabled: Optional[bool] = True
+    permissions_state: Optional[str] = "ok"
+    last_error: Optional[str] = None
+
+
+class iOSZoneEvent(BaseModel):
+    zone_slug: str
+    transition: str
+    event_time: Optional[datetime.datetime] = None
+    battery_level: Optional[float] = None
     steps_today: Optional[int] = None
