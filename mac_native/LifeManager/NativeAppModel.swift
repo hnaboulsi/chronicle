@@ -57,7 +57,7 @@ final class NativeAppModel: ObservableObject {
     @Published var calendarJobs: [CalendarJob] = []
     @Published var chatTurns: [ChatTurn] = []
     @Published var health: HealthResponse?
-    @Published var permissionSnapshot = PermissionSnapshot(accessibility: "pending", notifications: "pending", calendar: "pending")
+    @Published var permissionSnapshot = PermissionSnapshot(accessibility: "pending", notifications: "pending", calendar: "pending", appleEvents: "pending")
     @Published var statusMessage = ""
     @Published var notificationLevel = AppGroupStore.shared.notificationLevel
     @Published var lastSavedSettings = BackendSettings(

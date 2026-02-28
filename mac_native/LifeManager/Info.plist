@@ -23,7 +23,7 @@
     <string>13.0</string>
     <key>NSCalendarsUsageDescription</key>
     <string>Vero syncs your generated productivity events into Apple Calendar.</string>
-    <key>NSUserNotificationUsageDescription</key>
-    <string>Vero uses notifications for check-ins and background status alerts.</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Vero reads your browser tab titles to track what you're working on.</string>
 </dict>
 </plist>

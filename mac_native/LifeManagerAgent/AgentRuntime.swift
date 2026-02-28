@@ -19,8 +19,7 @@ final class AgentRuntime {
         guard !isRunning else { return }
         isRunning = true
         notifier.requestAuthorizationIfNeeded()
-        // Prompt for Accessibility if not yet granted — needed to read window/tab titles
-        _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as NSDictionary)
+        // Accessibility permission prompts are handled by the main app
         heartbeatTask = Task { await runHeartbeatLoop() }
         telemetryTask = Task { await runTelemetryLoop() }
         refreshTask = Task { await runRefreshLoop() }
@@ -230,9 +229,16 @@ final class AgentRuntime {
         var error: NSDictionary?
         guard let script = NSAppleScript(source: source) else { return nil }
         let output = script.executeAndReturnError(&error)
-        if error != nil {
+        if let err = error {
+            let code = (err[NSAppleScript.errorNumber] as? Int) ?? 0
+            // Error -1743: not authorized to send Apple events
+            if code == -1743 {
+                store.browserTabsGranted = false
+            }
             return nil
         }
+        // Success — permission is granted
+        store.browserTabsGranted = true
         let value = output.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return value.isEmpty ? nil : value
     }

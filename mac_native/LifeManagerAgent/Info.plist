@@ -14,8 +14,6 @@
     <false/>
     <key>NSCalendarsUsageDescription</key>
     <string>Vero Agent writes queued productivity events to Apple Calendar on this Mac.</string>
-    <key>NSUserNotificationUsageDescription</key>
-    <string>Vero Agent sends check-ins and background status notifications.</string>
     <key>NSAppleEventsUsageDescription</key>
     <string>Vero Agent reads your browser tab titles to track what you're working on.</string>
 </dict>

@@ -18,7 +18,7 @@ final class AgentAppDelegate: NSObject, NSApplicationDelegate {
     private let statusItemController = StatusItemController()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.prohibited)
+        NSApp.setActivationPolicy(.accessory)
         statusItemController.start()
         runtime.start()
     }

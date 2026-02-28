@@ -7,16 +7,7 @@ struct PermissionSnapshot: Equatable {
     let accessibility: String
     let notifications: String
     let calendar: String
-
-    var backendPermissionsState: String {
-        if accessibility != "granted" {
-            return "missing_accessibility"
-        }
-        if calendar == "denied" || calendar == "restricted" {
-            return "missing_calendar"
-        }
-        return "ok"
-    }
+    let appleEvents: String
 
     static func capture() async -> PermissionSnapshot {
         let accessibility = AXIsProcessTrusted() ? "granted" : "missing"
@@ -53,10 +44,13 @@ struct PermissionSnapshot: Equatable {
             notifications = "unknown"
         }
 
+        let appleEvents = AppGroupStore.shared.browserTabsGranted ? "granted" : "pending"
+
         return PermissionSnapshot(
             accessibility: accessibility,
             notifications: notifications,
-            calendar: calendar
+            calendar: calendar,
+            appleEvents: appleEvents
         )
     }
 }

@@ -121,6 +121,11 @@ final class AppGroupStore {
         set { defaults?.set(newValue, forKey: "legacy_python_warning_shown") }
     }
 
+    var browserTabsGranted: Bool {
+        get { defaults?.bool(forKey: "browser_tabs_granted") ?? false }
+        set { defaults?.set(newValue, forKey: "browser_tabs_granted") }
+    }
+
     var clientID: String {
         if let value = defaults?.string(forKey: "client_id"), !value.isEmpty {
             return value
