@@ -210,23 +210,14 @@ final class AgentRuntime {
                 return name of current tab of front window
             end tell
             """)
-        case "com.google.Chrome":
+        case "com.google.Chrome", "com.brave.Browser", "company.thebrowser.Browser":
+            // For Chrome, Brave, and Arc: try AppleScript with short timeout
+            // Note: Requires user to have granted Chrome/Brave/Arc scripting access
+            // Fall back to Accessibility API which may show window title instead of tab title
+            let browserName = bundleIdentifier == "com.google.Chrome" ? "Google Chrome" :
+                             bundleIdentifier == "com.brave.Browser" ? "Brave Browser" : "Arc"
             return runAppleScript("""
-            tell application "Google Chrome"
-                if (count of windows) = 0 then return ""
-                return title of active tab of front window
-            end tell
-            """)
-        case "com.brave.Browser":
-            return runAppleScript("""
-            tell application "Brave Browser"
-                if (count of windows) = 0 then return ""
-                return title of active tab of front window
-            end tell
-            """)
-        case "company.thebrowser.Browser":
-            return runAppleScript("""
-            tell application "Arc"
+            tell application "\(browserName)"
                 if (count of windows) = 0 then return ""
                 return title of active tab of front window
             end tell

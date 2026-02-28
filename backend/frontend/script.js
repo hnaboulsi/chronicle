@@ -46,7 +46,8 @@ let latestStates = null;
 function updateClock() {
     clockEl.textContent = new Date().toLocaleString(undefined, {
         weekday: 'short', month: 'short', day: 'numeric',
-        hour: '2-digit', minute: '2-digit', second: '2-digit'
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+        hour12: true
     });
 }
 setInterval(updateClock, 1000);
@@ -188,7 +189,7 @@ function updateUI(logs, states) {
 
         let ts = entry.timestamp;
         if (ts && !ts.endsWith('Z')) ts += 'Z';
-        const time = ts ? new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+        const time = ts ? new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }) : '';
         const isMac = entry.device === 'mac';
 
         const tdTime = document.createElement('td');
@@ -306,7 +307,7 @@ async function fetchHourlySummaries() {
             let ts = s.hour_start;
             if (ts && !ts.endsWith('Z')) ts += 'Z';
             const date = new Date(ts);
-            const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
             const hour = date.getHours();
             const nextHour = (hour + 1) % 24;
 
