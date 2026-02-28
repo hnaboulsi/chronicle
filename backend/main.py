@@ -47,6 +47,13 @@ def _run_migrations() -> list[str]:
                 cols = [r[1] for r in conn.execute(text("PRAGMA table_info(activity_logs)"))]
                 if "battery_pct" not in cols:
                     conn.execute(text("ALTER TABLE activity_logs ADD COLUMN battery_pct INTEGER"))
+
+            # Data migration: rename legacy app names to "Vero"
+            conn.execute(text("""
+                UPDATE activity_logs
+                SET app_name = 'Vero'
+                WHERE app_name IN ('LifeManager', 'Vero Agent', 'Ambient')
+            """))
             conn.commit()
         except Exception as exc:
             errors.append(str(exc))

@@ -44,7 +44,7 @@ struct PermissionsView: View {
             } header: {
                 Text("System Permissions")
             } footer: {
-                Text("All permissions can be managed in System Settings under Security & Privacy.")
+                Text("All permissions can be managed in System Settings under Security & Privacy. If Accessibility shows as Missing after an app update, toggle it OFF and ON again in System Settings to re-grant the permission.")
             }
 
             Section {

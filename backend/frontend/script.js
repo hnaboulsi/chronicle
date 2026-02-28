@@ -384,7 +384,9 @@ async function renderCalendar() {
 
         // Hour rows (8am-10pm)
         for (let hour = 8; hour < 22; hour++) {
-            const hourStr = (hour < 10 ? '0' : '') + hour + ':00';
+            const h12 = hour % 12 || 12;
+            const ampm = hour < 12 ? 'AM' : 'PM';
+            const hourStr = `${h12} ${ampm}`;
             html += `<div style="font-size:11px;color:#6B7280;text-align:right;padding-right:8px;">${hourStr}</div>`;
             days.forEach(day => {
                 const logs = dayMap[day]?.[hour] || [];

@@ -21,8 +21,9 @@ if [ ! -d "$APP" ]; then
 fi
 
 echo "Installing to /Applications..."
-rm -rf "/Applications/Vero.app"
-cp -R "$APP" "/Applications/Vero.app"
+# Use rsync to preserve bundle identity (macOS Accessibility is tied to the bundle path)
+# This prevents macOS from revoking Accessibility permission on each install
+rsync -a --delete "$APP/" "/Applications/Vero.app/"
 
 echo "Launching Vero..."
 # Kill existing instance if running
