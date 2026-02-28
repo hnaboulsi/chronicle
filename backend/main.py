@@ -179,37 +179,59 @@ async def initialize_runtime():
     _STARTUP_STATUS["database_ready"] = False
     _STARTUP_STATUS["startup_migrations_ok"] = False
     _STARTUP_STATUS["startup_errors"] = []
-    try:
-        Base.metadata.create_all(bind=engine)
-        _STARTUP_STATUS["database_ready"] = True
-    except Exception as exc:
-        msg = f"Schema init failed: {exc}"
-        _STARTUP_STATUS["startup_errors"].append(msg)
-        log.error(msg)
 
-    try:
-        migration_errors = _run_migrations()
-        if migration_errors:
-            for migration_error in migration_errors:
-                msg = f"Lightweight migrations failed: {migration_error}"
-                _STARTUP_STATUS["startup_errors"].append(msg)
-                log.error(msg)
-            _STARTUP_STATUS["startup_migrations_ok"] = False
-        else:
-            _STARTUP_STATUS["startup_migrations_ok"] = True
-    except Exception as exc:
-        msg = f"Lightweight migrations failed: {exc}"
-        _STARTUP_STATUS["startup_errors"].append(msg)
-        log.error(msg)
+    # Run all synchronous DB work in a thread so we don't block the event loop.
+    # Use a timeout so Railway's healthcheck isn't held up by slow cold-start DB
+    # connections (SSL handshake, pgbouncer, etc.).
+    import concurrent.futures
 
-    try:
-        with SessionLocal() as db:
-            agent_logic.ensure_default_settings(db)
-        _STARTUP_STATUS["database_ready"] = True
-    except Exception as exc:
-        msg = f"Default settings init failed: {exc}"
-        _STARTUP_STATUS["startup_errors"].append(msg)
-        log.error(msg)
+    def _init_db_sync():
+        try:
+            Base.metadata.create_all(bind=engine)
+            _STARTUP_STATUS["database_ready"] = True
+        except Exception as exc:
+            msg = f"Schema init failed: {exc}"
+            _STARTUP_STATUS["startup_errors"].append(msg)
+            log.error(msg)
+
+        try:
+            migration_errors = _run_migrations()
+            if migration_errors:
+                for migration_error in migration_errors:
+                    msg = f"Lightweight migrations failed: {migration_error}"
+                    _STARTUP_STATUS["startup_errors"].append(msg)
+                    log.error(msg)
+                _STARTUP_STATUS["startup_migrations_ok"] = False
+            else:
+                _STARTUP_STATUS["startup_migrations_ok"] = True
+        except Exception as exc:
+            msg = f"Lightweight migrations failed: {exc}"
+            _STARTUP_STATUS["startup_errors"].append(msg)
+            log.error(msg)
+
+        try:
+            with SessionLocal() as db:
+                agent_logic.ensure_default_settings(db)
+            _STARTUP_STATUS["database_ready"] = True
+        except Exception as exc:
+            msg = f"Default settings init failed: {exc}"
+            _STARTUP_STATUS["startup_errors"].append(msg)
+            log.error(msg)
+
+    loop = asyncio.get_event_loop()
+    with concurrent.futures.ThreadPoolExecutor() as pool:
+        try:
+            # 20s timeout — Railway's healthcheck allows 30s; we need to be ready in time
+            await asyncio.wait_for(loop.run_in_executor(pool, _init_db_sync), timeout=20.0)
+        except asyncio.TimeoutError:
+            msg = "DB startup timed out after 20s; continuing anyway"
+            _STARTUP_STATUS["startup_errors"].append(msg)
+            log.warning(msg)
+        except Exception as exc:
+            msg = f"Unexpected startup error: {exc}"
+            _STARTUP_STATUS["startup_errors"].append(msg)
+            log.error(msg)
+
 
 
 def _run_async(coro):
