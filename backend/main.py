@@ -1649,7 +1649,7 @@ async def export_data(days: int = 30, db: Session = Depends(get_db)):
 
 
 @app.get("/api/stream")
-async def event_stream(db: Session = Depends(get_db)):
+async def event_stream():
     """Server-Sent Events stream for real-time dashboard updates.
     Pushes every 5s and auto-closes after 5 minutes to conserve Railway resources.
     Client should reconnect automatically (EventSource handles this)."""
@@ -1657,37 +1657,44 @@ async def event_stream(db: Session = Depends(get_db)):
     import json as _json
     from starlette.responses import StreamingResponse
 
+    def _fetch_sse_data():
+        fresh_db = SessionLocal()
+        try:
+            states = _build_state_payload(fresh_db)
+            logs = fresh_db.query(ActivityLog).order_by(desc(ActivityLog.timestamp)).limit(15).all()
+            logs_data = [
+                {
+                    "id": l.id,
+                    "timestamp": l.timestamp.isoformat() if l.timestamp else "",
+                    "device": l.device,
+                    "app_name": l.app_name,
+                    "window_title": l.window_title,
+                    "is_idle": l.is_idle,
+                    "location_label": l.location_label,
+                    "activity_type": l.activity_type,
+                    "steps_today": l.steps_today,
+                    "battery_pct": l.battery_pct,
+                }
+                for l in logs
+            ]
+            return {"states": states, "logs": logs_data}
+        finally:
+            fresh_db.close()
+
     async def generate():
         start = _time.time()
         max_duration = 300  # 5 minutes then close — client reconnects
+        loop = asyncio.get_running_loop()
         try:
             while _time.time() - start < max_duration:
-                fresh_db = SessionLocal()
                 try:
-                    states = _build_state_payload(fresh_db)
-                    logs = fresh_db.query(ActivityLog).order_by(desc(ActivityLog.timestamp)).limit(15).all()
-                    logs_data = [
-                        {
-                            "id": l.id,
-                            "timestamp": l.timestamp.isoformat() if l.timestamp else "",
-                            "device": l.device,
-                            "app_name": l.app_name,
-                            "window_title": l.window_title,
-                            "is_idle": l.is_idle,
-                            "location_label": l.location_label,
-                            "activity_type": l.activity_type,
-                            "steps_today": l.steps_today,
-                            "battery_pct": l.battery_pct,
-                        }
-                        for l in logs
-                    ]
-                    payload = _json.dumps({"states": states, "logs": logs_data})
+                    data = await loop.run_in_executor(None, _fetch_sse_data)
+                    payload = _json.dumps(data)
                     yield f"data: {payload}\n\n"
                 except Exception as e:
                     log.error("SSE stream error: %s", e)
                     yield f"data: {{}}\n\n"
-                finally:
-                    fresh_db.close()
+                
                 await asyncio.sleep(5)
         except asyncio.CancelledError:
             log.debug("SSE client disconnected")
