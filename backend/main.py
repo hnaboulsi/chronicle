@@ -856,10 +856,14 @@ async def confirm_checkin(payload: Dict[str, Any], db: Session = Depends(get_db)
 @app.get("/api/healthz")
 async def healthz():
     now = datetime.utcnow()
+    llm_configured = bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("OPENAI_API_KEY"))
+    ai_provider = os.environ.get("LIFE_MANAGER_AI_PROVIDER", "auto")
+
+    # --- Non-blocking DB check (3s timeout) ---
+    # Railway requires a 200 response within 30s; we must not block the event loop.
     db_ok = False
     db_error = ""
     llm_stats = {"daily_used": 0, "daily_remaining": 0, "daily_cap": 0}
-    ai_provider = os.environ.get("LIFE_MANAGER_AI_PROVIDER", "auto")
     states = {
         "llm_mode": "balanced",
         "last_mac_ping": "",
@@ -867,33 +871,49 @@ async def healthz():
         "last_ios_ping": "",
         "last_ios_event": "",
         "mac_status": "offline",
-        "mac_status_reason": "Waiting for database readiness.",
+        "mac_status_reason": "Database initializing.",
     }
     pending_calendar_jobs = None
-    db = SessionLocal()
-    try:
-        db.execute(text("SELECT 1"))
-        db_ok = True
-        agent_logic.ensure_default_settings(db)
-        states = _build_state_payload(db)
-        llm_stats = agent_logic.llm_usage_snapshot(db, now)
-        ai_provider = agent_logic.get_state(db, "ai_provider", "auto")
-        pending_calendar_jobs = db.query(func.count(CalendarEventJob.id)).filter(CalendarEventJob.status == "pending").scalar()
-        _STARTUP_STATUS["database_ready"] = True
-    except Exception as exc:
-        db_error = str(exc)
-        _STARTUP_STATUS["database_ready"] = False
-    finally:
-        db.close()
 
-    llm_configured = bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("OPENAI_API_KEY"))
+    import concurrent.futures
+
+    def _db_check():
+        _db = SessionLocal()
+        try:
+            _db.execute(text("SELECT 1"))
+            _payload = _build_state_payload(_db)
+            _llm = agent_logic.llm_usage_snapshot(_db, datetime.utcnow())
+            _ai = agent_logic.get_state(_db, "ai_provider", "auto")
+            _pending = _db.query(func.count(CalendarEventJob.id)).filter(CalendarEventJob.status == "pending").scalar()
+            return True, "", _payload, _llm, _ai, _pending
+        except Exception as exc:
+            return False, str(exc), None, None, None, None
+        finally:
+            _db.close()
+
+    loop = asyncio.get_event_loop()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        try:
+            result = await asyncio.wait_for(loop.run_in_executor(pool, _db_check), timeout=3.0)
+            db_ok, db_error, _states, _llm_stats, _ai_provider, pending_calendar_jobs = result
+            if db_ok:
+                states = _states
+                llm_stats = _llm_stats
+                ai_provider = _ai_provider
+                _STARTUP_STATUS["database_ready"] = True
+        except asyncio.TimeoutError:
+            db_error = "DB check timed out (3s)"
+        except Exception as exc:
+            db_error = str(exc)
+
     startup_errors = list(_STARTUP_STATUS["startup_errors"])
     if db_error:
-        startup_errors = startup_errors + [f"Runtime DB check failed: {db_error}"]
-    overall_status = "ok" if db_ok else "degraded"
+        startup_errors = startup_errors + [f"Runtime DB check: {db_error}"]
 
+    # Always return 200 — Railway healthcheck only looks at HTTP status code.
+    # Degraded state is reported in the body for dashboards to surface.
     return {
-        "status": overall_status,
+        "status": "ok" if db_ok else "degraded",
         "process_ready": bool(_STARTUP_STATUS["process_ready"]),
         "database_ready": db_ok,
         "startup_migrations_ok": bool(_STARTUP_STATUS["startup_migrations_ok"]),
@@ -939,6 +959,7 @@ async def healthz():
             "reason": states.get("mac_status_reason", ""),
         },
     }
+
 
 
 @app.get("/api/ios-setup-status")
