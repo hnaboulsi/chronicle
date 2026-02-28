@@ -11,7 +11,7 @@ struct ZonesView: View {
                     .foregroundStyle(.secondary)
 
                 VStack(alignment: .leading, spacing: 12) {
-                    ForEach(model.zones, id: \.self) { zone in
+                    ForEach(model.zones, id: \.id) { zone in
                         ZoneEditorCard(zone: zone)
                             .environmentObject(model)
                     }
@@ -52,9 +52,11 @@ struct ZonesView: View {
 
 private struct ZoneEditorCard: View {
     @EnvironmentObject private var model: NativeAppModel
+    let zone: ZoneRecord
     @State private var editable: ZoneRecord
 
     init(zone: ZoneRecord) {
+        self.zone = zone
         _editable = State(initialValue: zone)
     }
 
@@ -96,5 +98,8 @@ private struct ZoneEditorCard: View {
         }
         .padding()
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .onChange(of: zone) { newValue in
+            editable = newValue
+        }
     }
 }

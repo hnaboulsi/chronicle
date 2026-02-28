@@ -32,6 +32,7 @@ struct RootView: View {
                 Button("Refresh") {
                     Task { await model.refreshAll() }
                 }
+                .keyboardShortcut("r", modifiers: .command)
                 Button("Open Web Dashboard") {
                     model.openWebDashboard()
                 }
@@ -45,6 +46,9 @@ struct RootView: View {
                     .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
                     .padding()
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willBecomeActiveNotification)) { _ in
+            Task { await model.refreshAll() }
         }
     }
 
