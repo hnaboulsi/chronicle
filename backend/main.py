@@ -894,7 +894,7 @@ async def healthz():
     loop = asyncio.get_running_loop()
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
         try:
-            result = await asyncio.wait_for(loop.run_in_executor(pool, _db_check), timeout=3.0)
+            result = await asyncio.wait_for(loop.run_in_executor(pool, _db_check), timeout=8.0)
             db_ok, db_error, _states, _llm_stats, _ai_provider, pending_calendar_jobs = result
             if db_ok:
                 states = _states
