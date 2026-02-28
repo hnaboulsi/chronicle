@@ -19,8 +19,11 @@ self.addEventListener('fetch', (e) => {
     if (e.request.url.includes('/api/')) return; // Never cache API calls
     e.respondWith(
         fetch(e.request).then(res => {
-            const clone = res.clone();
-            caches.open(CACHE).then(c => c.put(e.request, clone));
+            // Only cache successful responses — don't cache 404s or errors
+            if (res.ok) {
+                const clone = res.clone();
+                caches.open(CACHE).then(c => c.put(e.request, clone));
+            }
             return res;
         }).catch(() => caches.match(e.request))
     );
