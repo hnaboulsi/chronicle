@@ -232,27 +232,35 @@ def _build_state_payload(db: Session) -> dict:
     return states
 
 def _bg_process_mac(data: MacTelemetry):
-    """Run mac telemetry processing with its own DB session."""
-    db = SessionLocal()
-    try:
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(agent_logic.process_mac_telemetry(data, db))
-    except Exception as e:
-        log.error("Background mac telemetry error: %s", e)
-    finally:
-        db.close()
+    """Run mac telemetry processing in its own thread + event loop (FastAPI-safe)."""
+    import threading
+
+    def _run():
+        db = SessionLocal()
+        try:
+            asyncio.run(agent_logic.process_mac_telemetry(data, db))
+        except Exception as e:
+            log.error("Background mac telemetry error: %s", e)
+        finally:
+            db.close()
+
+    threading.Thread(target=_run, daemon=True).start()
 
 
 def _bg_process_ios(data: iOSTelemetry):
-    """Run ios telemetry processing with its own DB session."""
-    db = SessionLocal()
-    try:
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(agent_logic.process_ios_telemetry(data, db))
-    except Exception as e:
-        log.error("Background ios telemetry error: %s", e)
-    finally:
-        db.close()
+    """Run ios telemetry processing in its own thread + event loop (FastAPI-safe)."""
+    import threading
+
+    def _run():
+        db = SessionLocal()
+        try:
+            asyncio.run(agent_logic.process_ios_telemetry(data, db))
+        except Exception as e:
+            log.error("Background ios telemetry error: %s", e)
+        finally:
+            db.close()
+
+    threading.Thread(target=_run, daemon=True).start()
 
 
 def _bg_process_heartbeat(data: MacHeartbeat):
