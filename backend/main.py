@@ -4,6 +4,8 @@ import os
 import base64
 import subprocess
 import secrets
+import hmac
+import hashlib
 import threading
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any
@@ -89,6 +91,8 @@ _NO_AUTH_PATHS = {
     "/api/ios-telemetry",
     "/api/ios-zone-event",
     "/api/healthz",
+    "/api/login",
+    "/login",
     "/dashboard/manifest.json",
     "/dashboard/sw.js",
     "/dashboard/icon.svg",
@@ -96,6 +100,20 @@ _NO_AUTH_PATHS = {
     "/dashboard/favicon.svg",
     "/dashboard/favicon.ico",
 }
+
+
+def _session_token(password: str) -> str:
+    """Deterministic token derived from the password — no server-side state needed."""
+    key = os.environ.get("SECRET_KEY", "vero-default-secret").encode()
+    return hmac.new(key, password.encode(), hashlib.sha256).hexdigest()
+
+
+def _verify_session_cookie(cookie: str) -> bool:
+    password = os.environ.get("DASHBOARD_PASS", "").strip()
+    if not password:
+        return True
+    expected = _session_token(password)
+    return hmac.compare_digest(cookie, expected)
 _NO_AUTH_PREFIXES = (
     "/dashboard/icons/",
 )
@@ -133,7 +151,7 @@ def _clear_failures(ip: str):
 
 
 @app.middleware("http")
-async def basic_auth_middleware(request: Request, call_next):
+async def auth_middleware(request: Request, call_next):
     path = request.url.path
     if (
         path in _NO_AUTH_PATHS
@@ -142,8 +160,7 @@ async def basic_auth_middleware(request: Request, call_next):
     ):
         return await call_next(request)
 
-    username = os.environ.get("DASHBOARD_USER", "admin")
-    password = os.environ.get("DASHBOARD_PASS", "")
+    password = os.environ.get("DASHBOARD_PASS", "").strip()
     if not password:
         return await call_next(request)  # No password set — open (local dev)
 
@@ -152,23 +169,97 @@ async def basic_auth_middleware(request: Request, call_next):
     if _is_blocked(client_ip):
         return Response(content="Too many failed attempts. Try again in 15 minutes.", status_code=429)
 
+    # 1. Check session cookie (browser login page)
+    cookie = request.cookies.get("vero_session", "")
+    if cookie and _verify_session_cookie(cookie):
+        return await call_next(request)
+
+    # 2. Check Basic Auth header (API clients: Mac agent, iOS shortcuts)
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Basic "):
         try:
             decoded = base64.b64decode(auth[6:]).decode("utf-8")
-            u, _, p = decoded.partition(":")
-            if secrets.compare_digest(u, username) and secrets.compare_digest(p, password):
+            _, _, p = decoded.partition(":")
+            if secrets.compare_digest(p.strip(), password):
                 _clear_failures(client_ip)
                 return await call_next(request)
         except Exception as e:
             log.debug("Auth middleware error for %s: %s", client_ip, e)
 
+    # Browser request — redirect to login page instead of showing native dialog
     _record_failure(client_ip)
-    return Response(
-        content="Unauthorized",
-        status_code=401,
-        headers={"WWW-Authenticate": 'Basic realm="Vero"'},
-    )
+    accept = request.headers.get("Accept", "")
+    if "text/html" in accept:
+        return RedirectResponse(url="/login", status_code=302)
+    return Response(content="Unauthorized", status_code=401)
+
+_LOGIN_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vero — Login</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0F1117; color: #F9FAFB; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+         display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+  .card { background: #1A1D27; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px;
+          padding: 40px 36px; width: 100%; max-width: 360px; }
+  h1 { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+  p { font-size: 13px; color: #6B7280; margin-bottom: 28px; }
+  label { display: block; font-size: 12px; font-weight: 500; color: #9CA3AF; margin-bottom: 6px; }
+  input { width: 100%; background: #0F1117; border: 1px solid rgba(255,255,255,0.12);
+          border-radius: 8px; color: #F9FAFB; font-size: 15px; padding: 10px 14px; outline: none; }
+  input:focus { border-color: #6366F1; }
+  button { margin-top: 16px; width: 100%; background: #6366F1; border: none; border-radius: 8px;
+           color: #fff; font-size: 14px; font-weight: 600; padding: 11px; cursor: pointer; }
+  button:hover { background: #4F46E5; }
+  .error { margin-top: 14px; font-size: 13px; color: #EF4444; text-align: center; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Vero</h1>
+  <p>Enter your dashboard password to continue.</p>
+  <form method="post" action="/api/login">
+    <label for="pw">Password</label>
+    <input id="pw" name="password" type="password" autocomplete="current-password" autofocus required>
+    <button type="submit">Sign in</button>
+  </form>
+  {error_block}
+</div>
+</body>
+</html>"""
+
+
+@app.get("/login")
+async def login_page(error: str = ""):
+    error_block = '<p class="error">Incorrect password. Try again.</p>' if error else ""
+    return HTMLResponse(_LOGIN_HTML.replace("{error_block}", error_block))
+
+
+@app.post("/api/login")
+async def do_login(request: Request):
+    form = await request.form()
+    pw = (form.get("password") or "").strip()
+    password = os.environ.get("DASHBOARD_PASS", "").strip()
+    client_ip = request.client.host if request.client else "unknown"
+
+    if not password or secrets.compare_digest(pw, password):
+        _clear_failures(client_ip)
+        token = _session_token(password)
+        response = RedirectResponse(url="/dashboard/", status_code=303)
+        response.set_cookie(
+            "vero_session", token,
+            httponly=True, samesite="lax",
+            max_age=86400 * 30,  # 30 days
+            secure=False,  # Railway terminates TLS upstream
+        )
+        return response
+
+    _record_failure(client_ip)
+    return RedirectResponse(url="/login?error=1", status_code=303)
+
 
 # Serve frontend static files
 frontend_path = os.path.join(os.path.dirname(__file__), "frontend")
