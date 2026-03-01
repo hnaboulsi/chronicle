@@ -3,7 +3,6 @@ import SwiftUI
 struct iPhoneSetupView: View {
     @EnvironmentObject private var model: NativeAppModel
     @Environment(\.openURL) var openURL
-    @State private var copiedCommand = false
 
     var body: some View {
         Form {
@@ -70,17 +69,7 @@ struct iPhoneSetupView: View {
                             Text(command)
                                 .font(.system(.caption2, design: .monospaced))
                                 .lineLimit(nil)
-                            Button(action: {
-                                NSPasteboard.general.clearContents()
-                                NSPasteboard.general.setString(command, forType: .string)
-                                copiedCommand = true
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                    copiedCommand = false
-                                }
-                            }) {
-                                Image(systemName: copiedCommand ? "checkmark" : "doc.on.doc")
-                            }
-                            .buttonStyle(.plain)
+                            CopyButton(text: command)
                         }
                     }
                 } else {
@@ -114,15 +103,15 @@ struct iPhoneSetupView: View {
                         VStack(alignment: .leading, spacing: Spacing.xs) {
                             Text("For each zone, you'll create two automations:")
                                 .font(.caption.weight(.semibold))
-                            Text("• 📍 Arrive — Triggers when you enter the zone")
+                            Text("• Arrive — Triggers when you enter the zone")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                            Text("• 🚪 Leave — Triggers when you exit the zone")
+                            Text("• Leave — Triggers when you exit the zone")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
 
-                        DisclosureGroup("📍 ARRIVE Automation (8 Steps)") {
+                        DisclosureGroup("ARRIVE Automation (8 Steps)") {
                             VStack(alignment: .leading, spacing: Spacing.xs) {
                                 ForEach([
                                     "1. Open Shortcuts app → go to Automation tab",
@@ -142,7 +131,7 @@ struct iPhoneSetupView: View {
                             .padding(.top, Spacing.xs)
                         }
 
-                        DisclosureGroup("🚪 LEAVE Automation (7 Steps)") {
+                        DisclosureGroup("LEAVE Automation (7 Steps)") {
                             VStack(alignment: .leading, spacing: Spacing.xs) {
                                 ForEach([
                                     "1. Tap + (New Automation) → Location",
@@ -204,7 +193,8 @@ struct iPhoneSetupView: View {
                                     .font(.subheadline.weight(.semibold))
 
                                 HStack(spacing: Spacing.xs) {
-                                    Text("📍")
+                                    Image(systemName: "mappin.circle.fill")
+                                        .foregroundStyle(.green)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text("Arrive")
                                             .font(.caption)
@@ -216,17 +206,12 @@ struct iPhoneSetupView: View {
                                             .foregroundStyle(.blue)
                                     }
                                     Spacer()
-                                    Button(action: {
-                                        NSPasteboard.general.clearContents()
-                                        NSPasteboard.general.setString(enterURL, forType: .string)
-                                    }) {
-                                        Image(systemName: "doc.on.doc")
-                                    }
-                                    .buttonStyle(.plain)
+                                    CopyButton(text: enterURL)
                                 }
 
                                 HStack(spacing: Spacing.xs) {
-                                    Text("🚪")
+                                    Image(systemName: "door.right.hand.open")
+                                        .foregroundStyle(.red)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text("Leave")
                                             .font(.caption)
@@ -238,13 +223,7 @@ struct iPhoneSetupView: View {
                                             .foregroundStyle(.blue)
                                     }
                                     Spacer()
-                                    Button(action: {
-                                        NSPasteboard.general.clearContents()
-                                        NSPasteboard.general.setString(leaveURL, forType: .string)
-                                    }) {
-                                        Image(systemName: "doc.on.doc")
-                                    }
-                                    .buttonStyle(.plain)
+                                    CopyButton(text: leaveURL)
                                 }
                             }
                         }
@@ -306,13 +285,7 @@ struct iPhoneSetupView: View {
                                 .font(.system(.caption2, design: .monospaced))
                                 .lineLimit(1)
                                 .truncationMode(.middle)
-                            Button(action: {
-                                NSPasteboard.general.clearContents()
-                                NSPasteboard.general.setString(telemetryURL, forType: .string)
-                            }) {
-                                Image(systemName: "doc.on.doc")
-                            }
-                            .buttonStyle(.plain)
+                            CopyButton(text: telemetryURL)
                         }
                     }
                 } else {
