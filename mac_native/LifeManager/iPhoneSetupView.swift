@@ -163,19 +163,19 @@ struct iPhoneSetupView: View {
 
                         DisclosureGroup("Optional: Focus Mode Integration") {
                             VStack(alignment: .leading, spacing: Spacing.xs) {
-                                Text("Before the 'Get Contents of URL' step, you can add:")
+                                Text("Before the 'Get Contents of URL' step, you can set a Focus mode:")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
-                                ForEach([
-                                    "• Dwinelle Hall: Set Focus → Class",
-                                    "• Wheeler Hall: Set Focus → Class",
-                                    "• VLSB: Set Focus → Deep Work",
-                                    "• Doe/Moffitt: Set Focus → Deep Work",
-                                    "• Anchor House: Set Focus → Off (on arrival only)"
-                                ], id: \.self) { step in
-                                    Text(step)
+                                ForEach(model.zones, id: \.slug) { zone in
+                                    Text("• \(zone.name): Set Focus → (choose your mode)")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
+                                }
+                                if model.zones.isEmpty {
+                                    Text("(Add zones to see examples)")
+                                        .font(.caption)
+                                        .foregroundStyle(.tertiary)
+                                        .italic()
                                 }
                             }
                             .padding(.top, Spacing.xs)
