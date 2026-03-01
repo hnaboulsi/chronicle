@@ -317,13 +317,11 @@ def get_recent_mac_logs(db: Session, limit: int = 20) -> list:
     ]
 
 
-def get_mac_logs_for_hour(db: Session, since: datetime) -> list:
-    logs = (
-        db.query(ActivityLog)
-        .filter(ActivityLog.device == "mac", ActivityLog.timestamp >= since)
-        .order_by(ActivityLog.timestamp)
-        .all()
-    )
+def get_mac_logs_for_hour(db: Session, since: datetime, until: datetime | None = None) -> list:
+    q = db.query(ActivityLog).filter(ActivityLog.device == "mac", ActivityLog.timestamp >= since)
+    if until is not None:
+        q = q.filter(ActivityLog.timestamp < until)
+    logs = q.order_by(ActivityLog.timestamp).all()
     return [{"app_name": l.app_name, "window_title": l.window_title} for l in logs]
 
 
@@ -447,12 +445,20 @@ def _maybe_start_session(db: Session, category: str, summary: str, now: datetime
 
 
 async def _generate_and_store_hourly_summary(db: Session, now: datetime):
-    hour_start = now - timedelta(minutes=30)
-    logs = get_mac_logs_for_hour(db, since=hour_start)
+    # Snap to clean hour boundaries: cover the previous complete hour
+    hour_end = now.replace(minute=0, second=0, microsecond=0)
+    hour_start = hour_end - timedelta(hours=1)
+
+    # Skip if we already have a summary for this hour
+    existing = db.query(HourlySummary).filter(HourlySummary.hour_start == hour_start).first()
+    if existing:
+        return
+
+    logs = get_mac_logs_for_hour(db, since=hour_start, until=hour_end)
     if not logs:
         return
 
-    hour_label = f"{hour_start.strftime('%I:%M')}-{now.strftime('%I:%M %p')}"
+    hour_label = f"{hour_start.strftime('%I:%M %p')} — {hour_end.strftime('%I:%M %p')}"
     result = await llm_client.generate_hourly_summary(logs, hour_label)
 
     summary = HourlySummary(
