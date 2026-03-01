@@ -29,18 +29,6 @@ struct OverviewView: View {
         return "\(value / 86_400)d ago"
     }
 
-    private func formatUptime(_ seconds: Int) -> String {
-        let days = seconds / 86_400
-        let hours = (seconds % 86_400) / 3600
-        let minutes = (seconds % 3600) / 60
-        if days > 0 {
-            return "\(days)d \(hours)h"
-        }
-        if hours > 0 {
-            return "\(hours)h \(minutes)m"
-        }
-        return "\(minutes)m"
-    }
 
     @ViewBuilder
     private var summaryCards: some View {
@@ -50,7 +38,7 @@ struct OverviewView: View {
             iconColor: .green,
             tint: healthColor(model.health?.status) == .green ? .greenTint : (healthColor(model.health?.status) == .orange ? .orangeTint : .redTint)
         ) {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: Spacing.md) {
                 HStack {
                     StatusDot(
                         color: healthColor(model.health?.status),
@@ -75,7 +63,7 @@ struct OverviewView: View {
             iconColor: .blue,
             tint: .blueTint
         ) {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: Spacing.md) {
                 Text(model.state.current_activity_summary ?? model.state.current_activity_category ?? "Unknown")
                     .font(.system(.body, design: .rounded))
                     .fontWeight(.semibold)
@@ -95,7 +83,7 @@ struct OverviewView: View {
             iconColor: .indigo,
             tint: .indigoTint
         ) {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: Spacing.md) {
                 Text(model.store.backendURL?.absoluteString ?? "Not configured")
                     .font(.system(.caption, design: .monospaced))
                     .lineLimit(1)

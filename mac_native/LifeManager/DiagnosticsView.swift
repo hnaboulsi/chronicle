@@ -195,12 +195,4 @@ struct DiagnosticsView: View {
         return val == -1 ? "Delete all activity logs for today?" : "Delete activity logs from the last \(val) minute\(val == 1 ? "" : "s")?"
     }
 
-    private func formatUptime(_ seconds: Int) -> String {
-        let hours = seconds / 3600
-        let minutes = (seconds % 3600) / 60
-        if hours > 0 {
-            return "\(hours)h \(minutes)m"
-        }
-        return "\(minutes)m"
-    }
 }

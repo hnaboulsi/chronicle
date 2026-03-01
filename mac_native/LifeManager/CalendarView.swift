@@ -8,7 +8,7 @@ struct CalendarView: View {
             // Setup Section
             Form {
                 Section("Setup Status") {
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
                         HStack {
                             Text("Recommended")
                                 .font(.caption)
@@ -35,7 +35,7 @@ struct CalendarView: View {
                             )
                         }
                     }
-                    .padding(.vertical, 4)
+                    .padding(.vertical, Spacing.xs)
 
                     if model.permissionSnapshot.calendar != "granted" {
                         Button(action: {
@@ -50,14 +50,14 @@ struct CalendarView: View {
                         .buttonStyle(.bordered)
                     }
 
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
                         Text("Setup Recommendation")
                             .font(.caption.weight(.semibold))
                         Text(CalendarSyncEngine.shared.setupRecommendation())
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
-                    .padding(.vertical, 4)
+                    .padding(.vertical, Spacing.xs)
                 }
             }
             .formStyle(.grouped)
@@ -83,11 +83,11 @@ struct CalendarView: View {
                 } else {
                     Section("Pending Jobs") {
                         ForEach(model.calendarJobs, id: \.self) { job in
-                            HStack(spacing: 12) {
-                                VStack(alignment: .leading, spacing: 3) {
+                            HStack(spacing: Spacing.md) {
+                                VStack(alignment: .leading, spacing: Spacing.xs) {
                                     Text(job.title)
                                         .font(.subheadline.weight(.semibold))
-                                    HStack(spacing: 4) {
+                                    HStack(spacing: Spacing.xs) {
                                         Text(job.kind)
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
@@ -104,13 +104,13 @@ struct CalendarView: View {
                                             .lineLimit(2)
                                     }
                                 }
-                                Spacer(minLength: 16)
+                                Spacer(minLength: Spacing.lg)
                                 StatusBadge(
                                     label: job.status.capitalized,
                                     color: jobStatusColor(job.status)
                                 )
                             }
-                            .padding(.vertical, 4)
+                            .padding(.vertical, Spacing.xs)
                         }
                     }
                 }
@@ -118,13 +118,5 @@ struct CalendarView: View {
             .listStyle(.inset)
         }
         .navigationTitle("Calendar")
-    }
-
-    private func jobStatusColor(_ status: String) -> Color {
-        switch status {
-        case "done": return .green
-        case "failed": return .red
-        default: return .orange
-        }
     }
 }

@@ -9,6 +9,13 @@ enum Spacing {
     static let xl: CGFloat = 24
 }
 
+enum CornerRadius {
+    static let sm: CGFloat = 6
+    static let md: CGFloat = 10
+    static let lg: CGFloat = 14
+    static let xl: CGFloat = 20
+}
+
 // MARK: - Color Palette
 
 extension Color {
@@ -106,6 +113,25 @@ struct CopyableInfoRow: View {
     }
 }
 
+// MARK: - CopyButton
+
+struct CopyButton: View {
+    let text: String
+    @State private var copied = false
+
+    var body: some View {
+        Button {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+            copied = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copied = false }
+        } label: {
+            Image(systemName: copied ? "checkmark" : "doc.on.doc")
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 // MARK: - DashboardCard
 
 struct DashboardCard<Content: View>: View {
@@ -129,9 +155,9 @@ struct DashboardCard<Content: View>: View {
         }
         .padding(Spacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(tint, in: RoundedRectangle(cornerRadius: 12))
+        .background(tint, in: RoundedRectangle(cornerRadius: CornerRadius.md))
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: CornerRadius.md)
                 .strokeBorder(tint.opacity(0.3), lineWidth: 1)
         )
         .shadow(color: tint.opacity(0.2), radius: 6, x: 0, y: 2)
@@ -290,4 +316,25 @@ func permissionColor(_ status: String) -> Color {
     case "denied", "restricted": return .red
     default:                     return .orange
     }
+}
+
+func jobStatusColor(_ status: String) -> Color {
+    switch status {
+    case "done": return .green
+    case "failed": return .red
+    default: return .orange
+    }
+}
+
+func formatUptime(_ seconds: Int) -> String {
+    let days = seconds / 86_400
+    let hours = (seconds % 86_400) / 3600
+    let minutes = (seconds % 3600) / 60
+    if days > 0 {
+        return "\(days)d \(hours)h"
+    }
+    if hours > 0 {
+        return "\(hours)h \(minutes)m"
+    }
+    return "\(minutes)m"
 }
