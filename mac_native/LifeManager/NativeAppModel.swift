@@ -244,6 +244,33 @@ final class NativeAppModel: ObservableObject {
         }
     }
 
+    func requestAppleEventsPermission() {
+        // The main app (foreground process) triggers the Apple Events prompt from macOS.
+        // When executed, macOS will show: "Vero wants to control Google Chrome"
+        // After user approves, the permission is granted to both the main app and the agent.
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) {
+            let script = """
+            tell application "Google Chrome"
+                if (count of windows) = 0 then return ""
+                return title of active tab of front window
+            end tell
+            """
+            var error: NSDictionary?
+            if let appleScript = NSAppleScript(source: script) {
+                let _ = appleScript.executeAndReturnError(&error)
+                // If execution succeeded, Apple Events permission is granted
+                if error == nil {
+                    AppGroupStore.shared.browserTabsGranted = true
+                }
+            }
+        }
+
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            permissionSnapshot = await PermissionSnapshot.capture()
+        }
+    }
+
     func handle(url: URL) {
         switch url.host?.lowercased() {
         case "repair":

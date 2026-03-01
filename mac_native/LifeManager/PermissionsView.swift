@@ -47,12 +47,14 @@ struct PermissionsView: View {
                     name: "Chrome Tab Titles",
                     description: "Allows the background agent to read your browser tab titles to track what you're working on.",
                     status: model.permissionSnapshot.appleEvents,
-                    action: nil
+                    action: {
+                        model.requestAppleEventsPermission()
+                    }
                 )
             } header: {
                 Text("System Permissions")
             } footer: {
-                Text("All permissions can be managed in System Settings under Security & Privacy. If Accessibility shows as Missing after an app update, toggle it OFF and ON again in System Settings to re-grant the permission. Chrome tab titles are granted automatically when the background agent first attempts to read them.")
+                Text("All permissions can be managed in System Settings under Security & Privacy. If Accessibility shows as Missing after an app update, toggle it OFF and ON again in System Settings to re-grant the permission.")
             }
 
             Section {

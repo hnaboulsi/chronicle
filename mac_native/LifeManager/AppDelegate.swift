@@ -26,7 +26,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        HelperController.shared.ensureHelperEnabled()
+        // Always repair (unregister + re-register) the login item on startup.
+        // After each fresh build the ad-hoc code signature changes, causing a
+        // Launch Constraint Violation when launchd tries to relaunch the old binary.
+        // repairHelper() refreshes the SMAppService registration to the new binary.
+        HelperController.shared.repairHelper()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
