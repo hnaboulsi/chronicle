@@ -73,7 +73,7 @@ struct MenuBarView: View {
             // Actions
             VStack(spacing: 0) {
                 Button(action: {
-                    openURL(URL(string: "lifemanager://open")!)
+                    openURL(URL(string: "\(AppConstants.urlScheme)://open")!)
                 }) {
                     HStack {
                         Image(systemName: "rectangle.portrait")

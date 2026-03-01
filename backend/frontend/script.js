@@ -115,7 +115,7 @@ function updateUI(logs, states) {
     const macState = states.mac_status || (states.mac_online === true ? 'online' : 'offline');
     const latestMac = logs.find(l => l.device === 'mac');
     const latestMacApp = latestMac && latestMac.app_name ? latestMac.app_name : '';
-    const launchUrl = states.mac_launch_url || 'lifemanager://open';
+    const launchUrl = states.mac_launch_url || 'vero://open';
     if (macOpenApp) {
         macOpenApp.href = launchUrl;
         macOpenApp.classList.toggle('hidden', !(isMacBrowser && macState === 'offline'));
@@ -770,7 +770,7 @@ async function checkOnboarding() {
         if (macOk) {
             macStatusEl.innerHTML = '&#10003; The hidden Mac agent is connected and sending data.';
         } else {
-            const launchHref = states.mac_launch_url || 'lifemanager://open';
+            const launchHref = states.mac_launch_url || 'vero://open';
             macStatusEl.innerHTML = `The hidden Mac agent is not connected. <a href="${launchHref}" style="color:#58a6ff;text-decoration:underline;">Open Vero</a> or <a href="/setup/mac" target="_blank" style="color:#58a6ff;text-decoration:underline;">Install / Repair &rarr;</a>`;
         }
         // Check iOS shortcut status

@@ -320,7 +320,7 @@ def _build_state_payload(db: Session) -> dict:
     states["mac_online"] = mac_status["mac_online"]
     states["mac_status"] = mac_status["mac_status"]
     states["mac_status_reason"] = mac_status["mac_status_reason"]
-    states["mac_launch_url"] = "lifemanager://open"
+    states["mac_launch_url"] = "vero://open"
     states["last_mac_heartbeat"] = states.get("last_mac_heartbeat", "")
     states["service_health"] = "ok" if mac_status["mac_status"] in {"online", "online_idle"} else (
         "degraded" if mac_status["mac_status"] in {"degraded", "paused"} else "offline"

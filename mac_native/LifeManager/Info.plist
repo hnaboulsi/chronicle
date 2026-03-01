@@ -15,7 +15,7 @@
             <string>Vero URLs</string>
             <key>CFBundleURLSchemes</key>
             <array>
-                <string>lifemanager</string>
+                <string>vero</string>
             </array>
         </dict>
     </array>
