@@ -4,12 +4,16 @@ import datetime
 from pydantic import BaseModel
 from typing import Optional
 
+# Helper to get current UTC time as naive datetime (for backward compat with existing DB)
+def _utc_now():
+    return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+
 # SQLAlchemy Models
 class ActivityLog(Base):
     __tablename__ = "activity_logs"
 
     id = Column(Integer, primary_key=True, index=True)
-    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+    timestamp = Column(DateTime, default=_utc_now)
     device = Column(String, index=True) # "mac" or "ios"
     app_name = Column(String, nullable=True)
     window_title = Column(String, nullable=True)
@@ -27,7 +31,7 @@ class AgentState(Base):
     id = Column(Integer, primary_key=True, index=True)
     key = Column(String, unique=True, index=True)
     value = Column(String)
-    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
 
 
 class LocationZone(Base):
@@ -41,8 +45,8 @@ class LocationZone(Base):
     zone_type = Column(String, nullable=False, default="custom")
     focus_mode = Column(String, nullable=True)
     sort_order = Column(Integer, default=0)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=_utc_now)
+    updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
 
 
 class CalendarEventJob(Base):
@@ -58,8 +62,8 @@ class CalendarEventJob(Base):
     status = Column(String, nullable=False, default="pending", index=True)
     attempts = Column(Integer, nullable=False, default=0)
     last_error = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=_utc_now)
+    updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
 
 # Pydantic Schemas
 class MacTelemetry(BaseModel):
@@ -75,7 +79,7 @@ class HourlySummary(Base):
     hour_start = Column(DateTime, nullable=False, index=True)  # top of the hour (UTC)
     summary_text = Column(String, nullable=False)
     productivity_score = Column(Float, nullable=True)  # 0.0–10.0
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=_utc_now)
 
 
 class iOSTelemetry(BaseModel):

@@ -5,7 +5,7 @@ import base64
 import subprocess
 import secrets
 import threading
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any
 
 from fastapi import FastAPI, Depends, BackgroundTasks, HTTPException, Request
@@ -67,7 +67,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-_STARTED_AT = datetime.utcnow()
+_STARTED_AT = datetime.now(timezone.utc)
 _BUILD_VERSION = os.environ.get("VERO_BUILD_VERSION") or os.environ.get("LIFE_MANAGER_BUILD_VERSION", "dev")
 _DEPLOYMENT_CHANNEL = os.environ.get("VERO_DEPLOYMENT_CHANNEL") or os.environ.get("LIFE_MANAGER_DEPLOYMENT_CHANNEL", "internal")
 try:
@@ -278,7 +278,7 @@ def _serialize_calendar_job(job: CalendarEventJob) -> dict:
 def _build_state_payload(db: Session) -> dict:
     agent_logic.ensure_default_settings(db)
     states = agent_logic.get_all_states(db)
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     try:
         polling_interval_seconds = int(agent_logic.get_state(db, "polling_interval_seconds", "60"))
@@ -754,7 +754,7 @@ async def chat_message(payload: Dict[str, Any], db: Session = Depends(get_db)):
     if not message:
         raise HTTPException(status_code=400, detail="Message is required")
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     agent_logic.ensure_default_settings(db)
 
     # Store the user's message as self-report
@@ -854,7 +854,7 @@ async def chat_message(payload: Dict[str, Any], db: Session = Depends(get_db)):
 def chat_history(db: Session = Depends(get_db)):
     """Get today's chat history."""
     import json
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     history_key = f"chat_history:{now.strftime('%Y-%m-%d')}"
     existing = agent_logic.get_state(db, history_key, "[]")
     try:
@@ -879,7 +879,7 @@ def confirm_checkin(payload: Dict[str, Any], db: Session = Depends(get_db)):
     """User confirms or corrects the check-in guess."""
     confirmed = payload.get("confirmed", False)
     correction = (payload.get("correction") or "").strip()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     if confirmed:
         # Use the guess as the activity
@@ -897,7 +897,7 @@ def confirm_checkin(payload: Dict[str, Any], db: Session = Depends(get_db)):
 
 @app.get("/api/healthz")
 async def healthz():
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     llm_configured = bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("OPENAI_API_KEY"))
     ai_provider = os.environ.get("VERO_AI_PROVIDER") or os.environ.get("LIFE_MANAGER_AI_PROVIDER", "auto")
 
@@ -924,7 +924,7 @@ async def healthz():
         try:
             _db.execute(text("SELECT 1"))
             _payload = _build_state_payload(_db)
-            _llm = agent_logic.llm_usage_snapshot(_db, datetime.utcnow())
+            _llm = agent_logic.llm_usage_snapshot(_db, datetime.now(timezone.utc))
             _ai = agent_logic.get_state(_db, "ai_provider", "auto")
             _pending = _db.query(func.count(CalendarEventJob.id)).filter(CalendarEventJob.status == "pending").scalar()
             return True, "", _payload, _llm, _ai, _pending
@@ -1603,7 +1603,7 @@ async def sign_all_shortcuts():
 @app.get("/api/analytics/today")
 async def analytics_today(db: Session = Depends(get_db)):
     """Daily analytics: time per category, productivity %, steps, LLM usage."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
     # Get all mac logs from today
@@ -1669,7 +1669,7 @@ async def export_data(days: int = 30, db: Session = Depends(get_db)):
     """Export activity logs as CSV."""
     import csv
     import io
-    since = datetime.utcnow() - timedelta(days=min(days, 365))
+    since = datetime.now(timezone.utc) - timedelta(days=min(days, 365))
     logs = (
         db.query(ActivityLog)
         .filter(ActivityLog.timestamp >= since)

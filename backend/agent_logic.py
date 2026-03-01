@@ -1,7 +1,7 @@
 import json
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import desc
@@ -179,10 +179,10 @@ def upsert_zone(db: Session, payload: dict, zone_id: int | None = None) -> dict:
 def clear_recent_logs(db: Session, minutes: int | None = None) -> int:
     """Delete activity logs from the last `minutes` minutes (or all today if minutes is None)."""
     if minutes is not None:
-        cutoff = datetime.utcnow() - timedelta(minutes=minutes)
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes)
         count = db.query(ActivityLog).filter(ActivityLog.timestamp >= cutoff).delete()
     else:
-        today = datetime.utcnow().date()
+        today = datetime.now(timezone.utc).date()
         count = db.query(ActivityLog).filter(
             ActivityLog.timestamp >= datetime(today.year, today.month, today.day)
         ).delete()
@@ -223,12 +223,12 @@ def _age_seconds(value: str | None, now: datetime | None = None) -> int | None:
     dt = _parse_iso_dt(value)
     if dt is None:
         return None
-    now = now or datetime.utcnow()
+    now = now or datetime.now(timezone.utc)
     return max(0, int((now - dt).total_seconds()))
 
 
 def llm_usage_snapshot(db: Session, now: datetime | None = None) -> dict:
-    now = now or datetime.utcnow()
+    now = now or datetime.now(timezone.utc)
     cap = _safe_int(get_state(db, "llm_daily_cap", DEFAULTS["llm_daily_cap"]), 30)
     today = _today_key(now)
     used_raw = get_state(db, f"llm_calls:{today}", "0")
@@ -242,7 +242,7 @@ def can_use_llm(db: Session, now: datetime | None = None) -> bool:
 
 
 def register_llm_call(db: Session, now: datetime | None = None):
-    now = now or datetime.utcnow()
+    now = now or datetime.now(timezone.utc)
     today = _today_key(now)
     key = f"llm_calls:{today}"
     used = _safe_int(get_state(db, key, "0"), 0)
@@ -293,7 +293,7 @@ def clear_pending_prompt(db: Session):
 
 def update_context_with_reply(reply: str, db: Session):
     set_state(db, "user_self_report", reply)
-    set_state(db, "last_user_checkin", datetime.utcnow().isoformat())
+    set_state(db, "last_user_checkin", datetime.now(timezone.utc).isoformat())
     log.info("User self-reported: %s", reply)
 
 
@@ -346,7 +346,7 @@ def queue_calendar_job(
     db.add(job)
     db.commit()
     db.refresh(job)
-    set_state(db, "last_calendar_job_at", datetime.utcnow().isoformat())
+    set_state(db, "last_calendar_job_at", datetime.now(timezone.utc).isoformat())
     return job
 
 
@@ -577,7 +577,7 @@ def _update_sleep_state(db: Session, now: datetime, activity_type: str, is_charg
 
 
 def compute_mac_status(states: dict, now: datetime | None = None) -> dict:
-    now = now or datetime.utcnow()
+    now = now or datetime.now(timezone.utc)
     heartbeat_age = _age_seconds(states.get("last_mac_heartbeat"), now)
     snapshot_age = _age_seconds(states.get("last_mac_ping"), now)
     tracking_enabled = str(states.get("tracking_enabled", "true")).lower() == "true"
@@ -611,7 +611,7 @@ def compute_mac_status(states: dict, now: datetime | None = None) -> dict:
 
 
 async def process_mac_heartbeat(data: MacHeartbeat, db: Session):
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     ensure_default_settings(db)
     set_state(db, "last_mac_heartbeat", now.isoformat())
     set_state(db, "last_mac_client_id", data.client_id or "")
@@ -624,7 +624,7 @@ async def process_mac_heartbeat(data: MacHeartbeat, db: Session):
 
 
 async def process_mac_telemetry(data: MacTelemetry, db: Session):
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     ensure_default_settings(db)
 
     prev_mac_ping_str = get_state(db, "last_mac_ping")
@@ -756,7 +756,7 @@ def _handle_walking_transition(db: Session, now: datetime, is_walking: bool, loc
 
 
 async def process_ios_telemetry(data: iOSTelemetry, db: Session):
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     ensure_default_settings(db)
     _record_ios_event(db, now)
     activity_type = data.activity_type or ""
@@ -782,7 +782,7 @@ async def process_ios_telemetry(data: iOSTelemetry, db: Session):
 
 
 async def process_ios_zone_event(data: iOSZoneEvent, db: Session):
-    now = data.event_time or datetime.utcnow()
+    now = data.event_time or datetime.now(timezone.utc)
     ensure_default_settings(db)
     _record_ios_event(db, now)
     _handle_ios_steps(db, data.steps_today)
