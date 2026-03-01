@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct LifeManagerApp: App {
+struct VeroApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var model = NativeAppModel()
     @State private var requiresSetup: Bool

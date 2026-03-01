@@ -40,9 +40,9 @@ struct DiagnosticsView: View {
                     }
                 }
             } header: {
-                Text("Background Agent")
+                Text("Vero Agent")
             } footer: {
-                Text("The background agent runs as a login item and sends heartbeats every 60 seconds.")
+                Text("Vero Agent runs as a login item and sends heartbeats every 60 seconds.")
             }
 
             Section {

@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 @main
-struct LifeManagerAgentApp: App {
+struct VeroAgentApp: App {
     @NSApplicationDelegateAdaptor(AgentAppDelegate.self) private var appDelegate
 
     var body: some Scene {

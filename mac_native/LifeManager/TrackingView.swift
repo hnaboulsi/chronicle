@@ -101,9 +101,9 @@ struct TrackingView: View {
                     }
                 }
             } header: {
-                Text("Background Agent")
+                Text("Vero Agent")
             } footer: {
-                Text("The background agent runs silently and sends heartbeats every 60 seconds.")
+                Text("Vero Agent runs silently and sends heartbeats every 60 seconds.")
             }
         }
         .formStyle(.grouped)
