@@ -89,13 +89,13 @@ private struct PermissionRowItem: View {
     let action: (() -> Void)?
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Spacing.md) {
             Image(systemName: icon)
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(permissionColor(status))
                 .frame(width: 24)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
                 Text(name)
                     .font(.subheadline.weight(.semibold))
                 Text(description)
@@ -103,9 +103,9 @@ private struct PermissionRowItem: View {
                     .foregroundStyle(.secondary)
             }
 
-            Spacer(minLength: 16)
+            Spacer(minLength: Spacing.lg)
 
-            VStack(spacing: 6) {
+            VStack(spacing: Spacing.sm) {
                 StatusBadge(label: status.capitalized, color: permissionColor(status))
                 if let action = action {
                     if status != "granted" {
@@ -118,6 +118,6 @@ private struct PermissionRowItem: View {
                 }
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, Spacing.xs)
     }
 }

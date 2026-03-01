@@ -68,13 +68,13 @@ private struct ZoneRowView: View {
     let zone: ZoneRecord
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Spacing.md) {
             Image(systemName: zoneTypeIcon(zone.zone_type).0)
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(zoneTypeIcon(zone.zone_type).1)
                 .frame(width: 24)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
                 Text(zone.name)
                     .font(.subheadline.weight(.semibold))
                 Text("\(zone.radius_meters)m radius")
@@ -141,7 +141,7 @@ private struct ZoneEditorSheet: View {
                 }
 
                 Section("Payloads") {
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
                         Text("Entry")
                             .font(.caption)
                             .foregroundStyle(.secondary)
