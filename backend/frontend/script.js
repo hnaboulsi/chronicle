@@ -287,37 +287,147 @@ function inferCategory(appName, windowTitle) {
 
 // ── Hourly Summaries (Enhanced) ──
 let allLogsCache = [];
+async function triggerHourlyRecap() {
+    const btn = document.getElementById('trigger-recap-btn');
+    if (btn) { btn.textContent = 'Generating…'; btn.disabled = true; }
+    try {
+        await fetch(`${API}/api/trigger-hourly-summary`, { method: 'POST' });
+        await fetchHourlySummaries();
+    } catch { }
+    if (btn) { btn.textContent = 'Generate Now'; btn.disabled = false; }
+}
+
+// Words to ignore when extracting keywords from window titles
+const TITLE_STOPWORDS = new Set([
+    'the','and','for','with','from','this','that','you','are','was','has',
+    'have','been','will','not','but','your','all','new','how','can','more',
+    'its','our','one','com','www','http','https','app','tab','window',
+    'untitled','document','file','page','home','edit','view','help','menu',
+]);
+
+function extractTitleKeywords(logs) {
+    const wordCounts = {};
+    logs.forEach(log => {
+        const title = (log.window_title || '').toLowerCase();
+        // Split on common separators: -, |, ·, :, /
+        const parts = title.split(/[-|·:\/–—]+/);
+        parts.forEach(part => {
+            const words = part.trim().split(/\s+/);
+            words.forEach(w => {
+                const clean = w.replace(/[^a-z0-9+#]/g, '');
+                if (clean.length >= 3 && !TITLE_STOPWORDS.has(clean)) {
+                    wordCounts[clean] = (wordCounts[clean] || 0) + 1;
+                }
+            });
+        });
+    });
+    return Object.entries(wordCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([w]) => w);
+}
+
+function buildLiveHourCard(nowLogs) {
+    if (!nowLogs.length) return '';
+
+    const now = new Date();
+    const hourStart = new Date(now);
+    hourStart.setMinutes(0, 0, 0);
+    const hourEnd = new Date(hourStart.getTime() + 3600000);
+
+    const dateStr = now.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    const timeStr = hourStart.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+    const endTimeStr = hourEnd.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+
+    // Top apps
+    const appCounts = {};
+    nowLogs.forEach(log => {
+        const app = log.app_name || 'unknown';
+        appCounts[app] = (appCounts[app] || 0) + 1;
+    });
+    const topApps = Object.entries(appCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 4)
+        .map(([app]) => app);
+
+    // Title keywords (exclude app names to avoid redundancy)
+    const appSet = new Set(topApps.map(a => a.toLowerCase().replace(/[^a-z0-9]/g, '')));
+    const titleWords = extractTitleKeywords(nowLogs).filter(w => !appSet.has(w));
+
+    const allKeywords = [...topApps, ...titleWords].slice(0, 8);
+    if (!allKeywords.length) return '';
+
+    const chips = allKeywords.map(k =>
+        `<span style="padding:2px 10px;background:rgba(255,255,255,0.08);border-radius:12px;font-size:12px;">${esc(k)}</span>`
+    ).join('');
+
+    const minutesIn = Math.floor((now - hourStart) / 60000);
+
+    return `<div class="summary-card" style="border:1px solid rgba(99,102,241,0.3);background:rgba(99,102,241,0.05);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <span class="summary-time">${esc(dateStr)}, ${esc(timeStr)} — ${esc(endTimeStr)}</span>
+            <span style="display:flex;align-items:center;gap:6px;font-size:11px;color:#818CF8;font-weight:600;">
+                <span style="width:6px;height:6px;border-radius:50%;background:#818CF8;display:inline-block;animation:pulse 2s infinite;"></span>
+                ${minutesIn}m in
+            </span>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">${chips}</div>
+        <p style="margin-top:8px;font-size:11px;color:#6B7280;">Summary generates at ${esc(endTimeStr)}</p>
+    </div>`;
+}
+
 async function fetchHourlySummaries() {
     try {
         const res = await fetch(`${API}/api/hourly-summaries?limit=8`);
         const data = await res.json();
         const list = document.getElementById('summaries-list');
-        if (!data.length) {
-            list.innerHTML = '<p class="empty-state">No summaries yet — they generate each hour.</p>';
+
+        // Always fetch fresh logs for the live card + app breakdown
+        try {
+            const logsRes = await fetch(`${API}/api/logs?limit=300`);
+            allLogsCache = await logsRes.json();
+        } catch { }
+
+        // Build live current-hour card from logs (no AI needed)
+        const nowHour = new Date().getHours();
+        const nowDate = new Date().toDateString();
+        const nowLogs = allLogsCache.filter(log => {
+            if (log.device !== 'mac') return false;
+            const ts = log.timestamp + (log.timestamp.endsWith('Z') ? '' : 'Z');
+            const d = new Date(ts);
+            return d.getHours() === nowHour && d.toDateString() === nowDate;
+        });
+
+        // Check if a completed summary already exists for the current hour
+        const currentHourStart = new Date();
+        currentHourStart.setMinutes(0, 0, 0, 0);
+        const hasCompletedSummary = data.some(s => {
+            const ts = s.hour_start + (s.hour_start.endsWith('Z') ? '' : 'Z');
+            return Math.abs(new Date(ts) - currentHourStart) < 60000;
+        });
+
+        const liveCard = (!hasCompletedSummary) ? buildLiveHourCard(nowLogs) : '';
+
+        if (!data.length && !liveCard) {
+            list.innerHTML = '<p class="empty-state">No activity this hour yet.</p>';
             return;
         }
-        // Also fetch logs for app breakdown (cache for efficiency)
-        if (allLogsCache.length === 0) {
-            try {
-                const logsRes = await fetch(`${API}/api/logs?limit=200`);
-                allLogsCache = await logsRes.json();
-            } catch { }
-        }
-        list.innerHTML = data.map(s => {
+
+        const completedCards = data.map(s => {
             let ts = s.hour_start;
             if (ts && !ts.endsWith('Z')) ts += 'Z';
             const date = new Date(ts);
+            const endDate = new Date(date.getTime() + 3600000);
+            const dateStr = date.toLocaleDateString([], { month: 'short', day: 'numeric' });
             const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+            const endTimeStr = endDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
             const hour = date.getHours();
-            const nextHour = (hour + 1) % 24;
-            const nextH12 = nextHour % 12 || 12;
-            const nextAmpm = nextHour < 12 ? 'AM' : 'PM';
-            const endTimeStr = `${nextH12} ${nextAmpm}`;
+            const logDate = date.toDateString();
 
-            // Get app breakdown for this hour
             const hourLogs = allLogsCache.filter(log => {
-                const logDate = new Date(log.timestamp + (log.timestamp.endsWith('Z') ? '' : 'Z'));
-                return logDate.getHours() === hour && log.device === 'mac';
+                const logTs = log.timestamp + (log.timestamp.endsWith('Z') ? '' : 'Z');
+                const d = new Date(logTs);
+                return d.getHours() === hour && d.toDateString() === logDate && log.device === 'mac';
             });
             const appCounts = {};
             hourLogs.forEach(log => {
@@ -333,7 +443,7 @@ async function fetchHourlySummaries() {
             const scoreColor = s.productivity_score >= 7 ? '#22C55E' : s.productivity_score >= 4 ? '#F59E0B' : '#EF4444';
             return `<div class="summary-card">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-                    <span class="summary-time">${esc(timeStr)} — ${esc(endTimeStr)}</span>
+                    <span class="summary-time">${esc(dateStr)}, ${esc(timeStr)} — ${esc(endTimeStr)}</span>
                     <span style="background:${scoreColor}20;color:${scoreColor};padding:4px 8px;border-radius:4px;font-weight:600;font-size:12px;">${esc(score)}/10</span>
                 </div>
                 <p style="margin-bottom:8px;">${esc(s.summary_text)}</p>
@@ -342,6 +452,8 @@ async function fetchHourlySummaries() {
                 </div>
             </div>`;
         }).join('');
+
+        list.innerHTML = liveCard + completedCards;
     } catch { }
 }
 

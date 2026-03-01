@@ -713,6 +713,13 @@ def get_hourly_summaries(limit: int = 5, db: Session = Depends(get_db)):
     ]
 
 
+@app.post("/api/trigger-hourly-summary")
+async def trigger_hourly_summary(db: Session = Depends(get_db)):
+    now = datetime.now(timezone.utc)
+    await agent_logic._generate_and_store_hourly_summary(db, now)
+    return {"status": "ok"}
+
+
 @app.post("/api/prompt-reply")
 def handle_prompt_reply(payload: Dict[str, Any], db: Session = Depends(get_db)):
     reply = payload.get("reply", "")

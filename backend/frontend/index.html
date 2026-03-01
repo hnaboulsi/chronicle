@@ -245,8 +245,9 @@
 
             <!-- Hourly Recaps (Enhanced) -->
             <section class="bg-surface border border-white/10 rounded-lg">
-                <div class="p-4 border-b border-white/10">
+                <div class="p-4 border-b border-white/10 flex items-center justify-between">
                     <h2 class="font-semibold">Hourly Recaps</h2>
+                    <button id="trigger-recap-btn" onclick="triggerHourlyRecap()" class="text-xs px-3 py-1 rounded bg-white/10 hover:bg-white/20 transition-colors">Generate Now</button>
                 </div>
                 <div id="summaries-list" class="p-6 space-y-4 max-h-96 overflow-y-auto">
                     <p class="text-[#6B7280] text-sm">No summaries yet — they generate each hour.</p>
