@@ -160,8 +160,8 @@ async def basic_auth_middleware(request: Request, call_next):
             if secrets.compare_digest(u, username) and secrets.compare_digest(p, password):
                 _clear_failures(client_ip)
                 return await call_next(request)
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("Auth middleware error for %s: %s", client_ip, e)
 
     _record_failure(client_ip)
     return Response(

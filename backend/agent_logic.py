@@ -206,7 +206,8 @@ def _today_key(now: datetime) -> str:
 def _safe_int(value: str, default: int) -> int:
     try:
         return int(value)
-    except Exception:
+    except Exception as e:
+        log.debug("Failed to parse int %r: %s", value, e)
         return default
 
 
@@ -215,7 +216,8 @@ def _parse_iso_dt(value: str | None) -> datetime | None:
         return None
     try:
         return datetime.fromisoformat(value)
-    except Exception:
+    except Exception as e:
+        log.debug("Failed to parse ISO datetime %r: %s", value, e)
         return None
 
 
@@ -469,7 +471,8 @@ def _guess_activity(location: str, prev_location: str, now: datetime, db: Sessio
     try:
         tz = ZoneInfo(tz_name)
     except Exception:
-        tz = ZoneInfo("America/Los_Angeles")
+        log.debug("Invalid timezone %r, falling back to %s", tz_name, DEFAULTS["user_timezone"])
+        tz = ZoneInfo(DEFAULTS["user_timezone"])
     local_hour = now.replace(tzinfo=ZoneInfo("UTC")).astimezone(tz).hour
 
     study_places = {"library", "vlsb", "evans", "moffitt", "doe", "soda", "cory", "class", "lecture", "campus"}
@@ -520,8 +523,8 @@ def _maybe_generate_checkin(db: Session, current_location: str, prev_location: s
             last_checkin = datetime.fromisoformat(last_checkin_str)
             if (now - last_checkin).total_seconds() < 900:
                 needs_checkin = False
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("Failed to parse last checkin time: %s", e)
 
     if needs_checkin and not get_state(db, "pending_checkin"):
         guess = _guess_activity(current_location, prev_location, now, db)
@@ -567,7 +570,8 @@ def _update_sleep_state(db: Session, now: datetime, activity_type: str, is_charg
     try:
         tz = ZoneInfo(tz_name)
     except Exception:
-        tz = ZoneInfo("America/Los_Angeles")
+        log.debug("Invalid timezone %r, falling back to %s", tz_name, DEFAULTS["user_timezone"])
+        tz = ZoneInfo(DEFAULTS["user_timezone"])
     local_hour = now.replace(tzinfo=ZoneInfo("UTC")).astimezone(tz).hour
     if local_hour >= 22 or local_hour <= 4:
         if is_charging and activity_type == "Stationary":

@@ -3,6 +3,7 @@ import SwiftUI
 struct iPhoneSetupView: View {
     @EnvironmentObject private var model: NativeAppModel
     @Environment(\.openURL) var openURL
+    @State private var copiedCommand = false
 
     var body: some View {
         Form {
@@ -72,8 +73,12 @@ struct iPhoneSetupView: View {
                             Button(action: {
                                 NSPasteboard.general.clearContents()
                                 NSPasteboard.general.setString(command, forType: .string)
+                                copiedCommand = true
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                    copiedCommand = false
+                                }
                             }) {
-                                Image(systemName: "doc.on.doc")
+                                Image(systemName: copiedCommand ? "checkmark" : "doc.on.doc")
                             }
                             .buttonStyle(.plain)
                         }
