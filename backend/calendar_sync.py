@@ -11,7 +11,7 @@ import subprocess
 import sys
 import datetime
 
-log = logging.getLogger("life_manager.calendar")
+log = logging.getLogger("vero.calendar")
 
 CALENDAR_NAME = "Vero"
 
@@ -28,7 +28,7 @@ def _run_applescript(script: str) -> str:
     return result.stdout.strip()
 
 
-def ensure_life_manager_calendar():
+def ensure_vero_calendar():
     """Create the 'Vero' calendar if it doesn't already exist."""
     script = f'''
     tell application "Calendar"

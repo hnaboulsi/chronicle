@@ -7,7 +7,7 @@ import httpx
 from dotenv import load_dotenv
 from google import genai
 
-log = logging.getLogger("life_manager.llm")
+log = logging.getLogger("vero.llm")
 
 load_dotenv()
 
@@ -23,7 +23,7 @@ except Exception as exc:
 
 
 def _configured_provider() -> str:
-    provider = (os.getenv("LIFE_MANAGER_AI_PROVIDER") or "auto").strip().lower()
+    provider = (os.getenv("VERO_AI_PROVIDER") or os.getenv("LIFE_MANAGER_AI_PROVIDER") or "auto").strip().lower()
     if provider not in {"auto", "gemini", "openai"}:
         provider = "auto"
     return provider
@@ -42,16 +42,16 @@ def _provider_order() -> list[str]:
 
 def _gemini_model(task: str) -> str:
     mapping = {
-        "default": os.getenv("LIFE_MANAGER_GEMINI_MODEL", "gemini-2.5-flash"),
-        "cheap": os.getenv("LIFE_MANAGER_GEMINI_CHEAP_MODEL", "gemini-2.5-flash-lite-preview-06-17"),
+        "default": os.getenv("VERO_GEMINI_MODEL") or os.getenv("LIFE_MANAGER_GEMINI_MODEL", "gemini-2.5-flash"),
+        "cheap": os.getenv("VERO_GEMINI_CHEAP_MODEL") or os.getenv("LIFE_MANAGER_GEMINI_CHEAP_MODEL", "gemini-2.5-flash-lite-preview-06-17"),
     }
     return mapping.get(task, mapping["default"])
 
 
 def _openai_model(task: str) -> str:
     mapping = {
-        "default": os.getenv("LIFE_MANAGER_OPENAI_MODEL", "gpt-4o-mini"),
-        "cheap": os.getenv("LIFE_MANAGER_OPENAI_CHEAP_MODEL", "gpt-4o-mini"),
+        "default": os.getenv("VERO_OPENAI_MODEL") or os.getenv("LIFE_MANAGER_OPENAI_MODEL", "gpt-4o-mini"),
+        "cheap": os.getenv("VERO_OPENAI_CHEAP_MODEL") or os.getenv("LIFE_MANAGER_OPENAI_CHEAP_MODEL", "gpt-4o-mini"),
     }
     return mapping.get(task, mapping["default"])
 

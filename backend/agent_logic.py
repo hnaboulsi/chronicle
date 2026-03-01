@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from models import AgentState, ActivityLog, CalendarEventJob, HourlySummary, LocationZone, MacHeartbeat, MacTelemetry, iOSTelemetry, iOSZoneEvent
 import llm_client
 
-log = logging.getLogger("life_manager")
+log = logging.getLogger("vero")
 
 PRODUCTIVE_CATEGORIES = {"studying", "working", "creative"}
 DISTRACTED_CATEGORIES = {"entertainment", "social_media", "gaming"}

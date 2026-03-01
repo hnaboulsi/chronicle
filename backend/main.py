@@ -25,7 +25,7 @@ logging.basicConfig(
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
-log = logging.getLogger("life_manager")
+log = logging.getLogger("vero")
 
 _STARTUP_STATUS = {
     "process_ready": False,
@@ -68,8 +68,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 _STARTED_AT = datetime.utcnow()
-_BUILD_VERSION = os.environ.get("LIFE_MANAGER_BUILD_VERSION", "dev")
-_DEPLOYMENT_CHANNEL = os.environ.get("LIFE_MANAGER_DEPLOYMENT_CHANNEL", "internal")
+_BUILD_VERSION = os.environ.get("VERO_BUILD_VERSION") or os.environ.get("LIFE_MANAGER_BUILD_VERSION", "dev")
+_DEPLOYMENT_CHANNEL = os.environ.get("VERO_DEPLOYMENT_CHANNEL") or os.environ.get("LIFE_MANAGER_DEPLOYMENT_CHANNEL", "internal")
 try:
     _GIT_SHA = (
         subprocess.run(
@@ -504,7 +504,7 @@ def update_settings(payload: Dict[str, Any], db: Session = Depends(get_db)):
         agent_logic.set_state(db, "backend_mode", payload["backend_mode"])
     if "ai_provider" in payload and payload["ai_provider"] in {"auto", "gemini", "openai"}:
         agent_logic.set_state(db, "ai_provider", payload["ai_provider"])
-        os.environ["LIFE_MANAGER_AI_PROVIDER"] = payload["ai_provider"]
+        os.environ["VERO_AI_PROVIDER"] = payload["ai_provider"]
     if "llm_mode" in payload and payload["llm_mode"] in {"ultra_save", "balanced", "quality"}:
         agent_logic.set_state(db, "llm_mode", payload["llm_mode"])
     if "hourly_summaries_enabled" in payload:
@@ -899,7 +899,7 @@ def confirm_checkin(payload: Dict[str, Any], db: Session = Depends(get_db)):
 async def healthz():
     now = datetime.utcnow()
     llm_configured = bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("OPENAI_API_KEY"))
-    ai_provider = os.environ.get("LIFE_MANAGER_AI_PROVIDER", "auto")
+    ai_provider = os.environ.get("VERO_AI_PROVIDER") or os.environ.get("LIFE_MANAGER_AI_PROVIDER", "auto")
 
     # --- Non-blocking DB check (3s timeout) ---
     # Railway requires a 200 response within 30s; we must not block the event loop.
@@ -1100,7 +1100,7 @@ function copyCmd(btn) {{
 <h2>Step 1 — Open the native project</h2>
 <div class="step">
   <div class="step-num">Paste this into Terminal and let Xcode open the app project</div>
-  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>git clone https://github.com/hnaboulsi/vero.git ~/life-manager-agent 2>/dev/null || git -C ~/vero pull && (brew list xcodegen >/dev/null 2>&1 || brew install xcodegen) && cd ~/vero/mac_native && xcodegen generate && open LifeManager.xcodeproj</pre>
+  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>git clone https://github.com/hnaboulsi/vero.git ~/vero 2>/dev/null || git -C ~/vero pull && (brew list xcodegen >/dev/null 2>&1 || brew install xcodegen) && cd ~/vero/mac_native && xcodegen generate && open LifeManager.xcodeproj</pre>
   <p class="note">This updates the repo, ensures XcodeGen is installed, generates the native macOS project, and opens it in Xcode.</p>
 </div>
 
