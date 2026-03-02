@@ -710,6 +710,16 @@ def _update_sleep_state(db: Session, now: datetime, activity_type: str, is_charg
         else (sleep_start <= local_hour < sleep_end)
     )
 
+    # If user explicitly stated their intent, they are awake
+    current_intent = get_state(db, "context_current_intent", "").strip()
+    if current_intent:
+        set_state(db, "likely_asleep", "false")
+        set_state(db, "user_asleep", "false")
+        set_state(db, "likely_asleep_confidence", "0.00")
+        set_state(db, "likely_asleep_reason", f"Awake — intent set: {current_intent[:60]}")
+        set_state(db, "sleep_status_note", f"Awake — intent set: {current_intent[:60]}")
+        return
+
     confidence = 0.05
     reasons: list[str] = []
     if in_sleep_window:
@@ -790,7 +800,7 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session):
 
     prev_mac_ping_str = get_state(db, "last_mac_ping")
     set_state(db, "last_mac_ping", now.isoformat())
-    set_state(db, "last_mac_idle", str(data.idle_time_seconds > 60 * 30).lower())
+    set_state(db, "last_mac_idle", str(data.idle_time_seconds > 60 * 60).lower())
 
     if prev_mac_ping_str and not _checkin_is_active(db, now):
         try:

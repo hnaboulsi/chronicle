@@ -277,6 +277,8 @@ async def generate_hourly_summary(logs: list, hour_start: str) -> dict:
     prompt = (
         f"You are a productivity analyst. Here is what the user did on their Mac during the hour starting at {hour_start}:\n\n"
         f"{activity_text}\n\n"
+        "IMPORTANT CONTEXT: 'Vero' and 'LifeManager' are personal productivity tracking apps (like a journal/dashboard), NOT social media. "
+        "Do NOT classify them as social media.\n\n"
         "Write a 2-3 sentence summary of what they worked on, how focused they were, and whether time was well spent. "
         "Then give a productivity score 0-10.\n\n"
         'Respond ONLY with valid JSON: {"summary": "...", "productivity_score": 7.5}'

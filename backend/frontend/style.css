@@ -83,7 +83,6 @@ body {
 #logs-table tbody tr {
     border-bottom: 1px solid var(--line);
     transition: background-color 0.15s;
-    cursor: pointer;
 }
 
 #logs-table tbody tr:hover {
@@ -551,6 +550,51 @@ details > summary {
 }
 
 [data-theme="light"] .interval-pill.active {
-    background-color: #111827 !important;
+    background-color: #374151 !important;
     color: #ffffff !important;
+}
+
+/* Light mode: Fix green tracking badge */
+[data-theme="light"] .bg-green-900\/40 {
+    background-color: #dcfce7 !important;
+}
+
+[data-theme="light"] .text-green-400 {
+    color: #16a34a !important;
+}
+
+[data-theme="light"] .border-green-700 {
+    border-color: #86efac !important;
+}
+
+/* Light mode: Fix log table hover */
+[data-theme="light"] #logs-table tbody tr:hover {
+    background: #f3f4f6;
+}
+
+/* Light mode: Fix paused/inactive badges */
+[data-theme="light"] .inactive {
+    opacity: 0.5;
+}
+
+/* Light mode: Fix checkin banner */
+[data-theme="light"] #checkin-banner {
+    background-color: #fffbeb;
+    border-color: #fbbf24;
+}
+
+[data-theme="light"] #checkin-banner * {
+    color: #92400e;
+}
+
+/* Light mode: Fix status card colors */
+[data-theme="light"] .font-semibold {
+    color: #111827;
+}
+
+/* Light mode: status element greens/oranges remain readable */
+[data-theme="light"] footer {
+    background-color: #f9fafb;
+    border-color: #e5e7eb;
+    color: #6b7280;
 }

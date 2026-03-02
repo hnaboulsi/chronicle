@@ -311,9 +311,16 @@ function updateUI(logs, states) {
 
     // Sleep context
     const sleepLikely = String(states.likely_asleep || 'false') === 'true';
-    focusStatus.textContent = sleepLikely ? 'Likely Asleep' : 'Likely Awake';
-    focusStatus.style.color = sleepLikely ? '#0F766E' : '#94a3b8';
-    focusDetail.textContent = states.likely_asleep_reason || states.sleep_status_note || 'Waiting for iPhone events.';
+    const currentIntent = states.current_intent || '';
+    if (currentIntent) {
+        focusStatus.textContent = `Awake · ${currentIntent}`;
+        focusStatus.style.color = '#16A34A';
+        focusDetail.textContent = 'Intent overrides sleep inference.';
+    } else {
+        focusStatus.textContent = sleepLikely ? 'Likely Asleep' : 'Likely Awake';
+        focusStatus.style.color = sleepLikely ? '#0F766E' : '#94a3b8';
+        focusDetail.textContent = states.likely_asleep_reason || states.sleep_status_note || 'Waiting for iPhone events.';
+    }
 
     // AI Reading
     const cat = states.current_activity_category || 'unknown';
@@ -354,7 +361,6 @@ function updateUI(logs, states) {
         }
 
         tr.append(tdTime, tdDevice, tdActivity, tdContext);
-        tr.onclick = () => openSummaryModal(entry.id);
         logsBody.appendChild(tr);
     });
 
@@ -400,8 +406,10 @@ function renderStats(data) {
     document.getElementById('stat-productive').textContent = `${data.productive_pct}%`;
     document.getElementById('stat-llm').textContent = `${data.llm_used} / ${data.llm_cap}`;
     if (statActiveNote) {
-        if (data.total_active_minutes === 0) {
-            statActiveNote.textContent = 'No Mac activity today';
+        if (data.total_active_minutes === 0 && (data.log_count || 0) === 0) {
+            statActiveNote.textContent = 'No Mac telemetry today';
+        } else if (data.total_active_minutes === 0 && (data.idle_log_count || 0) > 0) {
+            statActiveNote.textContent = `${data.idle_log_count} idle entries (move mouse to reset)`;
         } else {
             const freshness = data.data_freshness_seconds != null ? `${Math.floor(data.data_freshness_seconds / 60)}m ago` : 'n/a';
             statActiveNote.textContent = `Last telemetry: ${freshness}`;
@@ -420,7 +428,13 @@ function renderAnalytics(data) {
     const entries = Object.entries(cats).sort((a, b) => b[1] - a[1]);
 
     if (!entries.length) {
-        chart.innerHTML = '<p class="empty-state">No activity logged yet today. Telemetry appears once the Mac agent connects.</p>';
+        const idleCount = data.idle_log_count || 0;
+        const logCount = data.log_count || 0;
+        let msg = 'No activity logged yet today. Telemetry appears once the Mac agent connects.';
+        if (logCount > 0 && idleCount > 0) {
+            msg = `${idleCount} log entries are idle (system idle > 60 min). Using the computer will reset this.`;
+        }
+        chart.innerHTML = `<p class="empty-state">${esc(msg)}</p>`;
         return;
     }
 
@@ -1539,6 +1553,31 @@ async function fetchControlCenterStatus() {
                 nextStepStatusEl.textContent = 'Everything is in place';
                 nextStepDetailEl.textContent = 'Mac helper, calendar queueing, and required iPhone setup are all configured.';
             }
+        }
+
+        // Setup & Repair section visibility + red indicators
+        const repairSection = document.getElementById('control-center-repair');
+        if (repairSection) {
+            const serviceOk = health?.status === 'ok';
+            const macOk = latestStates?.mac_status === 'online';
+            const calOk = pendingJobs === 0;
+            const iosReq = iosSetup?.required || iosSetup?.checklist || [];
+            const iosOk = iosReq.length > 0 && iosReq.every(item => item.configured);
+            const allOk = serviceOk && macOk && calOk && iosOk;
+
+            // Hide section when everything is fine, show otherwise
+            repairSection.classList.toggle('hidden', allOk);
+
+            // Red border on problem cards
+            const cards = repairSection.querySelectorAll('.grid > div');
+            const statuses = [serviceOk, calOk && macOk, iosOk, allOk];
+            cards.forEach((card, i) => {
+                const hasIssue = !statuses[i];
+                card.style.border = hasIssue ? '1px solid #dc2626' : '';
+                card.style.borderRadius = hasIssue ? '8px' : '';
+                card.style.padding = hasIssue ? '8px' : '';
+                card.style.background = hasIssue ? 'rgba(220,38,38,0.08)' : '';
+            });
         }
     } catch {
         if (serviceStatusEl) serviceStatusEl.textContent = 'Unknown';

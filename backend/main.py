@@ -554,6 +554,7 @@ def _build_state_payload(db: Session) -> dict:
     states["likely_asleep"] = agent_logic.get_state(db, "likely_asleep", "false")
     states["likely_asleep_reason"] = agent_logic.get_state(db, "likely_asleep_reason", "")
     states["likely_asleep_confidence"] = agent_logic.get_state(db, "likely_asleep_confidence", "0.0")
+    states["current_intent"] = agent_logic.get_state(db, "context_current_intent", "")
     return states
 
 def _bg_process_mac(data: MacTelemetry):
@@ -614,7 +615,7 @@ def receive_mac_telemetry(data: MacTelemetry, background_tasks: BackgroundTasks,
         device="mac",
         app_name=data.app_name,
         window_title=data.window_title,
-        is_idle=data.idle_time_seconds > 60 * 30
+        is_idle=data.idle_time_seconds > 60 * 60  # 60 min idle = truly away from computer
     )
     db.add(log_entry)
     db.commit()
@@ -1979,8 +1980,10 @@ async def analytics_today(db: Session = Depends(get_db)):
     polling_secs = max(60, int(states.get("polling_interval_seconds", "60")))
     category_minutes = {}
     total_active_minutes = 0
+    idle_count = 0
     for entry in logs:
         if entry.is_idle:
+            idle_count += 1
             continue
         cat = "unknown"
         # Classify each log entry using heuristics (no LLM to save budget)
@@ -1989,9 +1992,9 @@ async def analytics_today(db: Session = Depends(get_db)):
             (["instagram", "twitter", "x.com", "tiktok", "snapchat", "discord"], "social_media"),
             (["youtube", "netflix", "reddit", "spotify", "hulu"], "entertainment"),
             (["steam", "epic", "game"], "gaming"),
-            (["canvas", "gradescope", "homework", "lecture", "course", "quiz"], "studying"),
+            (["canvas", "gradescope", "homework", "lecture", "course", "quiz", "anki", "textbook"], "studying"),
             (["figma", "photoshop", "premiere", "final cut", "design"], "creative"),
-            (["vscode", "pycharm", "cursor", "terminal", "github", "slack", "notion"], "working"),
+            (["vscode", "pycharm", "cursor", "terminal", "github", "slack", "notion", "vero", "lifemanager"], "working"),
         ]:
             if any(n in text_data for n in needles):
                 cat = result
@@ -2023,6 +2026,7 @@ async def analytics_today(db: Session = Depends(get_db)):
         "llm_used": llm_stats["daily_used"],
         "llm_cap": llm_stats["daily_cap"],
         "log_count": len(logs),
+        "idle_log_count": idle_count,
         "timezone": user_tz.key,
         "day_start_utc": today_start.replace(tzinfo=timezone.utc).isoformat(),
         "day_end_utc": today_end.replace(tzinfo=timezone.utc).isoformat(),
