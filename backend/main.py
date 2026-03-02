@@ -175,12 +175,15 @@ async def auth_middleware(request: Request, call_next):
         return await call_next(request)
 
     # 2. Check Basic Auth header (API clients: Mac agent, iOS shortcuts)
+    # Accept either DASHBOARD_PASS or the full "user:pass" value stored in Mac app
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Basic "):
         try:
             decoded = base64.b64decode(auth[6:]).decode("utf-8")
             _, _, p = decoded.partition(":")
-            if secrets.compare_digest(p.strip(), password):
+            # p is the password portion; if no colon, the whole value is the token
+            token = p.strip() if p else decoded.strip()
+            if secrets.compare_digest(token, password) or secrets.compare_digest(decoded.strip(), password):
                 _clear_failures(client_ip)
                 return await call_next(request)
         except Exception as e:

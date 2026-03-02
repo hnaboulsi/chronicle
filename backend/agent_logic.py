@@ -215,7 +215,11 @@ def _parse_iso_dt(value: str | None) -> datetime | None:
     if not value:
         return None
     try:
-        return datetime.fromisoformat(value)
+        dt = datetime.fromisoformat(value)
+        # Always return timezone-aware datetime to avoid subtraction errors
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
     except Exception as e:
         log.debug("Failed to parse ISO datetime %r: %s", value, e)
         return None
