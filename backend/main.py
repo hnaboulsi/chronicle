@@ -305,19 +305,19 @@ _LOGIN_HTML = """<!DOCTYPE html>
 <title>Vero</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: #F5F5F5; color: #111827; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+  body { background: #0f1117; color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
          display: flex; align-items: center; justify-content: center; min-height: 100vh; -webkit-font-smoothing: antialiased; }
-  .card { background: #FFFFFF; border: 1px solid #E5E7EB; border-radius: 16px;
-          padding: 40px 36px; width: 100%; max-width: 360px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
-  h1 { font-size: 20px; font-weight: 600; margin-bottom: 4px; color: #111827; }
-  .subtitle { font-size: 13px; color: #6B7280; margin-bottom: 28px; }
-  label { display: block; font-size: 12px; font-weight: 500; color: #6B7280; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
-  input { width: 100%; background: #F9FAFB; border: 1px solid #E5E7EB;
-          border-radius: 8px; color: #111827; font-size: 15px; padding: 10px 14px; outline: none; }
-  input:focus { border-color: #9CA3AF; background: #FFFFFF; }
-  button { margin-top: 14px; width: 100%; background: #111827; border: none; border-radius: 8px;
+  .card { background: #1a1d27; border: 1px solid #2a2d3a; border-radius: 16px;
+          padding: 40px 36px; width: 100%; max-width: 360px; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+  h1 { font-size: 20px; font-weight: 600; margin-bottom: 4px; color: #f1f5f9; }
+  .subtitle { font-size: 13px; color: #94a3b8; margin-bottom: 28px; }
+  label { display: block; font-size: 12px; font-weight: 500; color: #94a3b8; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+  input { width: 100%; background: #13161f; border: 1px solid #374151;
+          border-radius: 8px; color: #f1f5f9; font-size: 15px; padding: 10px 14px; outline: none; }
+  input:focus { border-color: #64748b; background: #1a1d27; }
+  button { margin-top: 14px; width: 100%; background: #374151; border: none; border-radius: 8px;
            color: #fff; font-size: 14px; font-weight: 600; padding: 11px; cursor: pointer; }
-  button:hover { background: #374151; }
+  button:hover { background: #475569; }
   .error { margin-top: 14px; font-size: 13px; color: #EF4444; text-align: center; }
 </style>
 </head>
@@ -1639,21 +1639,23 @@ async def ios_setup_page(db: Session = Depends(get_db)):
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>iPhone Setup — Vero</title>
 <style>
-  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif; background:#f5f6f8; color:#111827; max-width:900px; margin:0 auto; padding:2rem; }}
+  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif; background:#0f1117; color:#f1f5f9; max-width:900px; margin:0 auto; padding:2rem; }}
+  a {{ color: #60a5fa; text-decoration: none; }}
+  a:hover {{ text-decoration: underline; }}
   h1 {{ font-size:1.8rem; margin:0 0 0.25rem 0; }}
   h2 {{ margin-top:2rem; font-size:1.15rem; }}
-  .section {{ background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:1rem 1.25rem; margin-top:1rem; }}
-  .checklist li {{ margin:0.35rem 0; color:#374151; }}
-  .zone-card {{ border:1px solid #e5e7eb; background:#fafafa; border-radius:10px; padding:0.85rem; margin-top:0.75rem; }}
-  .zone-card.empty {{ color:#6b7280; }}
+  .section {{ background:#1a1d27; border:1px solid #2a2d3a; border-radius:12px; padding:1rem 1.25rem; margin-top:1rem; }}
+  .checklist li {{ margin:0.35rem 0; color:#cbd5e1; }}
+  .zone-card {{ border:1px solid #2a2d3a; background:#13161f; border-radius:10px; padding:0.85rem; margin-top:0.75rem; }}
+  .zone-card.empty {{ color:#94a3b8; }}
   .zone-card h3 {{ margin:0; font-size:1rem; }}
-  .zone-card .slug {{ margin:0.2rem 0 0.7rem 0; color:#6b7280; font-size:0.8rem; }}
-  .url-row {{ display:flex; gap:0.5rem; align-items:center; justify-content:space-between; background:#fff; border:1px solid #e5e7eb; border-radius:8px; padding:0.55rem; margin-top:0.45rem; }}
-  .url-row span {{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:0.78rem; word-break:break-all; color:#1f2937; }}
-  .copy-btn {{ border:1px solid #d1d5db; background:#fff; color:#374151; border-radius:7px; padding:0.3rem 0.55rem; cursor:pointer; font-size:0.74rem; white-space:nowrap; }}
-  .copy-btn:hover {{ background:#f3f4f6; }}
-  .muted {{ color:#6b7280; font-size:0.9rem; }}
-  code {{ background:#f3f4f6; padding:0.15rem 0.4rem; border-radius:6px; }}
+  .zone-card .slug {{ margin:0.2rem 0 0.7rem 0; color:#94a3b8; font-size:0.8rem; }}
+  .url-row {{ display:flex; gap:0.5rem; align-items:center; justify-content:space-between; background:#1a1d27; border:1px solid #2a2d3a; border-radius:8px; padding:0.55rem; margin-top:0.45rem; }}
+  .url-row span {{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:0.78rem; word-break:break-all; color:#94a3b8; }}
+  .copy-btn {{ border:1px solid #374151; background:#1a1d27; color:#cbd5e1; border-radius:7px; padding:0.3rem 0.55rem; cursor:pointer; font-size:0.74rem; white-space:nowrap; }}
+  .copy-btn:hover {{ background:#252a3a; }}
+  .muted {{ color:#94a3b8; font-size:0.9rem; }}
+  code {{ background:#13161f; padding:0.15rem 0.4rem; border-radius:6px; }}
 </style>
 <script>
 function copyURL(btn, url) {{
