@@ -69,6 +69,7 @@
                 </div>
                 <div class="flex items-center gap-4">
                     <button id="toggle-tracking-btn" class="text-sm px-3 py-2 rounded-lg border border-gray-700 hover:bg-gray-800 active" title="Toggle tracking">Tracking: ON</button>
+                    <button id="theme-toggle-btn" class="p-2 hover:bg-gray-800 rounded-lg border border-gray-700" title="Toggle theme">☀️</button>
                     <button id="settings-btn" class="p-2 hover:bg-gray-800 rounded-lg border border-gray-700" title="Settings">Settings</button>
                     <div id="clock" class="text-sm text-gray-400 min-w-16 text-right">Loading...</div>
                 </div>
@@ -100,6 +101,15 @@
                 </div>
             </div>
 
+            <!-- Quick Chat Chips -->
+            <div class="flex gap-2 overflow-x-auto pb-2 mobile-view-section" data-view="dashboard">
+                <button class="px-3 py-1 bg-gray-700 text-sm rounded-full whitespace-nowrap hover:bg-gray-600" onclick="quickChat('Eating')">Eating</button>
+                <button class="px-3 py-1 bg-gray-700 text-sm rounded-full whitespace-nowrap hover:bg-gray-600" onclick="quickChat('Studying')">Studying</button>
+                <button class="px-3 py-1 bg-gray-700 text-sm rounded-full whitespace-nowrap hover:bg-gray-600" onclick="quickChat('Taking a break')">Taking a break</button>
+                <button class="px-3 py-1 bg-gray-700 text-sm rounded-full whitespace-nowrap hover:bg-gray-600" onclick="quickChat('Going to sleep')">Going to sleep</button>
+                <button class="px-3 py-1 bg-gray-700 text-sm rounded-full whitespace-nowrap hover:bg-gray-600" onclick="quickChat('Working out')">Working out</button>
+            </div>
+
             <!-- Quick Chat Bar -->
             <div class="bg-surface border border-gray-700 rounded-lg p-4 flex gap-3 mobile-view-section" data-view="dashboard">
                 <input type="text" id="chat-input" class="flex-1 bg-gray-800 border border-gray-700 rounded px-4 py-2 text-sm focus:outline-none focus:border-gray-500" placeholder="Tell me what you're doing..." />
@@ -125,14 +135,14 @@
                 <div class="bg-surface border border-gray-700 rounded-lg p-6">
                     <div id="stat-active" class="text-3xl font-semibold text-gray-100 mb-1">0h 0m</div>
                     <div class="text-xs text-gray-400 uppercase tracking-wider">
-                        Active Today <span class="kpi-help" title="Active time = non-idle Mac telemetry points in your local day multiplied by polling interval.">?</span>
+                        Active Today <span class="kpi-help" data-tip="Active time = non-idle Mac telemetry points in your local day multiplied by polling interval.">?</span>
                     </div>
                     <div id="stat-active-note" class="text-[11px] text-gray-500 mt-2">Collecting data…</div>
                 </div>
                 <div class="bg-surface border border-gray-700 rounded-lg p-6">
                     <div id="stat-productive" class="text-3xl font-semibold text-gray-100 mb-1">0%</div>
                     <div class="text-xs text-gray-400 uppercase tracking-wider">
-                        Productive % <span class="kpi-help" title="Productive % = productive minutes / active minutes. Productive categories: studying, working, creative.">?</span>
+                        Productive % <span class="kpi-help" data-tip="Productive % = productive minutes / active minutes. Productive categories: studying, working, creative.">?</span>
                     </div>
                     <div id="stat-productive-note" class="text-[11px] text-gray-500 mt-2">Waiting for active minutes…</div>
                 </div>
@@ -195,7 +205,7 @@
             <section class="bg-surface border border-gray-700 rounded-lg mobile-view-section" data-view="activity">
                 <div class="p-4 border-b border-gray-700">
                     <h2 class="font-semibold">Activity Timeline</h2>
-                    <p class="text-xs text-gray-500 mt-1">Telemetry-derived timeline (not Apple Calendar events). <span class="kpi-help" title="Timeline shows sampled app activity from telemetry. Apple Calendar Sync writes only session events, so they can differ.">Why they differ?</span></p>
+                    <p class="text-xs text-gray-500 mt-1">Telemetry-derived timeline (not Apple Calendar events). <span class="kpi-help" data-tip="Timeline shows sampled app activity from telemetry. Apple Calendar Sync writes only session events, so they can differ.">Why they differ?</span></p>
                 </div>
                 <div id="calendar-view" class="p-6 overflow-x-auto">
                     <div class="grid gap-1" style="grid-template-columns: 60px repeat(7, minmax(80px, 1fr))">
@@ -224,6 +234,7 @@
                             <button class="interval-pill px-3 py-1 text-xs hover:bg-gray-700 rounded" data-val="30">30m</button>
                         </div>
                         <button id="refresh-btn" class="p-2 hover:bg-gray-700 rounded border border-gray-700" title="Refresh">↻</button>
+                        <button id="clear-logs-btn" class="p-2 hover:bg-red-900 rounded border border-gray-700 text-red-400" title="Clear logs">Clear</button>
                     </div>
                 </div>
                 <div class="overflow-x-auto">
@@ -254,41 +265,6 @@
                 </div>
             </section>
 
-            <!-- How It Works -->
-            <details class="bg-surface border border-gray-700 rounded-lg mobile-view-section" data-view="dashboard">
-                <summary class="p-4 cursor-pointer hover:bg-gray-800 flex items-center gap-3 font-semibold">
-                    <span>How the Mac App Works</span>
-                    <span class="ml-auto">▼</span>
-                </summary>
-                <div class="border-t border-gray-700 p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                        <h4 class="font-semibold mb-2">Architecture</h4>
-                        <p class="text-sm text-gray-400">Vero uses a two-app model: a visible settings app and a hidden login helper for telemetry.</p>
-                    </div>
-                    <div>
-                        <h4 class="font-semibold mb-2">What the Agent Does</h4>
-                        <ul class="text-sm text-gray-400 space-y-1 list-disc list-inside">
-                            <li>Sends heartbeats every 60s</li>
-                            <li>Captures active app &amp; window</li>
-                            <li>Reads Chrome history (30m)</li>
-                            <li>Syncs calendar events</li>
-                        </ul>
-                    </div>
-                    <div>
-                        <h4 class="font-semibold mb-2">Battery Impact</h4>
-                        <p class="text-sm text-gray-400">Minimal. The helper runs brief cycles and sleeps between checks.</p>
-                    </div>
-                    <div>
-                        <h4 class="font-semibold mb-2">Permissions Needed</h4>
-                        <ul class="text-sm text-gray-400 space-y-1 list-disc list-inside">
-                            <li><strong class="text-gray-200">Accessibility</strong> — window titles</li>
-                            <li><strong class="text-gray-200">Calendar</strong> — event writing</li>
-                            <li><strong class="text-gray-200">Notifications</strong> — alerts</li>
-                        </ul>
-                    </div>
-                </div>
-            </details>
-
             <!-- Setup & Repair -->
             <section class="bg-surface border border-gray-700 rounded-lg mobile-view-section" data-view="dashboard" id="control-center-repair">
                 <div class="p-4 border-b border-gray-700">
@@ -298,34 +274,51 @@
                     <div>
                         <p class="text-xs text-gray-500 uppercase tracking-widest mb-2">Service Health</p>
                         <p class="font-semibold" id="service-status">Checking…</p>
-                        <p class="text-xs text-gray-500 mt-1" id="service-detail">Waiting for Railway health.</p>
+                        <p class="text-xs text-gray-500 mt-1" id="service-detail">Verifying backend connection.</p>
                     </div>
                     <div>
                         <p class="text-xs text-gray-500 uppercase tracking-widest mb-2">Calendar Sync</p>
                         <p class="font-semibold" id="calendar-status">Checking…</p>
-                        <p class="text-xs text-gray-500 mt-1" id="calendar-detail">The Mac helper writes queued events.</p>
+                        <p class="text-xs text-gray-500 mt-1" id="calendar-detail">Syncing Mac productivity events.</p>
                     </div>
                     <div>
                         <p class="text-xs text-gray-500 uppercase tracking-widest mb-2">iPhone Setup</p>
                         <p class="font-semibold" id="ios-setup-status">Checking…</p>
-                        <p class="text-xs text-gray-500 mt-1" id="ios-setup-detail">Zone automations recommended.</p>
+                        <p class="text-xs text-gray-500 mt-1" id="ios-setup-detail">Need Enter/Leave automations for zones.</p>
                     </div>
                     <div>
                         <p class="text-xs text-gray-500 uppercase tracking-widest mb-2">Next Step</p>
-                        <p class="font-semibold" id="next-step-status">Open the Mac app</p>
-                        <p class="text-xs text-gray-500 mt-1" id="next-step-detail">Let the login helper run silently.</p>
+                        <p class="font-semibold" id="next-step-status">Start tracking</p>
+                        <p class="text-xs text-gray-500 mt-1" id="next-step-detail">Enable the Mac agent to begin.</p>
                     </div>
                 </div>
             </section>
 
             <!-- Footer -->
             <footer class="text-center text-xs text-gray-500 border-t border-gray-700 pt-8 pb-8">
-                <div class="flex justify-center gap-6">
+                <div class="flex justify-center gap-6 mb-6">
                     <span>Vero</span>
                     <a href="/api/export?days=30" class="hover:text-gray-200">Export CSV</a>
                     <a href="/setup/ios" class="hover:text-gray-200">iPhone Setup</a>
                     <a href="/setup/mac" class="hover:text-gray-200">Mac Setup</a>
                 </div>
+                <details class="inline-block text-left">
+                    <summary class="cursor-pointer hover:text-gray-300 font-semibold">How It Works</summary>
+                    <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl mx-auto">
+                        <div>
+                            <h4 class="font-semibold mb-1 text-gray-300">Architecture</h4>
+                            <p class="text-xs text-gray-500">Two-app model: visible settings app + hidden login helper for telemetry.</p>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold mb-1 text-gray-300">Agent Tasks</h4>
+                            <ul class="text-xs text-gray-500 space-y-0.5 list-disc list-inside">
+                                <li>Sends heartbeats every 60s</li>
+                                <li>Captures active app &amp; window</li>
+                                <li>Syncs calendar events</li>
+                            </ul>
+                        </div>
+                    </div>
+                </details>
             </footer>
         </div>
     </div>
