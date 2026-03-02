@@ -1300,7 +1300,6 @@ def ios_setup_status(db: Session = Depends(get_db)):
         {"id": "zone_leave", "label": "Zone leave automations", "configured": states.get("seen_leave_automation") == "true"},
     ]
     optional = [
-        {"id": "walking", "label": "Walking automation", "configured": states.get("seen_walking_automation") == "true"},
         {"id": "charging_stationary", "label": "Charging on/off automations", "configured": states.get("seen_charging_automation") == "true"},
     ]
     checklist = required + optional
@@ -1338,7 +1337,6 @@ def ios_setup_pack(db: Session = Depends(get_db)):
             {"id": "zone_leave", "label": "Zone leave automations"},
         ],
         "optional": [
-            {"id": "walking", "label": "Walking automation"},
             {"id": "charging_stationary", "label": "Charging on/off automations"},
         ],
         "events": {
@@ -1560,7 +1558,7 @@ function copyURL(btn, url) {{
 <body>
   <p><a href="/">← Dashboard</a></p>
   <h1>iPhone Setup</h1>
-  <p class="muted">This page generates exact URLs for each zone. Required setup is zone Arrive + Leave automations. Walking/charging are optional.</p>
+  <p class="muted">This page generates exact URLs for each zone. Required setup is zone Arrive + Leave automations. Charging is optional.</p>
 
   <div class="section">
     <h2>Checklist</h2>
@@ -1577,12 +1575,10 @@ function copyURL(btn, url) {{
   </div>
 
   <div class="section">
-    <h2>Optional Event URLs</h2>
-    <div class="url-row"><span>{html.escape(walking_url)}</span><button class="copy-btn" onclick="copyURL(this, '{html.escape(walking_url)}')">Copy Walking</button></div>
+    <h2>Charging (Optional)</h2>
     <div class="url-row"><span>{html.escape(charge_on_url)}</span><button class="copy-btn" onclick="copyURL(this, '{html.escape(charge_on_url)}')">Copy Charge On</button></div>
     <div class="url-row"><span>{html.escape(charge_off_url)}</span><button class="copy-btn" onclick="copyURL(this, '{html.escape(charge_off_url)}')">Copy Charge Off</button></div>
-    <p class="muted" style="margin-top:0.75rem;">Faster setup: download prebuilt shortcuts, then use <code>Run Shortcut</code> in the personal automation instead of rebuilding request fields.</p>
-    <div class="url-row"><span>Walking shortcut</span><a href="{html.escape(shortcut_links.get('walking', ''))}" class="copy-btn" style="text-decoration:none;">Download</a></div>
+    <p class="muted" style="margin-top:0.75rem;">Or download prebuilt shortcuts and use <code>Run Shortcut</code> instead.</p>
     <div class="url-row"><span>Charge On shortcut</span><a href="{html.escape(shortcut_links.get('charge_on', ''))}" class="copy-btn" style="text-decoration:none;">Download</a></div>
     <div class="url-row"><span>Charge Off shortcut</span><a href="{html.escape(shortcut_links.get('charge_off', ''))}" class="copy-btn" style="text-decoration:none;">Download</a></div>
   </div>
@@ -1670,85 +1666,18 @@ def _build_shortcut_bytes(kind: str = "walking", sign: bool = True) -> bytes:
         raise ValueError(f"Unknown shortcut kind: {kind}")
 
     cfg = SHORTCUT_TEMPLATES[kind]
-    backend_url = _get_backend_url() + "/api/ios-telemetry"
-    post_uuid = str(uuid.uuid4()).upper()
-    loc_uuid = str(uuid.uuid4()).upper()
-    batt_uuid = str(uuid.uuid4()).upper()
+    action_url = f"{_get_backend_url().rstrip('/')}/api/ios-event?kind={kind}"
 
-    def _dict_item(key: str, value_obj: dict) -> dict:
-        return {
-            "WFItemType": 0,
-            "WFKey": {"Value": {"string": key}, "WFSerializationType": "WFTextTokenString"},
-            "WFValue": value_obj,
-        }
-
-    def _action_ref(output_name: str, output_uuid: str) -> dict:
-        """Reference to a previous action's output as a text token."""
-        return {
-            "Value": {
-                "attachmentsByRange": {"{0, 1}": {"Type": "ActionOutput", "OutputName": output_name, "OutputUUID": output_uuid}},
-                "string": "\ufffc",
-            },
-            "WFSerializationType": "WFTextTokenString",
-        }
-
-    if cfg["use_location_action"]:
-        location_value = _action_ref("MyLocation", loc_uuid)
-    else:
-        location_value = {
-            "Value": {"string": cfg["location_label"]},
-            "WFSerializationType": "WFTextTokenString",
-        }
-
-    # Battery level token (output from the battery action below)
-    battery_value = _action_ref("BatteryLevel", batt_uuid)
-
-    payload_items = [
-        _dict_item("location_label", location_value),
-        _dict_item(
-            "activity_type",
-            {"Value": {"string": cfg["activity"]}, "WFSerializationType": "WFTextTokenString"},
-        ),
-        _dict_item("battery_level", battery_value),
-    ]
-    if cfg["is_charging"] is not None:
-        payload_items.append(
-            _dict_item(
-                "is_charging",
-                {"Value": {"string": cfg["is_charging"]}, "WFSerializationType": "WFTextTokenString"},
-            )
-        )
-
-    actions = []
-    # Get battery level (available on all devices, no permission needed)
-    actions.append({
-        "WFWorkflowActionIdentifier": "is.workflow.actions.getbatterylevel",
-        "WFWorkflowActionParameters": {"CustomOutputName": "BatteryLevel", "UUID": batt_uuid},
-    })
-    if cfg["use_location_action"]:
-        actions.append(
-            {
-                "WFWorkflowActionIdentifier": "is.workflow.actions.location",
-                "WFWorkflowActionParameters": {"CustomOutputName": "MyLocation", "UUID": loc_uuid},
-            }
-        )
-
-    actions.append(
+    actions = [
         {
             "WFWorkflowActionIdentifier": "is.workflow.actions.downloadurl",
             "WFWorkflowActionParameters": {
-                "WFURL": backend_url,
-                "WFHTTPMethod": "POST",
-                "WFHTTPBodyType": "Json",
+                "WFURL": action_url,
+                "WFHTTPMethod": "GET",
                 "ShowHeaders": False,
-                "UUID": post_uuid,
-                "WFRequestVariable": {
-                    "Value": {"WFDictionaryFieldValueItems": payload_items},
-                    "WFSerializationType": "WFDictionaryFieldValue",
-                },
             },
         }
-    )
+    ]
 
     shortcut = {
         "WFWorkflowMinimumClientVersion": 900,
