@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import base64
+import html
 import subprocess
 import secrets
 import hmac
@@ -56,6 +57,41 @@ def _run_migrations() -> list[str]:
                 SET app_name = 'Vero'
                 WHERE app_name IN ('LifeManager', 'Vero Agent', 'Ambient')
             """))
+
+            # Reset migration (v2): zones are now user-defined only.
+            marker = conn.execute(
+                text("SELECT value FROM agent_states WHERE key = 'zones_reset_v2' LIMIT 1")
+            ).scalar()
+            if marker != "true":
+                conn.execute(text("DELETE FROM location_zones"))
+                conn.execute(
+                    text(
+                        """
+                        DELETE FROM agent_states
+                        WHERE key IN (
+                          'seen_arrive_automation',
+                          'seen_leave_automation',
+                          'seen_walking_automation',
+                          'seen_charging_automation',
+                          'current_location',
+                          'location_arrival',
+                          'commute_start',
+                          'commute_from',
+                          'last_zone_enter',
+                          'study_mode'
+                        )
+                        """
+                    )
+                )
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO agent_states (key, value, updated_at)
+                        VALUES ('zones_reset_v2', 'true', CURRENT_TIMESTAMP)
+                        ON CONFLICT(key) DO UPDATE SET value='true', updated_at=CURRENT_TIMESTAMP
+                        """
+                    )
+                )
             conn.commit()
         except Exception as exc:
             errors.append(str(exc))
@@ -353,6 +389,36 @@ def _normalize_battery_level(battery_level: float | None) -> int | None:
     return int(raw) if raw > 1 else int(raw * 100)
 
 
+def _coerce_bool(value, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text = str(value).strip().lower()
+    if text in {"true", "1", "yes", "y", "on"}:
+        return True
+    if text in {"false", "0", "no", "n", "off"}:
+        return False
+    return default
+
+
+def _parse_event_time(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        normalized = value.strip()
+        if normalized.endswith("Z"):
+            normalized = f"{normalized[:-1]}+00:00"
+        dt = datetime.fromisoformat(normalized)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except Exception:
+        return None
+
+
 def _serialize_calendar_job(job: CalendarEventJob) -> dict:
     return {
         "id": job.id,
@@ -547,44 +613,75 @@ def receive_ios_event(kind: str, background_tasks: BackgroundTasks, db: Session 
 @app.api_route("/api/ios-zone-event", methods=["GET", "POST"])
 async def receive_ios_zone_event(request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     body_text = ""
+    payload: Dict[str, Any] = {}
     if request.method == "POST":
         body_bytes = await request.body()
         # Rescue iPhone Smart Punctuation curly quotes
         body_text = body_bytes.decode("utf-8", errors="ignore").replace("“", '"').replace("”", '"').replace("‘", "'").replace("’", "'")
-    
+
     zone_slug = request.query_params.get("zone", "") or request.query_params.get("zone_slug", "")
     transition = request.query_params.get("transition", "")
-    
+    battery_level = request.query_params.get("battery_level")
+    steps_today = request.query_params.get("steps_today")
+    event_time = request.query_params.get("event_time")
+
     if body_text.strip():
         import json
         try:
             payload = json.loads(body_text)
             zone_slug = zone_slug or payload.get("zone_slug", "") or payload.get("zone", "")
             transition = transition or payload.get("transition", "")
+            battery_level = battery_level if battery_level is not None else payload.get("battery_level")
+            steps_today = steps_today if steps_today is not None else payload.get("steps_today")
+            event_time = event_time or payload.get("event_time")
         except json.JSONDecodeError:
             log.warning("Failed to parse iOS zone event JSON: %s", body_text)
-            
+
+    zone_slug = agent_logic.normalize_zone_slug(zone_slug or "")
+    transition = str(transition or "").strip().lower()
     if not zone_slug or not transition:
         return {"status": "error", "reason": "missing zone_slug or transition"}
-        
-    data = iOSZoneEvent(zone_slug=zone_slug, transition=transition.lower())
-    
-    def _run_db():
-        zone = agent_logic.get_zone(db, data.zone_slug)
-        zone_label = zone.name if zone else data.zone_slug.replace("-", " ").title()
-        log_entry = ActivityLog(
-            device="ios",
-            location_label=zone_label,
-            activity_type=f"Zone {data.transition.title()}",
-            battery_pct=_normalize_battery_level(data.battery_level),
-            steps_today=data.steps_today,
-        )
-        db.add(log_entry)
-        db.commit()
-        return zone_label
+    if transition not in {"enter", "exit"}:
+        return {"status": "error", "reason": "transition must be 'enter' or 'exit'"}
 
-    loop = asyncio.get_running_loop()
-    zone_label = await loop.run_in_executor(None, _run_db)
+    parsed_battery = None
+    if battery_level not in (None, ""):
+        try:
+            parsed_battery = float(battery_level)
+        except Exception:
+            parsed_battery = None
+    parsed_steps = None
+    if steps_today not in (None, ""):
+        try:
+            parsed_steps = int(steps_today)
+        except Exception:
+            parsed_steps = None
+
+    data = iOSZoneEvent(
+        zone_slug=zone_slug,
+        transition=transition,
+        event_time=_parse_event_time(event_time),
+        battery_level=parsed_battery,
+        steps_today=parsed_steps,
+    )
+    event_timestamp = (
+        data.event_time.astimezone(timezone.utc).replace(tzinfo=None)
+        if data.event_time
+        else datetime.now(timezone.utc).replace(tzinfo=None)
+    )
+
+    zone = agent_logic.get_zone(db, data.zone_slug)
+    zone_label = zone.name if zone else data.zone_slug.replace("-", " ").title()
+    log_entry = ActivityLog(
+        timestamp=event_timestamp,
+        device="ios",
+        location_label=zone_label,
+        activity_type=f"Zone {data.transition.title()}",
+        battery_pct=_normalize_battery_level(data.battery_level),
+        steps_today=data.steps_today,
+    )
+    db.add(log_entry)
+    db.commit()
     background_tasks.add_task(_bg_process_ios_zone, data)
     return {"status": "ok", "zone": zone_label, "transition": data.transition}
 
@@ -603,11 +700,11 @@ def get_settings(db: Session = Depends(get_db)):
         "tracking_enabled": tracking_enabled_str.lower() == "true",
         "backend_mode": agent_logic.get_state(db, "backend_mode", "railway_primary"),
         "ai_provider": agent_logic.get_state(db, "ai_provider", "auto"),
-        "llm_mode": agent_logic.get_state(db, "llm_mode", "ultra_save"),
-        "hourly_summaries_enabled": agent_logic.get_state(db, "hourly_summaries_enabled", "false").lower() == "true",
-        "classification_interval_seconds": int(agent_logic.get_state(db, "classification_interval_seconds", "1800")),
-        "llm_daily_cap": int(agent_logic.get_state(db, "llm_daily_cap", "30")),
-        "user_timezone": agent_logic.get_state(db, "user_timezone", "America/Los_Angeles"),
+        "llm_mode": agent_logic.get_state(db, "llm_mode", agent_logic.DEFAULTS["llm_mode"]),
+        "hourly_summaries_enabled": agent_logic.get_state(db, "hourly_summaries_enabled", agent_logic.DEFAULTS["hourly_summaries_enabled"]).lower() == "true",
+        "classification_interval_seconds": int(agent_logic.get_state(db, "classification_interval_seconds", agent_logic.DEFAULTS["classification_interval_seconds"])),
+        "llm_daily_cap": int(agent_logic.get_state(db, "llm_daily_cap", agent_logic.DEFAULTS["llm_daily_cap"])),
+        "user_timezone": agent_logic.get_state(db, "user_timezone", agent_logic.DEFAULTS["user_timezone"]),
     }
 
 @app.post("/api/settings")
@@ -625,7 +722,7 @@ def update_settings(payload: Dict[str, Any], db: Session = Depends(get_db)):
     if "llm_mode" in payload and payload["llm_mode"] in {"ultra_save", "balanced", "quality"}:
         agent_logic.set_state(db, "llm_mode", payload["llm_mode"])
     if "hourly_summaries_enabled" in payload:
-        agent_logic.set_state(db, "hourly_summaries_enabled", str(bool(payload["hourly_summaries_enabled"])).lower())
+        agent_logic.set_state(db, "hourly_summaries_enabled", str(_coerce_bool(payload["hourly_summaries_enabled"])).lower())
     if "classification_interval_seconds" in payload:
         try:
             val = max(300, int(payload["classification_interval_seconds"]))
@@ -669,7 +766,10 @@ def create_zone(payload: Dict[str, Any], db: Session = Depends(get_db)):
     try:
         zone = agent_logic.upsert_zone(db, payload)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "invalid_zone_payload", "message": str(exc)},
+        )
     return {"status": "created", "zone": zone}
 
 
@@ -678,7 +778,10 @@ def patch_zone(zone_id: int, payload: Dict[str, Any], db: Session = Depends(get_
     try:
         zone = agent_logic.upsert_zone(db, payload, zone_id=zone_id)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "invalid_zone_payload", "message": str(exc)},
+        )
     return {"status": "updated", "zone": zone}
 
 
@@ -753,7 +856,7 @@ async def mcp_http_transport(payload: Dict[str, Any], db: Session = Depends(get_
     if method == "get_daily_analytics":
         return {"result": await analytics_today(db)}
     if method == "set_tracking":
-        enabled = bool(params.get("enabled", True))
+        enabled = _coerce_bool(params.get("enabled"), True)
         agent_logic.set_state(db, "tracking_enabled", str(enabled).lower())
         return {"result": {"tracking_enabled": enabled}}
     if method == "set_polling_interval":
@@ -798,31 +901,90 @@ def clear_logs(payload: Dict[str, Any], db: Session = Depends(get_db)):
     return {"status": "cleared", "count": count}
 
 
+def _fallback_summary_payload(entry: ActivityLog, context_logs: list[ActivityLog] | None = None) -> dict:
+    context_logs = context_logs or []
+    if entry.device == "ios":
+        event = (entry.activity_type or "location event").strip()
+        place = (entry.location_label or "an unknown place").strip()
+        signals = [f"event: {event}", f"location: {place}"]
+        if entry.steps_today is not None:
+            signals.append(f"steps: {entry.steps_today}")
+        if entry.battery_pct is not None:
+            signals.append(f"battery: {entry.battery_pct}%")
+        text = f"iPhone reported {event.lower()} near {place}. Keep zone automations running so future summaries stay accurate."
+        return {
+            "summary_text": text,
+            "focus_assessment": "unknown",
+            "confidence": 0.6,
+            "signals": signals[:4],
+            "fallback_used": True,
+            "summary": text,
+        }
+
+    app_name = (entry.app_name or "unknown app").strip()
+    title = (entry.window_title or "").strip()
+    nearby_apps = sorted({(log.app_name or "").strip() for log in context_logs if (log.app_name or "").strip()})
+    if nearby_apps:
+        signal = ", ".join(nearby_apps[:4])
+        text = f"Most likely focused in {app_name} with related context from {signal}. Continue your current task or note a manual check-in if this was a context switch."
+    elif title:
+        text = f"Most likely worked in {app_name} on '{title[:80]}'. If that was not intentional work, add a quick check-in to correct context."
+    else:
+        text = f"Most likely worked in {app_name}. Add a brief check-in when switching tasks to keep summaries accurate."
+    return {
+        "summary_text": text,
+        "focus_assessment": "mixed",
+        "confidence": 0.45,
+        "signals": [f"app: {app_name}", f"title: {title[:80] or 'n/a'}"],
+        "fallback_used": True,
+        "summary": text,
+    }
+
+
 @app.get("/api/summary/{log_id}")
 async def get_log_summary(log_id: int, db: Session = Depends(get_db)):
     entry = db.query(ActivityLog).filter(ActivityLog.id == log_id).first()
     if not entry:
         raise HTTPException(status_code=404, detail="Log not found")
 
-    if entry.device == "mac":
-        app_name = entry.app_name or "Unknown App"
-        title = entry.window_title or "Unknown Title"
-        import llm_client
-        if not agent_logic.can_use_llm(db):
-            return {"summary": "AI budget reached; summary generation is temporarily disabled today."}
+    context_logs: list[ActivityLog] = []
+    if entry.timestamp:
+        window_start = entry.timestamp - timedelta(minutes=20)
+        window_end = entry.timestamp + timedelta(minutes=20)
+        context_logs = (
+            db.query(ActivityLog)
+            .filter(
+                ActivityLog.device == entry.device,
+                ActivityLog.timestamp >= window_start,
+                ActivityLog.timestamp <= window_end,
+            )
+            .order_by(ActivityLog.timestamp.asc())
+            .limit(25)
+            .all()
+        )
+
+    if entry.device == "mac" and agent_logic.can_use_llm(db):
         agent_logic.register_llm_call(db)
-        summary = await llm_client.generate_activity_summary(app_name, title)
-        return {"summary": summary}
-    else:
-        return {"summary": f"User was {entry.activity_type} near {entry.location_label}."}
+        structured = await llm_client.generate_activity_summary_structured(entry, context_logs)
+        if structured and structured.get("summary_text"):
+            structured["summary"] = structured["summary_text"]
+            return structured
+
+    return _fallback_summary_payload(entry, context_logs)
 
 @app.get("/api/hourly-summaries")
 def get_hourly_summaries(limit: int = 5, db: Session = Depends(get_db)):
+    tz = agent_logic.resolve_user_timezone(db)
     summaries = db.query(HourlySummary).order_by(desc(HourlySummary.hour_start)).limit(limit).all()
     return [
         {
             "id": s.id,
             "hour_start": s.hour_start,
+            "hour_start_utc": s.hour_start.isoformat() if s.hour_start else "",
+            "hour_start_local": (
+                s.hour_start.replace(tzinfo=timezone.utc).astimezone(tz).isoformat()
+                if s.hour_start else ""
+            ),
             "summary_text": s.summary_text,
             "productivity_score": s.productivity_score,
         }
@@ -910,7 +1072,7 @@ async def chat_message(payload: Dict[str, Any], db: Session = Depends(get_db)):
             context_parts.append(f"Recent apps: {apps}")
 
     context_str = "; ".join(context_parts) if context_parts else "No recent context"
-    history_key = f"chat_history:{now.strftime('%Y-%m-%d')}"
+    history_key = f"chat_history:{agent_logic.local_day_key(db, now)}"
     import json
     existing = agent_logic.get_state(db, history_key, "[]")
     try:
@@ -979,7 +1141,7 @@ def chat_history(db: Session = Depends(get_db)):
     """Get today's chat history."""
     import json
     now = datetime.now(timezone.utc)
-    history_key = f"chat_history:{now.strftime('%Y-%m-%d')}"
+    history_key = f"chat_history:{agent_logic.local_day_key(db, now)}"
     existing = agent_logic.get_state(db, history_key, "[]")
     try:
         history = json.loads(existing)
@@ -1133,19 +1295,61 @@ async def healthz():
 def ios_setup_status(db: Session = Depends(get_db)):
     states = _build_state_payload(db)
     last_ios_ping_age = states.get("last_ios_event_age_seconds")
-    checklist = [
+    required = [
         {"id": "zone_arrive", "label": "Zone arrive automations", "configured": states.get("seen_arrive_automation") == "true"},
         {"id": "zone_leave", "label": "Zone leave automations", "configured": states.get("seen_leave_automation") == "true"},
+    ]
+    optional = [
         {"id": "walking", "label": "Walking automation", "configured": states.get("seen_walking_automation") == "true"},
         {"id": "charging_stationary", "label": "Charging on/off automations", "configured": states.get("seen_charging_automation") == "true"},
     ]
+    checklist = required + optional
     return {
         "ios_recent_ping": states.get("ios_recent_event", False),
         "last_ios_ping_age_seconds": last_ios_ping_age,
         "sleep_source": states.get("sleep_source", "iphone_only"),
         "sleep_status_note": states.get("sleep_status_note", ""),
         "zones": agent_logic.list_zones(db),
+        "required": required,
+        "optional": optional,
         "checklist": checklist,
+    }
+
+
+@app.get("/api/ios-setup-pack")
+def ios_setup_pack(db: Session = Depends(get_db)):
+    backend_url = _get_backend_url().rstrip("/")
+    zones = agent_logic.list_zones(db)
+    enriched = []
+    for zone in zones:
+        slug = zone.get("slug", "")
+        enriched.append({
+            **zone,
+            "arrive_url": f"{backend_url}/api/ios-zone-event?zone_slug={slug}&transition=enter",
+            "leave_url": f"{backend_url}/api/ios-zone-event?zone_slug={slug}&transition=exit",
+            "arrive_shortcut_url": f"{backend_url}/setup/shortcut/download-zone?zone_slug={slug}&transition=enter",
+            "leave_shortcut_url": f"{backend_url}/setup/shortcut/download-zone?zone_slug={slug}&transition=exit",
+        })
+    return {
+        "backend_url": backend_url,
+        "zones": enriched,
+        "required": [
+            {"id": "zone_arrive", "label": "Zone arrive automations"},
+            {"id": "zone_leave", "label": "Zone leave automations"},
+        ],
+        "optional": [
+            {"id": "walking", "label": "Walking automation"},
+            {"id": "charging_stationary", "label": "Charging on/off automations"},
+        ],
+        "events": {
+            "walking_url": f"{backend_url}/api/ios-event?kind=walking",
+            "charge_on_url": f"{backend_url}/api/ios-event?kind=charge_on",
+            "charge_off_url": f"{backend_url}/api/ios-event?kind=charge_off",
+        },
+        "shortcuts": {
+            kind: f"{backend_url}/setup/shortcut/download?kind={kind}"
+            for kind in SUPPORTED_SHORTCUT_KINDS
+        },
     }
 
 
@@ -1266,8 +1470,59 @@ function copyCmd(btn) {{
 
 
 @app.get("/setup/ios", response_class=HTMLResponse)
-async def ios_setup_page():
-    backend_url = _get_backend_url()
+async def ios_setup_page(db: Session = Depends(get_db)):
+    pack = ios_setup_pack(db)
+    status = ios_setup_status(db)
+    backend_url = pack["backend_url"]
+    required_items = status.get("required", [])
+    optional_items = status.get("optional", [])
+    zones = pack.get("zones", [])
+    walking_url = pack["events"]["walking_url"]
+    charge_on_url = pack["events"]["charge_on_url"]
+    charge_off_url = pack["events"]["charge_off_url"]
+    shortcut_links = pack.get("shortcuts", {})
+
+    def _check_items(items: list[dict]) -> str:
+        if not items:
+            return "<li>No checks yet</li>"
+        out = []
+        for item in items:
+            mark = "✅" if item.get("configured") else "◻️"
+            out.append(f"<li>{mark} {html.escape(item.get('label', ''))}</li>")
+        return "".join(out)
+
+    if zones:
+        zone_cards = []
+        for zone in zones:
+            name = html.escape(zone.get("name", "Unnamed Zone"))
+            slug = html.escape(zone.get("slug", ""))
+            arrive_url_raw = zone.get("arrive_url", "")
+            leave_url_raw = zone.get("leave_url", "")
+            arrive_shortcut_raw = zone.get("arrive_shortcut_url", "")
+            leave_shortcut_raw = zone.get("leave_shortcut_url", "")
+            arrive_url = html.escape(arrive_url_raw)
+            leave_url = html.escape(leave_url_raw)
+            arrive_shortcut = html.escape(arrive_shortcut_raw)
+            leave_shortcut = html.escape(leave_shortcut_raw)
+            arrive_js = html.escape(json.dumps(arrive_url_raw))
+            leave_js = html.escape(json.dumps(leave_url_raw))
+            zone_cards.append(
+                f"""
+                <div class="zone-card">
+                  <h3>{name}</h3>
+                  <p class="slug">slug: {slug}</p>
+                  <div class="url-row"><span>{arrive_url}</span><button class="copy-btn" onclick="copyURL(this, {arrive_js})">Copy Arrive</button></div>
+                  <div class="url-row"><span>{leave_url}</span><button class="copy-btn" onclick="copyURL(this, {leave_js})">Copy Leave</button></div>
+                  <div class="url-row"><span>Arrive shortcut</span><a href="{arrive_shortcut}" class="copy-btn" style="text-decoration:none;">Download</a></div>
+                  <div class="url-row"><span>Leave shortcut</span><a href="{leave_shortcut}" class="copy-btn" style="text-decoration:none;">Download</a></div>
+                </div>
+                """
+            )
+        zone_cards_html = "".join(zone_cards)
+    else:
+        zone_cards_html = (
+            "<div class='zone-card empty'>No zones yet. Open Settings → Zones in the dashboard and add at least one zone.</div>"
+        )
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -1275,137 +1530,68 @@ async def ios_setup_page():
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>iPhone Setup — Vero</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
 <style>
-  body {{ font-family: 'Inter', sans-serif; background: #F5F5F5; color: #111827; padding: 2rem; max-width: 700px; margin: 0 auto; }}
-  h1 {{ font-size: 1.75rem; margin-bottom: 0.5rem; color: #111827; }}
-  h2 {{ font-size: 1.2rem; color: #111827; margin: 2.5rem 0 1rem; border-bottom: 1px solid #E5E7EB; padding-bottom: 0.5rem; }}
-  p {{ color: #374151; line-height: 1.7; }}
-  .section {{ background: #FFFFFF; border: 1px solid #E5E7EB; border-radius: 10px; padding: 1.5rem; margin: 1.5rem 0; }}
-  .step-num {{ font-size: 0.75rem; color: #6B7280; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.75rem; font-weight: 600; }}
-  code {{ background: #F3F4F6; color: #111827; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.95rem; font-family: 'SF Mono', monospace; }}
-  .url-box {{ background: #F3F4F6; border: 1px solid #E5E7EB; border-radius: 8px; padding: 1rem; font-family: 'SF Mono', monospace; font-size: 0.95rem; color: #111827; word-break: break-all; margin: 1rem 0; display: flex; align-items: center; justify-content: space-between; }}
-  .url-box .copy-btn {{ background: #FFFFFF; border: 1px solid #E5E7EB; color: #374151; padding: 0.4rem 0.8rem; border-radius: 6px; font-size: 0.85rem; cursor: pointer; font-family: 'Inter', sans-serif; }}
-  .url-box .copy-btn:hover {{ background: #F9FAFB; }}
-  .instructions {{ color: #374151; line-height: 1.8; margin: 1rem 0; }}
-  .instructions ol {{ margin: 0.5rem 0 1rem 1.5rem; }}
-  .instructions li {{ margin: 0.5rem 0; }}
-  .note {{ font-size: 0.9rem; color: #6B7280; margin-top: 0.75rem; }}
-  .verify-link {{ color: #4F46E5; text-decoration: none; font-weight: 500; }}
-  .verify-link:hover {{ text-decoration: underline; }}
-  nav {{ margin-bottom: 1.5rem; }}
-  nav a {{ color: #4F46E5; text-decoration: none; font-size: 0.95rem; }}
-  nav a:hover {{ text-decoration: underline; }}
-  .divider {{ border: none; border-top: 1px solid #E5E7EB; margin: 2rem 0; }}
+  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif; background:#f5f6f8; color:#111827; max-width:900px; margin:0 auto; padding:2rem; }}
+  h1 {{ font-size:1.8rem; margin:0 0 0.25rem 0; }}
+  h2 {{ margin-top:2rem; font-size:1.15rem; }}
+  .section {{ background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:1rem 1.25rem; margin-top:1rem; }}
+  .checklist li {{ margin:0.35rem 0; color:#374151; }}
+  .zone-card {{ border:1px solid #e5e7eb; background:#fafafa; border-radius:10px; padding:0.85rem; margin-top:0.75rem; }}
+  .zone-card.empty {{ color:#6b7280; }}
+  .zone-card h3 {{ margin:0; font-size:1rem; }}
+  .zone-card .slug {{ margin:0.2rem 0 0.7rem 0; color:#6b7280; font-size:0.8rem; }}
+  .url-row {{ display:flex; gap:0.5rem; align-items:center; justify-content:space-between; background:#fff; border:1px solid #e5e7eb; border-radius:8px; padding:0.55rem; margin-top:0.45rem; }}
+  .url-row span {{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:0.78rem; word-break:break-all; color:#1f2937; }}
+  .copy-btn {{ border:1px solid #d1d5db; background:#fff; color:#374151; border-radius:7px; padding:0.3rem 0.55rem; cursor:pointer; font-size:0.74rem; white-space:nowrap; }}
+  .copy-btn:hover {{ background:#f3f4f6; }}
+  .muted {{ color:#6b7280; font-size:0.9rem; }}
+  code {{ background:#f3f4f6; padding:0.15rem 0.4rem; border-radius:6px; }}
 </style>
 <script>
 function copyURL(btn, url) {{
   navigator.clipboard.writeText(url).then(() => {{
     const oldText = btn.textContent;
-    btn.textContent = 'Copied!';
-    btn.style.background = '#ECFDF5';
-    btn.style.color = '#047857';
-    setTimeout(() => {{ btn.textContent = oldText; btn.style.background = ''; btn.style.color = ''; }}, 2000);
-  }}).catch(() => {{
-    const ta = document.createElement('textarea');
-    ta.value = url; document.body.appendChild(ta); ta.select();
-    document.execCommand('copy'); document.body.removeChild(ta);
-    btn.textContent = 'Copied!';
-    setTimeout(() => btn.textContent = 'Copy', 2000);
+    btn.textContent = 'Copied';
+    setTimeout(() => {{ btn.textContent = oldText; }}, 1200);
   }});
 }}
 </script>
 </head>
 <body>
-<nav>
-  <a href="/">← Dashboard</a>
-</nav>
+  <p><a href="/">← Dashboard</a></p>
+  <h1>iPhone Setup</h1>
+  <p class="muted">This page generates exact URLs for each zone. Required setup is zone Arrive + Leave automations. Walking/charging are optional.</p>
 
-<h1>iPhone Setup</h1>
-<p>Set up iOS automations to track your location, movement, and charging status. All automations use simple GET URLs — no JSON typing, no Smart Punctuation errors.</p>
-
-<h2>Zone Automations</h2>
-<div class="section">
-  <div class="step-num">Shortcuts App → Automation → + → Location → [Zone Name] → Arrives/Leaves</div>
-
-  <p class="instructions">For each zone:</p>
-  <ol class="instructions">
-    <li>Open Shortcuts app → <strong>Automation</strong> tab → <strong>+</strong></li>
-    <li>Choose <strong>Location</strong></li>
-    <li>Select the zone (e.g., Home, Office, Library)</li>
-    <li>Choose <strong>Arrives</strong> (or <strong>Leaves</strong>)</li>
-    <li>Set geofence radius to 50–100 meters</li>
-    <li>Tap <strong>Next</strong></li>
-    <li>Tap <strong>New Blank Automation</strong></li>
-    <li>Tap <strong>+ Add Action</strong> → search <strong>"Get Contents of URL"</strong></li>
-    <li>Copy the URL below for this zone and paste it into the URL field</li>
-    <li>Tap <strong>Done</strong></li>
-    <li>Tap the automation name → turn off <strong>"Ask Before Running"</strong></li>
-    <li>Repeat for each zone, and for both Arrives and Leaves</li>
-  </ol>
-
-  <p class="note"><strong>Focus Mode (optional):</strong> Before the "Get Contents of URL" action, you can add a "Set Focus" action if desired.</p>
-</div>
-
-<h2>Charging Automations</h2>
-<div class="section">
-  <div class="step-num">Shortcuts App → Automation → + → Charger</div>
-
-  <p class="instructions">Create two automations:</p>
-  <ol class="instructions">
-    <li>Open Shortcuts app → <strong>Automation</strong> tab → <strong>+</strong></li>
-    <li>Choose <strong>Charger</strong></li>
-    <li>Choose <strong>Is Connected</strong> (for charging on)</li>
-    <li>Tap <strong>Next</strong> → <strong>New Blank Automation</strong> → <strong>+ Add Action</strong> → "Get Contents of URL"</li>
-    <li>Copy the URL below and paste it</li>
-    <li>Tap <strong>Done</strong> → turn off <strong>"Ask Before Running"</strong></li>
-    <li>Repeat for <strong>Is Disconnected</strong> with the charging off URL</li>
-  </ol>
-
-  <p><strong>Charging On URL:</strong></p>
-  <div class="url-box">
-    <span>{backend_url}/api/ios-event?kind=charge_on</span>
-    <button class="copy-btn" onclick="copyURL(this, '{backend_url}/api/ios-event?kind=charge_on')">Copy</button>
+  <div class="section">
+    <h2>Checklist</h2>
+    <p><strong>Required</strong></p>
+    <ul class="checklist">{_check_items(required_items)}</ul>
+    <p><strong>Optional</strong></p>
+    <ul class="checklist">{_check_items(optional_items)}</ul>
   </div>
 
-  <p><strong>Charging Off URL:</strong></p>
-  <div class="url-box">
-    <span>{backend_url}/api/ios-event?kind=charge_off</span>
-    <button class="copy-btn" onclick="copyURL(this, '{backend_url}/api/ios-event?kind=charge_off')">Copy</button>
+  <div class="section">
+    <h2>Zone URLs (Required)</h2>
+    <p class="muted">For each zone in Shortcuts: create one Arrive automation and one Leave automation using <code>Get Contents of URL</code> or download the shortcut and use <code>Run Shortcut</code>.</p>
+    {zone_cards_html}
   </div>
-</div>
 
-<h2>Walking Automation</h2>
-<div class="section">
-  <div class="step-num">Shortcuts App → Automation → + → Apple Watch Workout</div>
-
-  <p class="instructions">Create one automation:</p>
-  <ol class="instructions">
-    <li>Open Shortcuts app → <strong>Automation</strong> tab → <strong>+</strong></li>
-    <li>Choose <strong>Apple Watch Workout</strong></li>
-    <li>Select <strong>Walking</strong> → <strong>Starts</strong></li>
-    <li>Tap <strong>Next</strong> → <strong>New Blank Automation</strong> → <strong>+ Add Action</strong> → "Get Contents of URL"</li>
-    <li>Copy the URL below and paste it</li>
-    <li>Tap <strong>Done</strong> → turn off <strong>"Ask Before Running"</strong></li>
-  </ol>
-
-  <p><strong>Walking URL:</strong></p>
-  <div class="url-box">
-    <span>{backend_url}/api/ios-event?kind=walking</span>
-    <button class="copy-btn" onclick="copyURL(this, '{backend_url}/api/ios-event?kind=walking')">Copy</button>
+  <div class="section">
+    <h2>Optional Event URLs</h2>
+    <div class="url-row"><span>{html.escape(walking_url)}</span><button class="copy-btn" onclick="copyURL(this, {html.escape(json.dumps(walking_url))})">Copy Walking</button></div>
+    <div class="url-row"><span>{html.escape(charge_on_url)}</span><button class="copy-btn" onclick="copyURL(this, {html.escape(json.dumps(charge_on_url))})">Copy Charge On</button></div>
+    <div class="url-row"><span>{html.escape(charge_off_url)}</span><button class="copy-btn" onclick="copyURL(this, {html.escape(json.dumps(charge_off_url))})">Copy Charge Off</button></div>
+    <p class="muted" style="margin-top:0.75rem;">Faster setup: download prebuilt shortcuts, then use <code>Run Shortcut</code> in the personal automation instead of rebuilding request fields.</p>
+    <div class="url-row"><span>Walking shortcut</span><a href="{html.escape(shortcut_links.get('walking', ''))}" class="copy-btn" style="text-decoration:none;">Download</a></div>
+    <div class="url-row"><span>Charge On shortcut</span><a href="{html.escape(shortcut_links.get('charge_on', ''))}" class="copy-btn" style="text-decoration:none;">Download</a></div>
+    <div class="url-row"><span>Charge Off shortcut</span><a href="{html.escape(shortcut_links.get('charge_off', ''))}" class="copy-btn" style="text-decoration:none;">Download</a></div>
   </div>
-</div>
 
-<h2>Verify Setup</h2>
-<div class="section">
-  <p>Run each automation once manually in the Shortcuts app. Then check <a class="verify-link" href="/api/ios-setup-status">/api/ios-setup-status</a> — all automations should show as configured.</p>
-</div>
-
-<h2>Calendar Sync (Recommended)</h2>
-<div class="section">
-  <p>On your Mac: <strong>System Settings → Apple Account → iCloud</strong> and turn on <strong>Calendar</strong>. Make sure the <strong>Vero</strong> calendar is synced to iCloud, not just "On My Mac".</p>
-</div>
-
+  <div class="section">
+    <h2>Quick Verify</h2>
+    <p>Run each automation once manually, then refresh <a href="/api/ios-setup-status">/api/ios-setup-status</a>. Required items should show as configured.</p>
+    <p class="muted">Backend: <code>{html.escape(backend_url)}</code></p>
+  </div>
 </body>
 </html>"""
 
@@ -1448,39 +1634,42 @@ def _sign_shortcut_bytes(unsigned_bytes: bytes, name: str = "shortcut") -> bytes
                 pass
 
 
+SHORTCUT_TEMPLATES = {
+    "walking": {
+        "name": "Vero Walking",
+        "activity": "Walking",
+        "is_charging": "false",
+        "use_location_action": False,
+        "location_label": "walking_trigger",
+    },
+    "charge_on": {
+        "name": "Vero Charging On",
+        "activity": "Stationary",
+        "is_charging": "true",
+        "use_location_action": False,
+        "location_label": "charging_trigger",
+    },
+    "charge_off": {
+        "name": "Vero Charging Off",
+        "activity": "Stationary",
+        "is_charging": "false",
+        "use_location_action": False,
+        "location_label": "charging_trigger",
+    },
+}
+SUPPORTED_SHORTCUT_KINDS = tuple(SHORTCUT_TEMPLATES.keys())
+
+
 def _build_shortcut_bytes(kind: str = "walking", sign: bool = True) -> bytes:
     """Generate shortcut bytes for all iOS automation types."""
     import plistlib
     import uuid
 
     kind = (kind or "walking").lower()
-    templates = {
-        "walking": {
-            "name": "Vero Walking",
-            "activity": "Walking",
-            "is_charging": "false",
-            "use_location_action": False,
-            "location_label": "walking_trigger",
-        },
-        "charge_on": {
-            "name": "Vero Charging On",
-            "activity": "Stationary",
-            "is_charging": "true",
-            "use_location_action": False,
-            "location_label": "charging_trigger",
-        },
-        "charge_off": {
-            "name": "Vero Charging Off",
-            "activity": "Stationary",
-            "is_charging": "false",
-            "use_location_action": False,
-            "location_label": "charging_trigger",
-        },
-    }
-    if kind not in templates:
+    if kind not in SHORTCUT_TEMPLATES:
         raise ValueError(f"Unknown shortcut kind: {kind}")
 
-    cfg = templates[kind]
+    cfg = SHORTCUT_TEMPLATES[kind]
     backend_url = _get_backend_url() + "/api/ios-telemetry"
     post_uuid = str(uuid.uuid4()).upper()
     loc_uuid = str(uuid.uuid4()).upper()
@@ -1573,6 +1762,42 @@ def _build_shortcut_bytes(kind: str = "walking", sign: bool = True) -> bytes:
     return _sign_shortcut_bytes(raw, cfg["name"]) if sign else raw
 
 
+def _build_zone_shortcut_bytes(zone_slug: str, transition: str, sign: bool = True) -> bytes:
+    import plistlib
+
+    clean_slug = agent_logic.normalize_zone_slug(zone_slug or "")
+    clean_transition = (transition or "").strip().lower()
+    if not clean_slug:
+        raise ValueError("zone_slug is required")
+    if clean_transition not in {"enter", "exit"}:
+        raise ValueError("transition must be 'enter' or 'exit'")
+
+    action_url = (
+        f"{_get_backend_url().rstrip('/')}/api/ios-zone-event"
+        f"?zone_slug={clean_slug}&transition={clean_transition}"
+    )
+    transition_label = "Arrive" if clean_transition == "enter" else "Leave"
+    shortcut = {
+        "WFWorkflowMinimumClientVersion": 900,
+        "WFWorkflowMinimumClientVersionString": "900",
+        "WFWorkflowName": f"Vero {clean_slug} {transition_label}",
+        "WFWorkflowTypes": [],
+        "WFWorkflowIcon": {"WFWorkflowIconGlyphNumber": 59511, "WFWorkflowIconStartColor": 4275765759},
+        "WFWorkflowActions": [
+            {
+                "WFWorkflowActionIdentifier": "is.workflow.actions.downloadurl",
+                "WFWorkflowActionParameters": {
+                    "WFURL": action_url,
+                    "WFHTTPMethod": "GET",
+                    "ShowHeaders": False,
+                },
+            }
+        ],
+    }
+    raw = plistlib.dumps(shortcut, fmt=plistlib.FMT_XML)
+    return _sign_shortcut_bytes(raw, f"{clean_slug}-{clean_transition}") if sign else raw
+
+
 @app.get("/setup/save-to-icloud")
 async def save_shortcut_to_icloud():
     """Save the walking helper shortcut to iCloud Drive and open Finder there."""
@@ -1617,13 +1842,39 @@ async def save_shortcut_to_desktop():
 
 
 @app.get("/setup/shortcut/download")
-async def download_shortcut(kind: str = "gps"):
+async def download_shortcut(kind: str = "walking"):
     from fastapi.responses import Response
+    kind = (kind or "walking").strip().lower()
     filename = f"Vero-{kind}.shortcut"
     try:
         shortcut_bytes = _build_shortcut_bytes(kind)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid shortcut kind")
+        valid = ", ".join(SUPPORTED_SHORTCUT_KINDS)
+        raise HTTPException(status_code=400, detail=f"Invalid shortcut kind. Valid kinds: {valid}")
+    return Response(
+        content=shortcut_bytes,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/setup/shortcut/download-zone")
+async def download_zone_shortcut(zone_slug: str, transition: str):
+    from fastapi.responses import Response
+
+    clean_slug = agent_logic.normalize_zone_slug(zone_slug or "")
+    clean_transition = (transition or "").strip().lower()
+    if not clean_slug:
+        raise HTTPException(status_code=400, detail="zone_slug is required")
+    if clean_transition not in {"enter", "exit"}:
+        raise HTTPException(status_code=400, detail="transition must be 'enter' or 'exit'")
+
+    transition_label = "arrive" if clean_transition == "enter" else "leave"
+    filename = f"Vero-zone-{clean_slug}-{transition_label}.shortcut"
+    try:
+        shortcut_bytes = _build_zone_shortcut_bytes(clean_slug, clean_transition)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     return Response(
         content=shortcut_bytes,
         media_type="application/octet-stream",
@@ -1639,7 +1890,7 @@ async def sign_all_shortcuts():
     if not shutil.which("shortcuts"):
         return HR("<p style='font-family:sans-serif;color:#f85149'>This endpoint only works when the backend is running locally on macOS.</p>")
     desktop = os.path.expanduser("~/Desktop")
-    kinds = ["walking", "charge_on", "charge_off"]
+    kinds = list(SUPPORTED_SHORTCUT_KINDS)
     saved = []
     failed = []
     for kind in kinds:
@@ -1671,12 +1922,13 @@ async def sign_all_shortcuts():
 async def analytics_today(db: Session = Depends(get_db)):
     """Daily analytics: time per category, productivity %, steps, LLM usage."""
     now = datetime.now(timezone.utc)
-    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start, today_end = agent_logic.user_day_bounds_utc(db, now)
+    user_tz = agent_logic.resolve_user_timezone(db)
 
     # Get all mac logs from today
     logs = (
         db.query(ActivityLog)
-        .filter(ActivityLog.device == "mac", ActivityLog.timestamp >= today_start)
+        .filter(ActivityLog.device == "mac", ActivityLog.timestamp >= today_start, ActivityLog.timestamp < today_end)
         .order_by(ActivityLog.timestamp)
         .all()
     )
@@ -1728,6 +1980,9 @@ async def analytics_today(db: Session = Depends(get_db)):
         "llm_used": llm_stats["daily_used"],
         "llm_cap": llm_stats["daily_cap"],
         "log_count": len(logs),
+        "timezone": user_tz.key,
+        "day_start_utc": today_start.replace(tzinfo=timezone.utc).isoformat(),
+        "day_end_utc": today_end.replace(tzinfo=timezone.utc).isoformat(),
     }
 
 

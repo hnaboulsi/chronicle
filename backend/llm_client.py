@@ -163,6 +163,60 @@ async def generate_activity_summary(app_name: str, window_title: str) -> str:
     return await ask_llm(prompt, model_kind="default")
 
 
+def _safe_confidence(value, default: float = 0.5) -> float:
+    try:
+        parsed = float(value)
+        return min(1.0, max(0.0, parsed))
+    except Exception:
+        return default
+
+
+async def generate_activity_summary_structured(entry, context_logs: list) -> dict:
+    app_name = (getattr(entry, "app_name", None) or "Unknown App").strip()
+    title = (getattr(entry, "window_title", None) or "").strip()
+    focus_modes = {"focused", "mixed", "distracted", "unknown"}
+    lines = []
+    for log in context_logs[:15]:
+        ts = getattr(log, "timestamp", None)
+        app = getattr(log, "app_name", None) or "Unknown"
+        ttl = getattr(log, "window_title", None) or ""
+        when = ts.isoformat() if ts else ""
+        lines.append(f"- {when} | {app}: {ttl[:100]}")
+    context_text = "\n".join(lines) if lines else "- no nearby context"
+
+    prompt = (
+        "You are Vero. Generate a concise actionable brief for one activity log.\n\n"
+        f"Selected log app: {app_name}\n"
+        f"Selected log title: {title}\n"
+        f"Nearby context logs:\n{context_text}\n\n"
+        "Return JSON only with keys:\n"
+        "- summary_text: 1-2 short sentences\n"
+        "- focus_assessment: focused|mixed|distracted|unknown\n"
+        "- confidence: 0..1\n"
+        "- signals: array of 2-4 short evidence strings\n"
+        "Keep it direct and useful."
+    )
+    result = _parse_json_response(await ask_llm(prompt, model_kind="default"))
+    summary_text = str(result.get("summary_text") or "").strip()
+    focus_assessment = str(result.get("focus_assessment") or "unknown").strip().lower()
+    confidence = _safe_confidence(result.get("confidence"), 0.55)
+    signals = result.get("signals") if isinstance(result.get("signals"), list) else []
+    signals = [str(s).strip() for s in signals if str(s).strip()][:4]
+    if focus_assessment not in focus_modes:
+        focus_assessment = "unknown"
+    if not summary_text:
+        return {}
+    if not signals:
+        signals = [f"app: {app_name}", f"title: {title[:80] or 'n/a'}"]
+    return {
+        "summary_text": summary_text,
+        "focus_assessment": focus_assessment,
+        "confidence": confidence,
+        "signals": signals,
+        "fallback_used": False,
+    }
+
+
 async def classify_activity_context(recent_activities: list, user_self_report: str = "", recent_history: list = None) -> dict:
     if not recent_activities:
         return {"category": "unknown", "summary": ""}

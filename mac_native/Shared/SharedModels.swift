@@ -27,6 +27,7 @@ struct DashboardState: Codable {
     var current_activity_summary: String?
     var current_location: String?
     var ios_recent_event: Bool?
+    var user_timezone: String?
     var sleep_status_note: String?
     var service_health: String?
     var tracking_enabled: String?
@@ -137,6 +138,46 @@ struct CalloutResponse: Codable {
 struct CheckinResponse: Codable {
     let checkin: String?
     let guess: String?
+}
+
+struct IOSSetupChecklistItem: Codable, Hashable {
+    let id: String
+    let label: String
+    let configured: Bool?
+}
+
+struct IOSSetupZone: Codable, Hashable {
+    let id: Int?
+    let slug: String
+    let name: String
+    let arrive_url: String?
+    let leave_url: String?
+    let arrive_shortcut_url: String?
+    let leave_shortcut_url: String?
+}
+
+struct IOSSetupEvents: Codable, Hashable {
+    let walking_url: String
+    let charge_on_url: String
+    let charge_off_url: String
+}
+
+struct IOSSetupPackResponse: Codable {
+    let backend_url: String
+    let zones: [IOSSetupZone]
+    let required: [IOSSetupChecklistItem]
+    let optional: [IOSSetupChecklistItem]
+    let events: IOSSetupEvents
+    let shortcuts: [String: String]?
+}
+
+struct IOSSetupStatusResponse: Codable {
+    let ios_recent_ping: Bool?
+    let last_ios_ping_age_seconds: Int?
+    let sleep_source: String?
+    let sleep_status_note: String?
+    let required: [IOSSetupChecklistItem]?
+    let optional: [IOSSetupChecklistItem]?
 }
 
 enum NotificationLevel: String, CaseIterable, Identifiable {

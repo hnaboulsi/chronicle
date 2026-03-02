@@ -111,6 +111,10 @@ private struct ZoneEditorSheet: View {
                     TextField("Name", text: $editable.name)
                     TextField("Slug", text: $editable.slug)
                         .disabled(editable.is_default ?? false)
+                        .onChange(of: editable.slug) { value in
+                            guard !(editable.is_default ?? false) else { return }
+                            editable.slug = slugify(value)
+                        }
                     Toggle("Enabled", isOn: $editable.enabled)
                 }
 
@@ -158,6 +162,14 @@ private struct ZoneEditorSheet: View {
                     }
                 }
 
+                if !slugValidationMessage.isEmpty {
+                    Section {
+                        Text(slugValidationMessage)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                }
+
                 if !(editable.is_default ?? false) {
                     Section {
                         Button("Delete Zone", role: .destructive) {
@@ -187,7 +199,7 @@ private struct ZoneEditorSheet: View {
                             dismiss()
                         }
                     }
-                    .disabled(editable.name.isEmpty || editable.slug.isEmpty)
+                    .disabled(editable.name.isEmpty || editable.slug.isEmpty || !slugValidationMessage.isEmpty)
                 }
             }
             .confirmationDialog("Delete this zone?", isPresented: $showDeleteConfirmation) {
@@ -202,5 +214,19 @@ private struct ZoneEditorSheet: View {
                 Text("Are you sure you want to delete \"\(editable.name)\"?")
             }
         }
+    }
+
+    private var slugValidationMessage: String {
+        if editable.slug.isEmpty { return "" }
+        let pattern = "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        let range = editable.slug.range(of: pattern, options: .regularExpression)
+        return range == nil ? "Slug must use lowercase letters, numbers, and hyphens only." : ""
+    }
+
+    private func slugify(_ value: String) -> String {
+        value
+            .lowercased()
+            .replacingOccurrences(of: "[^a-z0-9]+", with: "-", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
     }
 }

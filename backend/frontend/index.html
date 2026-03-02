@@ -12,7 +12,6 @@
     <link rel="manifest" href="manifest.json">
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="apple-touch-icon" href="apple-touch-icon.svg">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -98,6 +97,7 @@
             </div>
 
             <!-- Chat Input -->
+            <div class="mobile-view-section" data-view="dashboard">
             <div class="bg-white border border-gray-200 rounded-xl p-4 flex gap-3">
                 <input type="text" id="chat-input" class="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-4 py-2 text-sm text-gray-900 focus:outline-none focus:border-gray-400 placeholder-gray-400" placeholder="Tell me what you're doing..." />
                 <button id="chat-send" class="px-4 py-2 bg-gray-900 text-white rounded-lg font-medium text-sm hover:bg-gray-800">Send</button>
@@ -106,9 +106,10 @@
             <div id="chat-reply" class="hidden bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800">
                 <span id="chat-reply-text"></span>
             </div>
+            </div>
 
             <!-- Recent Chat -->
-            <section class="bg-white border border-gray-200 rounded-xl">
+            <section class="bg-white border border-gray-200 rounded-xl mobile-view-section" data-view="dashboard">
                 <div class="px-5 py-3.5 border-b border-gray-100">
                     <h2 class="font-semibold text-gray-900">Recent Chat</h2>
                 </div>
@@ -118,7 +119,7 @@
             </section>
 
             <!-- KPI Tiles -->
-            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mobile-view-section" data-view="dashboard">
                 <div class="bg-white border border-gray-200 rounded-xl p-5">
                     <div id="stat-active" class="text-3xl font-semibold text-gray-900 mb-1">0h 0m</div>
                     <div class="text-xs text-gray-400 font-medium uppercase tracking-wider">Active Today</div>
@@ -138,7 +139,7 @@
             </div>
 
             <!-- Device Status -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mobile-view-section" data-view="dashboard">
                 <div class="bg-white border border-gray-200 rounded-xl p-5" id="card-mac">
                     <p class="text-xs text-gray-400 font-medium uppercase tracking-wider mb-2">MacBook</p>
                     <p class="text-lg font-semibold text-gray-900 mb-1" id="mac-status">Waiting...</p>
@@ -156,7 +157,7 @@
             </div>
 
             <!-- Focus Mode & AI Reading -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mobile-view-section" data-view="dashboard">
                 <div class="bg-white border border-gray-200 rounded-xl p-5" id="card-mode">
                     <p class="text-xs text-gray-400 font-medium uppercase tracking-wider mb-2">Focus Mode</p>
                     <p class="text-lg font-semibold text-gray-900 mb-1" id="focus-status">Inactive</p>
@@ -170,7 +171,7 @@
             </div>
 
             <!-- Today's Breakdown -->
-            <section class="bg-white border border-gray-200 rounded-xl">
+            <section class="bg-white border border-gray-200 rounded-xl mobile-view-section" data-view="dashboard">
                 <div class="px-5 py-3.5 border-b border-gray-100">
                     <h2 class="font-semibold text-gray-900">Today's Breakdown</h2>
                 </div>
@@ -180,7 +181,7 @@
             </section>
 
             <!-- Activity Calendar -->
-            <section class="bg-white border border-gray-200 rounded-xl">
+            <section class="bg-white border border-gray-200 rounded-xl mobile-view-section" data-view="activity">
                 <div class="px-5 py-3.5 border-b border-gray-100">
                     <h2 class="font-semibold text-gray-900">Weekly Activity</h2>
                     <p class="text-xs text-gray-400 mt-0.5">Last 7 days, 8am–10pm</p>
@@ -201,7 +202,7 @@
             </section>
 
             <!-- Activity Log -->
-            <section class="bg-white border border-gray-200 rounded-xl">
+            <section class="bg-white border border-gray-200 rounded-xl mobile-view-section" data-view="activity">
                 <div class="px-5 py-3.5 border-b border-gray-100 flex justify-between items-center">
                     <h2 class="font-semibold text-gray-900">Activity Log</h2>
                     <div class="flex items-center gap-2">
@@ -232,7 +233,7 @@
             </section>
 
             <!-- Hourly Recaps -->
-            <section class="bg-white border border-gray-200 rounded-xl">
+            <section class="bg-white border border-gray-200 rounded-xl mobile-view-section" data-view="activity">
                 <div class="px-5 py-3.5 border-b border-gray-100 flex items-center justify-between">
                     <h2 class="font-semibold text-gray-900">Hourly Recaps</h2>
                     <button id="trigger-recap-btn" onclick="triggerHourlyRecap()" class="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 font-medium">Generate Now</button>
@@ -243,7 +244,7 @@
             </section>
 
             <!-- System Status -->
-            <section class="bg-white border border-gray-200 rounded-xl" id="control-center-repair">
+            <section class="bg-white border border-gray-200 rounded-xl mobile-view-section" data-view="dashboard" id="control-center-repair">
                 <div class="px-5 py-3.5 border-b border-gray-100">
                     <h2 class="font-semibold text-gray-900">System</h2>
                 </div>
@@ -272,7 +273,7 @@
             </section>
 
             <!-- Footer -->
-            <footer class="text-center text-xs text-gray-400 border-t border-gray-200 pt-6 pb-8">
+            <footer class="text-center text-xs text-gray-400 border-t border-gray-200 pt-6 pb-8 mobile-view-section" data-view="dashboard">
                 <div class="flex justify-center gap-6">
                     <span class="text-gray-500 font-medium">Vero</span>
                     <a href="/api/export?days=30" class="hover:text-gray-600">Export CSV</a>
@@ -376,6 +377,7 @@
                 <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Service</h3>
                 <p class="text-xs text-gray-400 mb-2">Backend: <span id="setting-health">Checking...</span></p>
                 <a href="/setup/ios" class="text-xs text-blue-500 hover:text-blue-600" target="_blank">iPhone Setup Guide</a>
+                <button class="setting-action-btn mt-3" id="rerun-onboarding-btn" type="button">Run Onboarding Again</button>
             </div>
             <button class="w-full bg-gray-900 text-white font-medium py-2.5 rounded-lg hover:bg-gray-800 mt-6" id="settings-save-btn">Save Settings</button>
         </div>
@@ -388,7 +390,7 @@
                 <h3 class="font-semibold text-gray-900">Activity Summary</h3>
                 <button id="close-modal-btn" class="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
             </div>
-            <p id="summary-text" class="text-sm text-gray-600">Loading insights...</p>
+            <p id="summary-text" class="text-sm text-gray-600 whitespace-pre-line">Loading insights...</p>
         </div>
     </div>
 
@@ -400,7 +402,7 @@
         <button class="mobile-nav-item flex-1 py-3.5 flex flex-col items-center gap-1" data-view="activity" onclick="switchView('activity')">
             <span class="text-xs font-medium text-gray-400">Activity</span>
         </button>
-        <button class="mobile-nav-item flex-1 py-3.5 flex flex-col items-center gap-1" data-view="settings" onclick="switchView('settings'); openSettings()">
+        <button class="mobile-nav-item flex-1 py-3.5 flex flex-col items-center gap-1" data-view="settings" onclick="switchView('settings')">
             <span class="text-xs font-medium text-gray-400">Settings</span>
         </button>
     </nav>

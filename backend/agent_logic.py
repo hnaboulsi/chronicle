@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -20,7 +21,7 @@ DEFAULTS = {
     "backend_mode": "railway_primary",
     "llm_mode": "balanced",
     "ai_provider": "auto",
-    "hourly_summaries_enabled": "true",
+    "hourly_summaries_enabled": "false",
     "classification_interval_seconds": "1800",  # 30-min default to conserve API budget
     "llm_daily_cap": "30",   # Gemini free tier is generous; 30 is a safe daily default
     "sleep_source": "iphone_only",
@@ -28,62 +29,8 @@ DEFAULTS = {
     "tracking_enabled": "true",
 }
 
-DEFAULT_ZONES = [
-    {
-        "slug": "anchor-house",
-        "name": "Anchor House",
-        "radius_meters": 90,
-        "enabled": True,
-        "zone_type": "home",
-        "focus_mode": "",
-        "sort_order": 10,
-    },
-    {
-        "slug": "dwinelle-hall",
-        "name": "Dwinelle Hall",
-        "radius_meters": 75,
-        "enabled": True,
-        "zone_type": "lecture",
-        "focus_mode": "Class",
-        "sort_order": 20,
-    },
-    {
-        "slug": "wheeler-hall",
-        "name": "Wheeler Hall",
-        "radius_meters": 75,
-        "enabled": True,
-        "zone_type": "lecture",
-        "focus_mode": "Class",
-        "sort_order": 30,
-    },
-    {
-        "slug": "vlsb",
-        "name": "VLSB",
-        "radius_meters": 75,
-        "enabled": True,
-        "zone_type": "study",
-        "focus_mode": "Deep Work",
-        "sort_order": 40,
-    },
-    {
-        "slug": "doe-moffitt",
-        "name": "Doe/Moffitt Library",
-        "radius_meters": 90,
-        "enabled": False,
-        "zone_type": "study",
-        "focus_mode": "Deep Work",
-        "sort_order": 50,
-    },
-    {
-        "slug": "rsf",
-        "name": "RSF",
-        "radius_meters": 90,
-        "enabled": False,
-        "zone_type": "gym",
-        "focus_mode": "",
-        "sort_order": 60,
-    },
-]
+DEFAULT_ZONES: list[dict] = []
+SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
 def get_state(db: Session, key: str, default: str = "") -> str:
@@ -114,6 +61,8 @@ def ensure_default_settings(db: Session):
 
 
 def ensure_default_zones(db: Session):
+    if not DEFAULT_ZONES:
+        return
     # Only seed default zones on first run (empty table)
     if db.query(LocationZone).count() > 0:
         return
@@ -150,24 +99,65 @@ def get_zone(db: Session, slug: str) -> LocationZone | None:
     return db.query(LocationZone).filter(LocationZone.slug == slug).first()
 
 
+def normalize_zone_slug(value: str) -> str:
+    cleaned = re.sub(r"[^a-z0-9]+", "-", value.strip().lower())
+    return cleaned.strip("-")
+
+
+def _parse_bool(value, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text = str(value).strip().lower()
+    if text in {"true", "1", "yes", "y", "on"}:
+        return True
+    if text in {"false", "0", "no", "n", "off"}:
+        return False
+    return default
+
+
 def upsert_zone(db: Session, payload: dict, zone_id: int | None = None) -> dict:
     ensure_default_zones(db)
+    incoming_slug = normalize_zone_slug(str(payload.get("slug") or ""))
+    incoming_name = str(payload.get("name") or "").strip()
     zone = None
     if zone_id is not None:
         zone = db.query(LocationZone).filter(LocationZone.id == zone_id).first()
-    elif payload.get("slug"):
-        zone = db.query(LocationZone).filter(LocationZone.slug == payload["slug"]).first()
+    elif incoming_slug:
+        zone = db.query(LocationZone).filter(LocationZone.slug == incoming_slug).first()
 
     if zone is None:
         zone = LocationZone()
         db.add(zone)
 
-    zone.slug = str(payload.get("slug") or zone.slug or "").strip()
-    zone.name = str(payload.get("name") or zone.name or "").strip()
-    if not zone.slug or not zone.name:
-        raise ValueError("slug and name are required")
+    if incoming_slug:
+        zone.slug = incoming_slug
+    elif incoming_name and not zone.slug:
+        zone.slug = normalize_zone_slug(incoming_name)
+    else:
+        zone.slug = normalize_zone_slug(str(zone.slug or ""))
+
+    zone.name = incoming_name or str(zone.name or "").strip()
+    if not zone.name:
+        raise ValueError("name is required")
+    if not zone.slug:
+        raise ValueError("slug is required")
+    if not SLUG_RE.match(zone.slug):
+        raise ValueError("slug must be lowercase letters/numbers with hyphens only")
+
+    db.flush()
+    duplicate_query = db.query(LocationZone).filter(LocationZone.slug == zone.slug)
+    if zone.id is not None:
+        duplicate_query = duplicate_query.filter(LocationZone.id != zone.id)
+    duplicate = duplicate_query.first()
+    if duplicate:
+        raise ValueError("slug already exists")
+
     zone.radius_meters = max(25, int(payload.get("radius_meters", zone.radius_meters or 75)))
-    zone.enabled = bool(payload.get("enabled", zone.enabled if zone.enabled is not None else True))
+    zone.enabled = _parse_bool(payload.get("enabled"), zone.enabled if zone.enabled is not None else True)
     zone.zone_type = str(payload.get("zone_type", zone.zone_type or "custom")).strip() or "custom"
     zone.focus_mode = str(payload.get("focus_mode", zone.focus_mode or "")).strip()
     zone.sort_order = int(payload.get("sort_order", zone.sort_order or 0))
@@ -182,10 +172,8 @@ def clear_recent_logs(db: Session, minutes: int | None = None) -> int:
         cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes)
         count = db.query(ActivityLog).filter(ActivityLog.timestamp >= cutoff).delete()
     else:
-        today = datetime.now(timezone.utc).date()
-        count = db.query(ActivityLog).filter(
-            ActivityLog.timestamp >= datetime(today.year, today.month, today.day)
-        ).delete()
+        today_start_utc, _ = user_day_bounds_utc(db, datetime.now(timezone.utc))
+        count = db.query(ActivityLog).filter(ActivityLog.timestamp >= today_start_utc).delete()
     db.commit()
     return count
 
@@ -199,8 +187,28 @@ def delete_zone(db: Session, zone_id: int) -> bool:
     return True
 
 
-def _today_key(now: datetime) -> str:
-    return now.strftime("%Y-%m-%d")
+def resolve_user_timezone(db: Session) -> ZoneInfo:
+    tz_name = get_state(db, "user_timezone", DEFAULTS["user_timezone"])
+    try:
+        return ZoneInfo(tz_name)
+    except Exception:
+        return ZoneInfo(DEFAULTS["user_timezone"])
+
+
+def local_day_key(db: Session, now: datetime | None = None) -> str:
+    now = now or datetime.now(timezone.utc)
+    return now.astimezone(resolve_user_timezone(db)).strftime("%Y-%m-%d")
+
+
+def user_day_bounds_utc(db: Session, now: datetime | None = None) -> tuple[datetime, datetime]:
+    now = now or datetime.now(timezone.utc)
+    tz = resolve_user_timezone(db)
+    local_now = now.astimezone(tz)
+    local_start = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    local_end = local_start + timedelta(days=1)
+    utc_start = local_start.astimezone(timezone.utc).replace(tzinfo=None)
+    utc_end = local_end.astimezone(timezone.utc).replace(tzinfo=None)
+    return utc_start, utc_end
 
 
 def _safe_int(value: str, default: int) -> int:
@@ -236,7 +244,7 @@ def _age_seconds(value: str | None, now: datetime | None = None) -> int | None:
 def llm_usage_snapshot(db: Session, now: datetime | None = None) -> dict:
     now = now or datetime.now(timezone.utc)
     cap = _safe_int(get_state(db, "llm_daily_cap", DEFAULTS["llm_daily_cap"]), 30)
-    today = _today_key(now)
+    today = local_day_key(db, now)
     used_raw = get_state(db, f"llm_calls:{today}", "0")
     used = _safe_int(used_raw, 0)
     return {"daily_cap": cap, "daily_used": used, "daily_remaining": max(cap - used, 0)}
@@ -249,7 +257,7 @@ def can_use_llm(db: Session, now: datetime | None = None) -> bool:
 
 def register_llm_call(db: Session, now: datetime | None = None):
     now = now or datetime.now(timezone.utc)
-    today = _today_key(now)
+    today = local_day_key(db, now)
     key = f"llm_calls:{today}"
     used = _safe_int(get_state(db, key, "0"), 0)
     set_state(db, key, str(used + 1))
@@ -449,9 +457,12 @@ def _maybe_start_session(db: Session, category: str, summary: str, now: datetime
 
 
 async def _generate_and_store_hourly_summary(db: Session, now: datetime):
-    # Snap to clean hour boundaries: cover the previous complete hour
-    hour_end = now.replace(minute=0, second=0, microsecond=0)
-    hour_start = hour_end - timedelta(hours=1)
+    tz = resolve_user_timezone(db)
+    local_now = now.astimezone(tz)
+    local_hour_end = local_now.replace(minute=0, second=0, microsecond=0)
+    local_hour_start = local_hour_end - timedelta(hours=1)
+    hour_start = local_hour_start.astimezone(timezone.utc).replace(tzinfo=None)
+    hour_end = local_hour_end.astimezone(timezone.utc).replace(tzinfo=None)
 
     # Skip if we already have a summary for this hour
     existing = db.query(HourlySummary).filter(HourlySummary.hour_start == hour_start).first()
@@ -462,7 +473,7 @@ async def _generate_and_store_hourly_summary(db: Session, now: datetime):
     if not logs:
         return
 
-    hour_label = f"{hour_start.strftime('%I:%M %p')} — {hour_end.strftime('%I:%M %p')}"
+    hour_label = f"{local_hour_start.strftime('%I:%M %p')} — {local_hour_end.strftime('%I:%M %p')} ({tz.key})"
     result = await llm_client.generate_hourly_summary(logs, hour_label)
 
     summary = HourlySummary(
@@ -477,13 +488,7 @@ async def _generate_and_store_hourly_summary(db: Session, now: datetime):
 
 def _guess_activity(location: str, prev_location: str, now: datetime, db: Session) -> str:
     loc = location.lower()
-    tz_name = get_state(db, "user_timezone", DEFAULTS["user_timezone"])
-    try:
-        tz = ZoneInfo(tz_name)
-    except Exception:
-        log.debug("Invalid timezone %r, falling back to %s", tz_name, DEFAULTS["user_timezone"])
-        tz = ZoneInfo(DEFAULTS["user_timezone"])
-    local_hour = now.replace(tzinfo=ZoneInfo("UTC")).astimezone(tz).hour
+    local_hour = now.astimezone(resolve_user_timezone(db)).hour
 
     study_places = {"library", "vlsb", "evans", "moffitt", "doe", "soda", "cory", "class", "lecture", "campus"}
     food_places = {"student union", "crossroads", "cafe", "restaurant", "dining", "golden bear", "grab"}
@@ -576,13 +581,7 @@ def _handle_location_change(db: Session, current_location: str, now: datetime, z
 
 
 def _update_sleep_state(db: Session, now: datetime, activity_type: str, is_charging: bool | None):
-    tz_name = get_state(db, "user_timezone", DEFAULTS["user_timezone"])
-    try:
-        tz = ZoneInfo(tz_name)
-    except Exception:
-        log.debug("Invalid timezone %r, falling back to %s", tz_name, DEFAULTS["user_timezone"])
-        tz = ZoneInfo(DEFAULTS["user_timezone"])
-    local_hour = now.replace(tzinfo=ZoneInfo("UTC")).astimezone(tz).hour
+    local_hour = now.astimezone(resolve_user_timezone(db)).hour
     if local_hour >= 22 or local_hour <= 4:
         if is_charging and activity_type == "Stationary":
             set_state(db, "user_asleep", "true")
@@ -647,14 +646,16 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session):
 
     if prev_mac_ping_str and not get_state(db, "pending_checkin"):
         try:
-            prev_ping = datetime.fromisoformat(prev_mac_ping_str)
+            prev_ping = _parse_iso_dt(prev_mac_ping_str)
+            if not prev_ping:
+                raise ValueError("invalid previous ping timestamp")
             offline_seconds = (now - prev_ping).total_seconds()
             last_checkin_str = get_state(db, "last_user_checkin")
             checkin_stale = True
             if last_checkin_str:
                 try:
-                    last_ci = datetime.fromisoformat(last_checkin_str)
-                    checkin_stale = (now - last_ci).total_seconds() > 1800
+                    last_ci = _parse_iso_dt(last_checkin_str)
+                    checkin_stale = (now - last_ci).total_seconds() > 1800 if last_ci else True
                 except Exception:
                     pass
             if offline_seconds > 900 and checkin_stale:
@@ -676,7 +677,7 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session):
         return
 
     last_check_str = get_state(db, "last_vagueness_check")
-    last_check = datetime.fromisoformat(last_check_str) if last_check_str else datetime.min
+    last_check = _parse_iso_dt(last_check_str) or datetime.min.replace(tzinfo=timezone.utc)
 
     classification_interval = _safe_int(
         get_state(db, "classification_interval_seconds", DEFAULTS["classification_interval_seconds"]),
@@ -723,7 +724,7 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session):
             set_state(db, "callout_summary", "")
 
     last_summary_str = get_state(db, "last_hourly_summary")
-    last_summary = datetime.fromisoformat(last_summary_str) if last_summary_str else datetime.min
+    last_summary = _parse_iso_dt(last_summary_str) or datetime.min.replace(tzinfo=timezone.utc)
     summaries_enabled = get_state(db, "hourly_summaries_enabled", DEFAULTS["hourly_summaries_enabled"]) == "true"
     if summaries_enabled and (now - last_summary).total_seconds() > 1800 and can_use_llm(db, now):
         set_state(db, "last_hourly_summary", now.isoformat())
@@ -759,7 +760,9 @@ def _handle_walking_transition(db: Session, now: datetime, is_walking: bool, loc
         walk_to = get_state(db, "walk_current_location") or location_label or get_state(db, "current_location")
         if walk_start_str:
             try:
-                walk_start = datetime.fromisoformat(walk_start_str)
+                walk_start = _parse_iso_dt(walk_start_str)
+                if not walk_start:
+                    raise ValueError("invalid walk start time")
                 duration_min = (now - walk_start).total_seconds() / 60
                 if duration_min >= 3:
                     _queue_walk_event(db, walk_from, walk_to, walk_start, now)

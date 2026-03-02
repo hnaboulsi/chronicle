@@ -16,6 +16,31 @@ function escAttr(str) {
         .replace(/>/g, '&gt;');
 }
 
+function slugify(value) {
+    return String(value || '')
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+}
+
+function effectiveBackendBase() {
+    const fromState = latestStates && latestStates.backend_target_url
+        ? String(latestStates.backend_target_url).trim()
+        : '';
+    const fallback = window.location.origin || '';
+    return (fromState || fallback || '').replace(/\/+$/, '');
+}
+
+function zoneAutomationUrls(slug) {
+    const cleanSlug = slugify(slug || '');
+    const base = effectiveBackendBase();
+    return {
+        arrive: `${base}/api/ios-zone-event?zone_slug=${encodeURIComponent(cleanSlug)}&transition=enter`,
+        leave: `${base}/api/ios-zone-event?zone_slug=${encodeURIComponent(cleanSlug)}&transition=exit`,
+    };
+}
+
 // ── DOM refs ──
 const clockEl = document.getElementById('clock');
 const macStatus = document.getElementById('mac-status');
@@ -41,13 +66,79 @@ const iosSetupDetailEl = document.getElementById('ios-setup-detail');
 const nextStepStatusEl = document.getElementById('next-step-status');
 const nextStepDetailEl = document.getElementById('next-step-detail');
 let latestStates = null;
+let uiTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+
+function parseServerTimestamp(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+    if (/Z$|[+-]\d{2}:\d{2}$/.test(raw)) {
+        const dt = new Date(raw);
+        return Number.isNaN(dt.getTime()) ? null : dt;
+    }
+    const dt = new Date(`${raw}Z`);
+    return Number.isNaN(dt.getTime()) ? null : dt;
+}
+
+function formatTime(value) {
+    const dt = value instanceof Date ? value : parseServerTimestamp(value);
+    if (!dt) return '';
+    return dt.toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+        timeZone: uiTimezone,
+    });
+}
+
+function formatDate(value) {
+    const dt = value instanceof Date ? value : parseServerTimestamp(value);
+    if (!dt) return '';
+    return dt.toLocaleDateString([], { month: 'short', day: 'numeric', timeZone: uiTimezone });
+}
+
+function localHourKey(value) {
+    const dt = value instanceof Date ? value : parseServerTimestamp(value);
+    if (!dt) return '';
+    return new Intl.DateTimeFormat('sv-SE', {
+        timeZone: uiTimezone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        hour12: false,
+    }).format(dt);
+}
+
+function localDateKey(value) {
+    const dt = value instanceof Date ? value : parseServerTimestamp(value);
+    if (!dt) return '';
+    return new Intl.DateTimeFormat('sv-SE', {
+        timeZone: uiTimezone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+    }).format(dt);
+}
+
+function localHourNumber(value) {
+    const dt = value instanceof Date ? value : parseServerTimestamp(value);
+    if (!dt) return null;
+    const hourText = new Intl.DateTimeFormat('en-US', {
+        timeZone: uiTimezone,
+        hour: '2-digit',
+        hour12: false,
+    }).format(dt);
+    const parsed = parseInt(hourText, 10);
+    return Number.isNaN(parsed) ? null : parsed;
+}
 
 // ── Clock ──
 function updateClock() {
     clockEl.textContent = new Date().toLocaleString(undefined, {
         weekday: 'short', month: 'short', day: 'numeric',
         hour: '2-digit', minute: '2-digit', second: '2-digit',
-        hour12: true
+        hour12: true,
+        timeZone: uiTimezone,
     });
 }
 setInterval(updateClock, 1000);
@@ -92,8 +183,8 @@ function connectSSE() {
 }
 
 // ── Fallback polling (if SSE fails) ──
-async function fetchData() {
-    if (sseConnected) return;
+async function fetchData(force = false) {
+    if (sseConnected && !force) return;
     try {
         const [logsRes, stateRes] = await Promise.all([
             fetch(`${API}/api/logs?limit=15`),
@@ -110,6 +201,7 @@ async function fetchData() {
 // ── Update all UI ──
 function updateUI(logs, states) {
     latestStates = states;
+    if (states && states.user_timezone) uiTimezone = states.user_timezone;
     // Mac Card
     const isMacBrowser = /Mac/.test(navigator.platform || navigator.userAgent || '');
     const macState = states.mac_status || (states.mac_online === true ? 'online' : 'offline');
@@ -187,9 +279,7 @@ function updateUI(logs, states) {
         tr.className = 'fade-in';
         tr.style.animationDelay = `${i * 0.03}s`;
 
-        let ts = entry.timestamp;
-        if (ts && !ts.endsWith('Z')) ts += 'Z';
-        const time = ts ? new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }) : '';
+        const time = formatTime(entry.timestamp);
         const isMac = entry.device === 'mac';
 
         const tdTime = document.createElement('td');
@@ -335,9 +425,9 @@ function buildLiveHourCard(nowLogs) {
     hourStart.setMinutes(0, 0, 0);
     const hourEnd = new Date(hourStart.getTime() + 3600000);
 
-    const dateStr = now.toLocaleDateString([], { month: 'short', day: 'numeric' });
-    const timeStr = hourStart.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
-    const endTimeStr = hourEnd.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+    const dateStr = now.toLocaleDateString([], { month: 'short', day: 'numeric', timeZone: uiTimezone });
+    const timeStr = hourStart.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: uiTimezone });
+    const endTimeStr = hourEnd.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: uiTimezone });
 
     // Top apps
     const appCounts = {};
@@ -389,21 +479,16 @@ async function fetchHourlySummaries() {
         } catch { }
 
         // Build live current-hour card from logs (no AI needed)
-        const nowHour = new Date().getHours();
-        const nowDate = new Date().toDateString();
+        const nowHourKey = localHourKey(new Date());
         const nowLogs = allLogsCache.filter(log => {
             if (log.device !== 'mac') return false;
-            const ts = log.timestamp + (log.timestamp.endsWith('Z') ? '' : 'Z');
-            const d = new Date(ts);
-            return d.getHours() === nowHour && d.toDateString() === nowDate;
+            return localHourKey(log.timestamp) === nowHourKey;
         });
 
         // Check if a completed summary already exists for the current hour
-        const currentHourStart = new Date();
-        currentHourStart.setMinutes(0, 0, 0, 0);
         const hasCompletedSummary = data.some(s => {
-            const ts = s.hour_start + (s.hour_start.endsWith('Z') ? '' : 'Z');
-            return Math.abs(new Date(ts) - currentHourStart) < 60000;
+            const source = s.hour_start_local || s.hour_start_utc || s.hour_start;
+            return localHourKey(source) === nowHourKey;
         });
 
         const liveCard = (!hasCompletedSummary) ? buildLiveHourCard(nowLogs) : '';
@@ -414,20 +499,17 @@ async function fetchHourlySummaries() {
         }
 
         const completedCards = data.map(s => {
-            let ts = s.hour_start;
-            if (ts && !ts.endsWith('Z')) ts += 'Z';
-            const date = new Date(ts);
+            const source = s.hour_start_local || s.hour_start_utc || s.hour_start;
+            const date = parseServerTimestamp(source);
+            if (!date) return '';
             const endDate = new Date(date.getTime() + 3600000);
-            const dateStr = date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-            const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
-            const endTimeStr = endDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
-            const hour = date.getHours();
-            const logDate = date.toDateString();
+            const dateStr = date.toLocaleDateString([], { month: 'short', day: 'numeric', timeZone: uiTimezone });
+            const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: uiTimezone });
+            const endTimeStr = endDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: uiTimezone });
+            const hourKey = localHourKey(date);
 
             const hourLogs = allLogsCache.filter(log => {
-                const logTs = log.timestamp + (log.timestamp.endsWith('Z') ? '' : 'Z');
-                const d = new Date(logTs);
-                return d.getHours() === hour && d.toDateString() === logDate && log.device === 'mac';
+                return log.device === 'mac' && localHourKey(log.timestamp) === hourKey;
             });
             const appCounts = {};
             hourLogs.forEach(log => {
@@ -472,9 +554,11 @@ async function renderCalendar() {
         // Group logs by day + hour
         const dayMap = {}; // date ISO string -> { hour -> entries }
         allLogsCache.forEach(log => {
-            const logDate = new Date(log.timestamp + (log.timestamp.endsWith('Z') ? '' : 'Z'));
-            const dateKey = logDate.toISOString().split('T')[0];
-            const hour = logDate.getHours();
+            const logDate = parseServerTimestamp(log.timestamp);
+            if (!logDate) return;
+            const dateKey = localDateKey(logDate);
+            const hour = localHourNumber(logDate);
+            if (hour == null) return;
             if (!dayMap[dateKey]) dayMap[dateKey] = {};
             if (!dayMap[dateKey][hour]) dayMap[dateKey][hour] = [];
             dayMap[dateKey][hour].push(log);
@@ -485,16 +569,17 @@ async function renderCalendar() {
         for (let i = 6; i >= 0; i--) {
             const d = new Date();
             d.setDate(d.getDate() - i);
-            days.push(d.toISOString().split('T')[0]);
+            days.push({
+                key: localDateKey(d),
+                label: d.toLocaleDateString([], { weekday: 'short', timeZone: uiTimezone }),
+            });
         }
 
         let html = '<div style="display:grid;grid-template-columns:60px repeat(7,1fr);gap:8px;align-items:start;">';
         // Header row with day names
         html += '<div style="font-size:12px;color:#6B7280;font-weight:600;"></div>';
-        days.forEach((day, i) => {
-            const d = new Date(day);
-            const dayName = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][d.getDay()];
-            html += `<div style="font-size:12px;color:#6B7280;font-weight:600;text-align:center;">${dayName}</div>`;
+        days.forEach((day) => {
+            html += `<div style="font-size:12px;color:#6B7280;font-weight:600;text-align:center;">${day.label}</div>`;
         });
 
         // Hour rows (8am-10pm)
@@ -504,7 +589,7 @@ async function renderCalendar() {
             const hourStr = `${h12} ${ampm}`;
             html += `<div style="font-size:11px;color:#6B7280;text-align:right;padding-right:8px;">${hourStr}</div>`;
             days.forEach(day => {
-                const logs = dayMap[day]?.[hour] || [];
+                const logs = dayMap[day.key]?.[hour] || [];
                 const categories = logs.map(l => inferCategory(l.app_name || '', l.window_title || '')).filter(c => c !== 'unknown');
                 const topCat = categories.length ? categories[0] : null;
                 const color = topCat && CAT_COLORS[topCat] ? CAT_COLORS[topCat] : 'rgba(255,255,255,0.05)';
@@ -621,7 +706,13 @@ async function openSummaryModal(logId) {
         const res = await fetch(`${API}/api/summary/${logId}`);
         if (res.ok) {
             const data = await res.json();
-            summaryText.textContent = data.summary;
+            const text = data.summary_text || data.summary || 'Could not generate summary.';
+            const focus = data.focus_assessment ? `\nFocus: ${data.focus_assessment}` : '';
+            const confidence = typeof data.confidence === 'number' ? ` (${Math.round(data.confidence * 100)}% confidence)` : '';
+            const signals = Array.isArray(data.signals) && data.signals.length
+                ? `\nSignals: ${data.signals.join(' · ')}`
+                : '';
+            summaryText.textContent = `${text}${focus}${confidence}${signals}`;
         } else {
             summaryText.textContent = 'Could not generate summary.';
         }
@@ -669,8 +760,6 @@ function openSettings() {
 function closeSettings() {
     document.getElementById('settings-drawer').classList.add('hidden');
     document.getElementById('settings-backdrop').classList.add('hidden');
-    // Reset mobile nav
-    document.querySelectorAll('.mobile-nav-item').forEach(b => b.classList.toggle('active', b.dataset.view === 'dashboard'));
 }
 
 function updateNotificationPermissionUI() {
@@ -717,7 +806,9 @@ function renderZones(zones) {
         list.innerHTML = '<p class="settings-note">No zones configured.</p>';
         return;
     }
-    list.innerHTML = zones.map((zone) => `
+    list.innerHTML = zones.map((zone) => {
+        const urls = zoneAutomationUrls(zone.slug || zone.name || '');
+        return `
         <div class="zone-editor" data-zone-id="${zone.id || ''}" data-is-default="${zone.is_default ? 'true' : 'false'}">
             <div class="zone-editor-row">
                 <input class="setting-input zone-name" value="${escAttr(zone.name || '')}" placeholder="Zone name" />
@@ -734,20 +825,78 @@ function renderZones(zones) {
                     <option value="false" ${!zone.enabled ? 'selected' : ''}>Disabled</option>
                 </select>
             </div>
+            <div class="settings-note zone-slug-preview">Slug preview: ${esc(zone.slug || slugify(zone.name || '')) || 'required'}</div>
+            <div class="zone-automation-urls">
+                <div class="zone-url-line" data-kind="arrive">
+                    <span>${esc(urls.arrive)}</span>
+                    <button class="setting-action-btn zone-copy-url-btn" type="button" data-url="${escAttr(urls.arrive)}">Copy Arrive URL</button>
+                </div>
+                <div class="zone-url-line" data-kind="leave">
+                    <span>${esc(urls.leave)}</span>
+                    <button class="setting-action-btn zone-copy-url-btn" type="button" data-url="${escAttr(urls.leave)}">Copy Leave URL</button>
+                </div>
+            </div>
+            <div class="settings-note zone-error" style="color:#B91C1C;display:none;"></div>
             <div class="zone-editor-actions">
                 <button class="setting-action-btn zone-save-btn" type="button">Save</button>
                 ${zone.is_default ? '<span class="settings-note" style="margin:0;">Default zone</span>' : '<button class="setting-action-btn zone-delete-btn" type="button">Delete</button>'}
             </div>
         </div>
-    `).join('');
+    `;
+    }).join('');
+
+    list.querySelectorAll('.zone-editor').forEach((editor) => {
+        const nameInput = editor.querySelector('.zone-name');
+        const slugInput = editor.querySelector('.zone-slug');
+        const preview = editor.querySelector('.zone-slug-preview');
+        const arriveText = editor.querySelector('.zone-url-line[data-kind="arrive"] span');
+        const leaveText = editor.querySelector('.zone-url-line[data-kind="leave"] span');
+        const arriveBtn = editor.querySelector('.zone-url-line[data-kind="arrive"] .zone-copy-url-btn');
+        const leaveBtn = editor.querySelector('.zone-url-line[data-kind="leave"] .zone-copy-url-btn');
+        const isDefault = editor.dataset.isDefault === 'true';
+        const refreshUrls = () => {
+            const dynamicSlug = slugify(slugInput.value || nameInput.value);
+            const urls = zoneAutomationUrls(dynamicSlug);
+            if (arriveText) arriveText.textContent = urls.arrive;
+            if (leaveText) leaveText.textContent = urls.leave;
+            if (arriveBtn) arriveBtn.dataset.url = urls.arrive;
+            if (leaveBtn) leaveBtn.dataset.url = urls.leave;
+        };
+        const syncPreview = () => {
+            const currentSlug = slugify(slugInput.value || nameInput.value);
+            if (!isDefault && !slugInput.value.trim() && nameInput.value.trim()) {
+                slugInput.value = currentSlug;
+            }
+            preview.textContent = `Slug preview: ${slugify(slugInput.value || nameInput.value) || 'required'}`;
+            refreshUrls();
+        };
+        nameInput?.addEventListener('input', syncPreview);
+        slugInput?.addEventListener('input', syncPreview);
+        refreshUrls();
+    });
 
     list.querySelectorAll('.zone-save-btn').forEach((btn) => btn.addEventListener('click', async () => {
         const editor = btn.closest('.zone-editor');
+        const errorEl = editor.querySelector('.zone-error');
+        const name = editor.querySelector('.zone-name').value.trim();
+        const rawSlug = editor.querySelector('.zone-slug').value.trim();
+        const slug = slugify(rawSlug || name);
+        if (!name) {
+            errorEl.textContent = 'Zone name is required.';
+            errorEl.style.display = 'block';
+            return;
+        }
+        if (!slug || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
+            errorEl.textContent = 'Slug must use lowercase letters, numbers, and hyphens.';
+            errorEl.style.display = 'block';
+            return;
+        }
+        errorEl.style.display = 'none';
         const payload = {
-            name: editor.querySelector('.zone-name').value.trim(),
+            name,
             radius_meters: parseInt(editor.querySelector('.zone-radius').value || '75', 10),
             zone_type: editor.querySelector('.zone-type').value,
-            slug: editor.querySelector('.zone-slug').value.trim(),
+            slug,
             focus_mode: editor.querySelector('.zone-focus').value.trim(),
             enabled: editor.querySelector('.zone-enabled').value === 'true',
         };
@@ -760,8 +909,17 @@ function renderZones(zones) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
             });
-            if (res.ok) loadZones();
-        } catch { }
+            if (res.ok) {
+                loadZones();
+                return;
+            }
+            const err = await res.json().catch(() => ({}));
+            errorEl.textContent = err?.detail?.message || err.detail || 'Could not save zone.';
+            errorEl.style.display = 'block';
+        } catch {
+            errorEl.textContent = 'Network error while saving zone.';
+            errorEl.style.display = 'block';
+        }
     }));
 
     list.querySelectorAll('.zone-delete-btn').forEach((btn) => btn.addEventListener('click', async () => {
@@ -775,6 +933,20 @@ function renderZones(zones) {
             const res = await fetch(`${API}/api/zones/${zoneId}`, { method: 'DELETE' });
             if (res.ok) loadZones();
         } catch { }
+    }));
+
+    list.querySelectorAll('.zone-copy-url-btn').forEach((btn) => btn.addEventListener('click', async () => {
+        const original = btn.textContent;
+        const url = btn.dataset.url || '';
+        if (!url) return;
+        try {
+            await navigator.clipboard.writeText(url);
+            btn.textContent = 'Copied';
+            setTimeout(() => { btn.textContent = original; }, 1000);
+        } catch {
+            btn.textContent = 'Copy failed';
+            setTimeout(() => { btn.textContent = original; }, 1200);
+        }
     }));
 }
 
@@ -828,7 +1000,10 @@ async function loadSettings() {
         document.getElementById('setting-llm-cap').value = s.llm_daily_cap;
         document.getElementById('setting-class-interval').value = String(s.classification_interval_seconds);
         document.getElementById('setting-hourly').checked = s.hourly_summaries_enabled;
-        if (s.user_timezone) document.getElementById('setting-timezone').value = s.user_timezone;
+        if (s.user_timezone) {
+            document.getElementById('setting-timezone').value = s.user_timezone;
+            uiTimezone = s.user_timezone;
+        }
         updateNotificationPermissionUI();
         loadZones();
         // Health check
@@ -867,13 +1042,33 @@ document.getElementById('settings-save-btn').addEventListener('click', async () 
 document.getElementById('settings-btn').addEventListener('click', openSettings);
 document.getElementById('enable-notifications-btn').addEventListener('click', requestNotifications);
 document.getElementById('add-zone-btn').addEventListener('click', addZoneDraft);
+const ONBOARDING_KEY = 'vero_onboarded_v2';
+
+if (refreshBtn) {
+    refreshBtn.addEventListener('click', async () => {
+        await Promise.allSettled([
+            fetchData(true),
+            fetchAnalytics(),
+            fetchHourlySummaries(),
+            fetchControlCenterStatus(),
+            renderCalendar(),
+        ]);
+    });
+}
+
+const rerunOnboardingBtn = document.getElementById('rerun-onboarding-btn');
+if (rerunOnboardingBtn) {
+    rerunOnboardingBtn.addEventListener('click', () => {
+        localStorage.removeItem(ONBOARDING_KEY);
+        checkOnboarding();
+    });
+}
 
 // ── Onboarding ──
 async function checkOnboarding() {
     try {
         const res = await fetch(`${API}/api/state`);
         const states = await res.json();
-        if (states.onboarding_complete === 'true') return;
         // Show onboarding
         document.getElementById('onboarding-overlay').classList.remove('hidden');
         // Check mac status
@@ -890,14 +1085,15 @@ async function checkOnboarding() {
             const iosRes = await fetch(`${API}/api/ios-setup-status`);
             if (iosRes.ok) {
                 const iosData = await iosRes.json();
-                const configured = (iosData.checklist || []).filter(item => item.configured).length;
-                const total = (iosData.checklist || []).length;
+                const required = iosData.required || iosData.checklist || [];
+                const configured = required.filter(item => item.configured).length;
+                const total = required.length;
                 const iosStatusEl = document.getElementById('onboard-ios-status');
                 if (iosStatusEl) {
                     if (configured === total && total > 0) {
-                        iosStatusEl.innerHTML = `&#10003; All ${total} shortcuts configured.`;
+                        iosStatusEl.innerHTML = `&#10003; Required iPhone automations configured.`;
                     } else if (configured > 0) {
-                        iosStatusEl.innerHTML = `${configured}/${total} shortcuts configured.`;
+                        iosStatusEl.innerHTML = `${configured}/${total} required automations configured.`;
                     }
                 }
             }
@@ -924,13 +1120,23 @@ async function completeOnboarding() {
         // Mark onboarding done by setting state (we'll use the prompt-reply endpoint as a workaround)
         // Actually, let's just not show it again after first visit using localStorage
     } catch { }
-    localStorage.setItem('lm_onboarded', '1');
+    localStorage.setItem(ONBOARDING_KEY, '1');
 }
 
 // ── Mobile view switching ──
 function switchView(view) {
+    if (view === 'settings') {
+        document.querySelectorAll('.mobile-nav-item').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+        openSettings();
+        return;
+    }
+    closeSettings();
     document.querySelectorAll('.mobile-nav-item').forEach(b => b.classList.toggle('active', b.dataset.view === view));
-    // Settings is handled by openSettings()
+    const sections = document.querySelectorAll('.mobile-view-section');
+    if (!sections.length || window.innerWidth > 768) return;
+    sections.forEach((section) => {
+        section.classList.toggle('hidden', section.dataset.view !== view);
+    });
 }
 
 // ── Initial fetch settings for slider sync ──
@@ -1016,7 +1222,7 @@ async function fetchChatHistory() {
         }
         chatHistoryList.innerHTML = messages.map((turn) => `
             <div class="chat-turn">
-                <div class="chat-turn-time">${esc(turn.time || '')}</div>
+                <div class="chat-turn-time">${esc(formatTime(turn.time) || (turn.time || ''))}</div>
                 <div class="chat-turn-line"><strong>You:</strong> ${esc(turn.user || '')}</div>
                 <div class="chat-turn-line"><strong>Vero:</strong> ${esc(turn.reply || '')}</div>
             </div>
@@ -1087,7 +1293,8 @@ async function checkIosSetupStatus() {
         const r = await fetch(`${API}/api/ios-setup-status`);
         if (!r.ok) return;
         const d = await r.json();
-        const unconfigured = (d.checklist || []).filter(item => !item.configured);
+        const required = d.required || d.checklist || [];
+        const unconfigured = required.filter(item => !item.configured);
         const cardIos = document.getElementById('card-ios');
         // Remove any existing warning
         const existing = document.getElementById('ios-setup-warning');
@@ -1097,7 +1304,7 @@ async function checkIosSetupStatus() {
             const warning = document.createElement('div');
             warning.id = 'ios-setup-warning';
             warning.style.cssText = 'margin-top:0.5rem;padding:0.4rem 0.7rem;background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;font-size:0.75rem;color:#92400E;cursor:pointer;';
-            warning.innerHTML = `${unconfigured.length} iPhone automation${unconfigured.length > 1 ? 's' : ''} still need setup — <u>tap to fix</u>`;
+            warning.innerHTML = `${unconfigured.length} required iPhone automation${unconfigured.length > 1 ? 's' : ''} missing — <u>tap to fix</u>`;
             warning.onclick = () => window.open('/setup/ios', '_blank');
             cardIos.appendChild(warning);
         }
@@ -1146,20 +1353,22 @@ async function fetchControlCenterStatus() {
         }
 
         if (iosSetupStatusEl && iosSetupDetailEl) {
-            const checklist = iosSetup?.checklist || [];
-            const configured = checklist.filter(item => item.configured).length;
-            if (!checklist.length) {
+            const required = iosSetup?.required || iosSetup?.checklist || [];
+            const optional = iosSetup?.optional || [];
+            const requiredConfigured = required.filter(item => item.configured).length;
+            const optionalConfigured = optional.filter(item => item.configured).length;
+            if (!required.length) {
                 iosSetupStatusEl.textContent = 'Not configured';
                 iosSetupStatusEl.style.color = '#D97706';
-                iosSetupDetailEl.textContent = 'Set up zone enter/leave automations first. Walking and charging automations are optional quality-of-life signals.';
-            } else if (configured === checklist.length) {
-                iosSetupStatusEl.textContent = `${configured}/${checklist.length} Ready`;
+                iosSetupDetailEl.textContent = 'Set up zone Arrive + Leave automations first. Walking and charging are optional.';
+            } else if (requiredConfigured === required.length) {
+                iosSetupStatusEl.textContent = `${requiredConfigured}/${required.length} Required`;
                 iosSetupStatusEl.style.color = '#16A34A';
-                iosSetupDetailEl.textContent = 'Zone automations are configured. Geofencing is the low-battery default and is more accurate than periodic GPS polling.';
+                iosSetupDetailEl.textContent = `Required setup complete. Optional automations: ${optionalConfigured}/${optional.length}.`;
             } else {
-                iosSetupStatusEl.textContent = `${configured}/${checklist.length} Ready`;
+                iosSetupStatusEl.textContent = `${requiredConfigured}/${required.length} Required`;
                 iosSetupStatusEl.style.color = '#D97706';
-                iosSetupDetailEl.textContent = 'Finish the missing automations in iPhone Setup. Start with zone enter/leave events, then add walking and charging if you want more context.';
+                iosSetupDetailEl.textContent = 'Finish missing required zone automations in iPhone Setup.';
             }
         }
 
@@ -1173,12 +1382,12 @@ async function fetchControlCenterStatus() {
             } else if (pendingJobs > 0) {
                 nextStepStatusEl.textContent = 'Enable iCloud Calendar';
                 nextStepDetailEl.textContent = 'Turn on iCloud Calendar on your Mac, then make sure the Vero calendar sits under iCloud in Calendar.app rather than only On My Mac.';
-            } else if ((iosSetup?.checklist || []).some(item => !item.configured)) {
+            } else if ((iosSetup?.required || iosSetup?.checklist || []).some(item => !item.configured)) {
                 nextStepStatusEl.textContent = 'Finish iPhone Setup';
-                nextStepDetailEl.textContent = 'Use the iPhone Setup page to add zone enter/leave automations. That gives you better location data with much less battery drain.';
+                nextStepDetailEl.textContent = 'Add missing required zone automations (Arrive + Leave) from iPhone Setup.';
             } else {
                 nextStepStatusEl.textContent = 'Everything is in place';
-                nextStepDetailEl.textContent = 'The Mac helper is online, calendar sync is queued correctly, and your iPhone setup is in place. Use this page for status, quick fixes, and analytics.';
+                nextStepDetailEl.textContent = 'Mac helper, calendar queueing, and required iPhone setup are all configured.';
             }
         }
     } catch {
@@ -1200,8 +1409,15 @@ fetchChatHistory();
 checkIosSetupStatus();
 fetchControlCenterStatus();
 renderCalendar();
+if (window.innerWidth <= 768) switchView('dashboard');
+window.addEventListener('resize', () => {
+    const sections = document.querySelectorAll('.mobile-view-section');
+    if (window.innerWidth > 768) {
+        sections.forEach((section) => section.classList.remove('hidden'));
+    }
+});
 
-if (!localStorage.getItem('lm_onboarded')) checkOnboarding();
+if (!localStorage.getItem(ONBOARDING_KEY)) checkOnboarding();
 
 // Polling fallback + analytics/checkin refresh
 setInterval(() => {

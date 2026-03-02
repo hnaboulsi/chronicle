@@ -48,12 +48,14 @@ final class NativeAppModel: ObservableObject {
         backend_mode: "railway_primary",
         ai_provider: "auto",
         llm_mode: "balanced",
-        hourly_summaries_enabled: true,
+        hourly_summaries_enabled: false,
         classification_interval_seconds: 300,
         llm_daily_cap: 200,
         user_timezone: TimeZone.current.identifier
     )
     @Published var zones: [ZoneRecord] = []
+    @Published var iosSetupPack: IOSSetupPackResponse?
+    @Published var iosSetupStatus: IOSSetupStatusResponse?
     @Published var calendarJobs: [CalendarJob] = []
     @Published var chatTurns: [ChatTurn] = []
     @Published var health: HealthResponse?
@@ -66,7 +68,7 @@ final class NativeAppModel: ObservableObject {
         backend_mode: "railway_primary",
         ai_provider: "auto",
         llm_mode: "balanced",
-        hourly_summaries_enabled: true,
+        hourly_summaries_enabled: false,
         classification_interval_seconds: 300,
         llm_daily_cap: 200,
         user_timezone: TimeZone.current.identifier
@@ -108,6 +110,8 @@ final class NativeAppModel: ObservableObject {
             async let jobsTask = backend.fetchCalendarJobs()
             async let chatTask = backend.fetchChatHistory()
             async let healthTask = backend.fetchHealth()
+            async let iosPackTask: IOSSetupPackResponse? = try? backend.fetchIOSSetupPack()
+            async let iosStatusTask: IOSSetupStatusResponse? = try? backend.fetchIOSSetupStatus()
             async let permissionsTask = PermissionSnapshot.capture()
 
             state = try await stateTask
@@ -116,6 +120,8 @@ final class NativeAppModel: ObservableObject {
             calendarJobs = try await jobsTask
             chatTurns = try await chatTask
             health = try await healthTask
+            iosSetupPack = await iosPackTask
+            iosSetupStatus = await iosStatusTask
             permissionSnapshot = await permissionsTask
 
             store.trackingEnabled = settings.tracking_enabled

@@ -168,6 +168,16 @@ final class BackendClient {
         return try decode(CheckinResponse.self, from: data)
     }
 
+    func fetchIOSSetupPack() async throws -> IOSSetupPackResponse {
+        let data = try await perform(try request(path: "api/ios-setup-pack"))
+        return try decode(IOSSetupPackResponse.self, from: data)
+    }
+
+    func fetchIOSSetupStatus() async throws -> IOSSetupStatusResponse {
+        let data = try await perform(try request(path: "api/ios-setup-status"))
+        return try decode(IOSSetupStatusResponse.self, from: data)
+    }
+
     @discardableResult
     func sendHeartbeat(clientID: String, appVersion: String, agentState: String, trackingEnabled: Bool, permissionsState: String, lastError: String) async throws -> HeartbeatResponse {
         let body: [String: Any] = [
