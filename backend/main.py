@@ -1100,6 +1100,16 @@ async def trigger_hourly_summary(background_tasks: BackgroundTasks):
     return {"status": "queued"}
 
 
+@app.post("/api/refresh-app-categories")
+async def refresh_app_categories(db: Session = Depends(get_db)):
+    """Force re-classification of apps with updated LLM prompt."""
+    now = datetime.now(timezone.utc)
+    agent_logic.set_state(db, "last_category_cache_refresh", "")  # Clear timestamp to force refresh
+    agent_logic.set_state(db, "app_category_cache", "")  # Clear cache
+    await agent_logic._refresh_app_category_cache(db, now)
+    return {"status": "refreshed"}
+
+
 @app.post("/api/prompt-reply")
 def handle_prompt_reply(payload: Dict[str, Any], db: Session = Depends(get_db)):
     reply = payload.get("reply", "")
