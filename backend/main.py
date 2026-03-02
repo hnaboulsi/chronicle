@@ -79,10 +79,6 @@ def _run_migrations() -> list[str]:
                         """
                         DELETE FROM agent_states
                         WHERE key IN (
-                          'seen_arrive_automation',
-                          'seen_leave_automation',
-                          'seen_walking_automation',
-                          'seen_charging_automation',
                           'current_location',
                           'location_arrival',
                           'commute_start',
@@ -98,6 +94,37 @@ def _run_migrations() -> list[str]:
                         """
                         INSERT INTO agent_states (key, value, updated_at)
                         VALUES ('zones_reset_v3', 'true', CURRENT_TIMESTAMP)
+                        ON CONFLICT(key) DO UPDATE SET value='true', updated_at=CURRENT_TIMESTAMP
+                        """
+                    )
+                )
+
+            # Restore migration (v3b): automation-seen flags were incorrectly wiped by v3.
+            restore_marker = conn.execute(
+                text("SELECT value FROM agent_states WHERE key = 'automation_flags_restore_v1' LIMIT 1")
+            ).scalar()
+            if restore_marker != "true":
+                for flag in ('seen_arrive_automation', 'seen_leave_automation', 'seen_charging_automation'):
+                    existing = conn.execute(
+                        text("SELECT value FROM agent_states WHERE key = :k LIMIT 1"),
+                        {"k": flag}
+                    ).scalar()
+                    if existing is None:
+                        conn.execute(
+                            text(
+                                """
+                                INSERT INTO agent_states (key, value, updated_at)
+                                VALUES (:k, 'true', CURRENT_TIMESTAMP)
+                                ON CONFLICT(key) DO NOTHING
+                                """
+                            ),
+                            {"k": flag}
+                        )
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO agent_states (key, value, updated_at)
+                        VALUES ('automation_flags_restore_v1', 'true', CURRENT_TIMESTAMP)
                         ON CONFLICT(key) DO UPDATE SET value='true', updated_at=CURRENT_TIMESTAMP
                         """
                     )
