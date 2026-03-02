@@ -6,77 +6,6 @@ struct iPhoneSetupView: View {
 
     var body: some View {
         Form {
-            // Shortcuts Download
-            Section {
-                VStack(alignment: .leading, spacing: Spacing.sm) {
-                    HStack(spacing: Spacing.sm) {
-                        Image(systemName: "arrow.down.circle.fill")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(.indigo)
-                        Text("Step 1 — Download Shortcuts")
-                            .font(.subheadline.weight(.semibold))
-
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
-                Text("Download these shortcuts to your Mac, then AirDrop them to your iPhone.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                if let backendURL = model.store.backendURL {
-                    ForEach([("walking", "Walking"), ("charge_on", "Charging On"), ("charge_off", "Charging Off")], id: \.0) { kind, label in
-                        Button(action: {
-                            let downloadURL = backendURL.appendingPathComponent("setup/shortcut/download")
-                                .appending(queryItems: [.init(name: "kind", value: kind)])
-                            openURL(downloadURL)
-                        }) {
-                            HStack {
-                                Image(systemName: "arrow.down")
-                                Text(label)
-                                Spacer()
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.bordered)
-                    }
-                } else {
-                    Text("Backend not configured")
-                        .foregroundStyle(.red)
-                        .font(.caption)
-                }
-            } footer: {
-                if let backendURL = model.store.backendURL {
-                    let command = """
-                    for kind in walking charge_on charge_off; do
-                      curl -s "\(backendURL.absoluteString)/setup/shortcut/download?kind=$kind" -o "Vero-$kind.shortcut" && \\
-                      shortcuts sign -m anyone -i "Vero-$kind.shortcut" -o "Vero-$kind.shortcut"
-                    done
-                    """
-
-                    VStack(alignment: .leading, spacing: Spacing.sm) {
-                        HStack(spacing: Spacing.xs) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .font(.caption)
-                                .foregroundStyle(.orange)
-                            Text("Signing Required (Railway)")
-                                .font(.caption.weight(.semibold))
-                        }
-                        Text("If using Railway, shortcuts must be signed. Run this in Terminal after downloading:")
-                            .font(.caption)
-
-                        HStack(spacing: Spacing.sm) {
-                            Text(command)
-                                .font(.system(.caption2, design: .monospaced))
-                                .lineLimit(nil)
-                            CopyButton(text: command)
-                        }
-                    }
-                } else {
-                    EmptyView()
-                }
-            }
-
             // Zone Automations
             Section {
                 VStack(alignment: .leading, spacing: Spacing.sm) {
@@ -84,7 +13,7 @@ struct iPhoneSetupView: View {
                         Image(systemName: "mappin.circle.fill")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(.indigo)
-                        Text("Step 2 — Set Up Zone Automations")
+                        Text("Step 1 — Set Up Zone Automations")
                             .font(.subheadline.weight(.semibold))
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -186,7 +115,7 @@ struct iPhoneSetupView: View {
                     ForEach(model.zones, id: \.slug) { zone in
                         if let backendURL = model.store.backendURL {
                             let enterURL = backendURL.absoluteString + "/api/ios-zone-event?zone_slug=\(zone.slug)&transition=enter"
-                            let leaveURL = backendURL.absoluteString + "/api/ios-zone-event?zone_slug=\(zone.slug)&transition=leave"
+                            let leaveURL = backendURL.absoluteString + "/api/ios-zone-event?zone_slug=\(zone.slug)&transition=exit"
 
                             VStack(alignment: .leading, spacing: Spacing.sm) {
                                 Text(zone.name)
@@ -235,61 +164,118 @@ struct iPhoneSetupView: View {
                 }
             }
 
-            // Step Counting
+            // Charging Automations
+            Section {
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    HStack(spacing: Spacing.sm) {
+                        Image(systemName: "bolt.circle.fill")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(.orange)
+                        Text("Step 2 — Charging Automations")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                Text("Create automations to track when your iPhone is charging.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                DisclosureGroup("Setup Instructions (4 Steps)") {
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        ForEach([
+                            "1. Open Shortcuts app → Automation tab → + New Automation",
+                            "2. Choose Charger → Is Connected (for charging on)",
+                            "3. Add action: Get Contents of URL → paste the CHARGING ON URL (see below)",
+                            "4. Repeat for Is Disconnected using the CHARGING OFF URL"
+                        ], id: \.self) { step in
+                            Text(step)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.top, Spacing.xs)
+                }
+
+                if let backendURL = model.store.backendURL {
+                    let chargeOnURL = backendURL.absoluteString + "/api/ios-event?kind=charge_on"
+                    let chargeOffURL = backendURL.absoluteString + "/api/ios-event?kind=charge_off"
+
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        Text("Charging On URL:")
+                            .font(.caption.weight(.semibold))
+                        HStack(spacing: Spacing.xs) {
+                            Text(chargeOnURL)
+                                .font(.system(.caption2, design: .monospaced))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .foregroundStyle(.blue)
+                            CopyButton(text: chargeOnURL)
+                        }
+
+                        Text("Charging Off URL:")
+                            .font(.caption.weight(.semibold))
+                            .padding(.top, Spacing.sm)
+                        HStack(spacing: Spacing.xs) {
+                            Text(chargeOffURL)
+                                .font(.system(.caption2, design: .monospaced))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .foregroundStyle(.blue)
+                            CopyButton(text: chargeOffURL)
+                        }
+                    }
+                }
+            }
+
+            // Walking Automation
             Section {
                 VStack(alignment: .leading, spacing: Spacing.sm) {
                     HStack(spacing: Spacing.sm) {
                         Image(systemName: "figure.walk.circle.fill")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(.green)
-                        Text("Step 3 — Step Counting (Optional)")
+                        Text("Step 3 — Walking Automation")
                             .font(.subheadline.weight(.semibold))
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                Text("Send daily step count to Vero automatically every hour using an iOS Shortcut automation.")
+                Text("Create an automation to track when you're walking (Apple Watch).")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                DisclosureGroup("Setup Instructions (7 Steps)") {
+                DisclosureGroup("Setup Instructions (4 Steps)") {
                     VStack(alignment: .leading, spacing: Spacing.xs) {
                         ForEach([
-                            "1. Open the Shortcuts app → tap + to create a new shortcut",
-                            "2. Add \"Get My Health Samples\" → Category: Activity, Type: Steps, Period: Today",
-                            "3. Add \"Calculate Statistics\" → Sum",
-                            "4. Add \"Get Contents of URL\":",
-                            "   • URL: (see below)",
-                            "   • Method: POST",
-                            "   • Body: JSON → add key \"steps_today\" = Statistics Result",
-                            "5. Save as \"Vero Steps\"",
-                            "6. Go to Automation → New → Time of Day → Every Hour",
-                            "7. Action: Run Shortcut → Vero Steps → turn off Ask Before Running",
+                            "1. Open Shortcuts app → Automation tab → + New Automation",
+                            "2. Choose Apple Watch Workout → Walking → Starts",
+                            "3. Add action: Get Contents of URL → paste the WALKING URL (see below)",
+                            "4. Turn off Ask Before Running"
                         ], id: \.self) { step in
                             Text(step)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                                .lineLimit(nil)
                         }
                     }
                     .padding(.top, Spacing.xs)
                 }
-            } footer: {
+
                 if let backendURL = model.store.backendURL {
-                    let telemetryURL = backendURL.absoluteString + "/api/ios-telemetry"
-                    VStack(alignment: .leading, spacing: Spacing.xs) {
-                        Text("POST URL:")
+                    let walkingURL = backendURL.absoluteString + "/api/ios-event?kind=walking"
+
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        Text("Walking URL:")
                             .font(.caption.weight(.semibold))
                         HStack(spacing: Spacing.xs) {
-                            Text(telemetryURL)
+                            Text(walkingURL)
                                 .font(.system(.caption2, design: .monospaced))
                                 .lineLimit(1)
                                 .truncationMode(.middle)
-                            CopyButton(text: telemetryURL)
+                                .foregroundStyle(.blue)
+                            CopyButton(text: walkingURL)
                         }
                     }
-                } else {
-                    EmptyView()
                 }
             }
 
