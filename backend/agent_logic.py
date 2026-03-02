@@ -474,11 +474,17 @@ def _deterministic_hourly_summary(logs: list[dict], hour_label: str) -> dict:
     return {"summary": summary, "productivity_score": score}
 
 
-async def _generate_and_store_hourly_summary(db: Session, now: datetime):
+async def _generate_and_store_hourly_summary(db: Session, now: datetime, force_current: bool = False):
     tz = resolve_user_timezone(db)
     local_now = now.astimezone(tz)
-    local_hour_end = local_now.replace(minute=0, second=0, microsecond=0)
-    local_hour_start = local_hour_end - timedelta(hours=1)
+    if force_current:
+        # Generate for the current partial hour (start of hour to now)
+        local_hour_start = local_now.replace(minute=0, second=0, microsecond=0)
+        local_hour_end = local_now
+    else:
+        # Generate for the just-completed previous hour
+        local_hour_end = local_now.replace(minute=0, second=0, microsecond=0)
+        local_hour_start = local_hour_end - timedelta(hours=1)
     hour_start = local_hour_start.astimezone(timezone.utc).replace(tzinfo=None)
     hour_end = local_hour_end.astimezone(timezone.utc).replace(tzinfo=None)
 
@@ -488,7 +494,10 @@ async def _generate_and_store_hourly_summary(db: Session, now: datetime):
     if not logs:
         return
 
-    hour_label = f"{local_hour_start.strftime('%I:%M %p')} — {local_hour_end.strftime('%I:%M %p')} ({tz.key})"
+    if force_current:
+        hour_label = f"{local_hour_start.strftime('%I:%M %p')} — {local_now.strftime('%I:%M %p')} partial ({tz.key})"
+    else:
+        hour_label = f"{local_hour_start.strftime('%I:%M %p')} — {local_hour_end.strftime('%I:%M %p')} ({tz.key})"
     fallback = _deterministic_hourly_summary(logs, hour_label)
     result = fallback
     source = "deterministic"
@@ -802,6 +811,12 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session):
     set_state(db, "last_mac_ping", now.isoformat())
     set_state(db, "last_mac_idle", str(data.idle_time_seconds > 60 * 60).lower())
 
+    # Recompute sleep state immediately using latest Mac idle status + stored iOS state
+    stored_activity_type = get_state(db, "last_ios_activity_type", "")
+    stored_charging_str = get_state(db, "last_ios_is_charging", "")
+    stored_is_charging = None if not stored_charging_str else (stored_charging_str == "true")
+    _update_sleep_state(db, now, stored_activity_type, stored_is_charging)
+
     if prev_mac_ping_str and not _checkin_is_active(db, now):
         try:
             prev_ping = _parse_iso_dt(prev_mac_ping_str)
@@ -952,6 +967,11 @@ async def process_ios_telemetry(data: iOSTelemetry, db: Session):
     current_location = data.location_label or ""
     if current_location:
         _handle_location_change(db, current_location, now)
+
+    # Persist so Mac telemetry can recompute sleep state without waiting for next iOS ping
+    set_state(db, "last_ios_activity_type", activity_type)
+    if data.is_charging is not None:
+        set_state(db, "last_ios_is_charging", "true" if data.is_charging else "false")
 
     _update_sleep_state(db, now, activity_type, data.is_charging)
 

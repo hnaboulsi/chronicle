@@ -1084,7 +1084,8 @@ def get_hourly_summaries(limit: int = 5, db: Session = Depends(get_db)):
 async def _run_hourly_summary_bg(now: datetime):
     db = SessionLocal()
     try:
-        await agent_logic._generate_and_store_hourly_summary(db, now)
+        # force_current=True: generate for what the user has done so far this hour
+        await agent_logic._generate_and_store_hourly_summary(db, now, force_current=True)
     except Exception as exc:
         log.error("Background hourly summary error: %s", exc)
     finally:
@@ -1994,7 +1995,7 @@ async def analytics_today(db: Session = Depends(get_db)):
     for entry in logs:
         if entry.is_idle:
             idle_count += 1
-            continue
+            # Still count: Mac agent only sends data when Mac is awake, so any log = Mac in use
         cat = "unknown"
         # Classify each log entry using heuristics (no LLM to save budget)
         text_data = f"{(entry.app_name or '').lower()} {(entry.window_title or '').lower()}"
