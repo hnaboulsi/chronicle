@@ -775,10 +775,6 @@ async def process_ios_telemetry(data: iOSTelemetry, db: Session):
     _record_ios_event(db, now)
     activity_type = data.activity_type or ""
     activity_type_lower = activity_type.lower()
-    if activity_type_lower == "ios_ping":
-        set_state(db, "seen_periodic_automation", "true")
-    if activity_type_lower in {"arrive", "arrival", "arrived"}:
-        set_state(db, "seen_arrive_automation", "true")
     if "walk" in activity_type_lower:
         set_state(db, "seen_walking_automation", "true")
     if data.is_charging is not None:
