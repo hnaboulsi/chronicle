@@ -264,10 +264,26 @@ details[open] > summary span:last-child {
     vertical-align: middle;
 }
 
-/* Interval pill active state */
+/* Interval pill styling */
+.interval-pill {
+    cursor: pointer;
+    transition: all 0.2s ease;
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #E5E7EB;
+}
+
+.interval-pill:hover:not(.active) {
+    background-color: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
 .interval-pill.active {
-    background: #F0F6FC !important;
-    color: #0D1117;
+    background: #3B82F6 !important;
+    color: #FFFFFF !important;
+    border-color: #2563EB !important;
+    font-weight: 500;
+    box-shadow: 0 0 8px rgba(59, 130, 246, 0.3);
 }
 
 /* Activity Chart Bars */
@@ -303,14 +319,55 @@ details[open] > summary span:last-child {
     flex-shrink: 0;
 }
 
-/* Responsive */
+/* Mobile View Sections */
+.mobile-view-section {
+    width: 100%;
+}
+
 @media (max-width: 768px) {
     body {
         padding-bottom: 80px;
+        overflow-x: hidden;
+        width: 100%;
     }
 
     #calendar-view {
         font-size: 12px;
+    }
+
+    /* KPI labels - allow wrapping on mobile */
+    .grid div:has(> div.text-xs.text-\[\#6B7280\].uppercase) div.text-xs.text-\[\#6B7280\].uppercase {
+        white-space: normal;
+    }
+
+    /* Ensure no horizontal scroll */
+    .max-w-6xl {
+        max-width: 100%;
+    }
+
+    /* Table responsive text */
+    #logs-table td, #logs-table th {
+        padding: 8px 12px;
+        max-width: 100%;
+    }
+
+    #logs-table td {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    #logs-table .text-sm {
+        font-size: 12px;
+    }
+
+    /* Chat history responsive */
+    .chat-you {
+        margin-left: 20px;
+    }
+
+    .chat-vero {
+        margin-right: 20px;
     }
 }
 

@@ -684,20 +684,37 @@ toggleBtn.addEventListener('click', async () => {
 });
 
 // ── Interval Pills ──
-document.getElementById('interval-pills').addEventListener('click', async (e) => {
-    const pill = e.target.closest('.interval-pill');
-    if (!pill) return;
-    const mins = parseInt(pill.dataset.val);
-    document.querySelectorAll('.interval-pill').forEach(p => p.classList.remove('active'));
-    pill.classList.add('active');
-    pollingSlider.value = mins;
-    try {
-        await fetch(`${API}/api/settings`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ polling_interval_seconds: mins * 60 })
-        });
-    } catch { }
-});
+const intervalPillsContainer = document.getElementById('interval-pills');
+if (intervalPillsContainer) {
+    intervalPillsContainer.addEventListener('click', async (e) => {
+        const pill = e.target.closest('.interval-pill');
+        if (!pill) return;
+
+        const mins = parseInt(pill.dataset.val);
+        console.log(`[Interval Pills] Changing polling interval to ${mins} minutes (${mins * 60} seconds)`);
+
+        // Update UI immediately
+        document.querySelectorAll('.interval-pill').forEach(p => p.classList.remove('active'));
+        pill.classList.add('active');
+        pollingSlider.value = mins;
+
+        // Send to backend
+        try {
+            const response = await fetch(`${API}/api/settings`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ polling_interval_seconds: mins * 60 })
+            });
+            if (response.ok) {
+                console.log(`[Interval Pills] Successfully saved polling interval: ${mins}m`);
+            } else {
+                console.warn(`[Interval Pills] API returned status ${response.status}`);
+            }
+        } catch (err) {
+            console.error(`[Interval Pills] Error saving polling interval:`, err);
+        }
+    });
+}
 
 // ── Modal ──
 const modalOverlay = document.getElementById('summary-modal');
