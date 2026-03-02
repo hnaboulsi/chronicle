@@ -201,29 +201,29 @@ _LOGIN_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Vero — Login</title>
+<title>Vero</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: #0F1117; color: #F9FAFB; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-         display: flex; align-items: center; justify-content: center; min-height: 100vh; }
-  .card { background: #1A1D27; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px;
-          padding: 40px 36px; width: 100%; max-width: 360px; }
-  h1 { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
-  p { font-size: 13px; color: #6B7280; margin-bottom: 28px; }
-  label { display: block; font-size: 12px; font-weight: 500; color: #9CA3AF; margin-bottom: 6px; }
-  input { width: 100%; background: #0F1117; border: 1px solid rgba(255,255,255,0.12);
-          border-radius: 8px; color: #F9FAFB; font-size: 15px; padding: 10px 14px; outline: none; }
-  input:focus { border-color: #6366F1; }
-  button { margin-top: 16px; width: 100%; background: #6366F1; border: none; border-radius: 8px;
+  body { background: #F5F5F5; color: #111827; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+         display: flex; align-items: center; justify-content: center; min-height: 100vh; -webkit-font-smoothing: antialiased; }
+  .card { background: #FFFFFF; border: 1px solid #E5E7EB; border-radius: 16px;
+          padding: 40px 36px; width: 100%; max-width: 360px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+  h1 { font-size: 20px; font-weight: 600; margin-bottom: 4px; color: #111827; }
+  .subtitle { font-size: 13px; color: #6B7280; margin-bottom: 28px; }
+  label { display: block; font-size: 12px; font-weight: 500; color: #6B7280; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+  input { width: 100%; background: #F9FAFB; border: 1px solid #E5E7EB;
+          border-radius: 8px; color: #111827; font-size: 15px; padding: 10px 14px; outline: none; }
+  input:focus { border-color: #9CA3AF; background: #FFFFFF; }
+  button { margin-top: 14px; width: 100%; background: #111827; border: none; border-radius: 8px;
            color: #fff; font-size: 14px; font-weight: 600; padding: 11px; cursor: pointer; }
-  button:hover { background: #4F46E5; }
+  button:hover { background: #374151; }
   .error { margin-top: 14px; font-size: 13px; color: #EF4444; text-align: center; }
 </style>
 </head>
 <body>
 <div class="card">
   <h1>Vero</h1>
-  <p>Enter your dashboard password to continue.</p>
+  <p class="subtitle">Enter your password to continue.</p>
   <form method="post" action="/api/login">
     <label for="pw">Password</label>
     <input id="pw" name="password" type="password" autocomplete="current-password" autofocus required>

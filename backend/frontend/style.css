@@ -1,22 +1,20 @@
-/* Linear Dark UI Colors */
 :root {
-    --cat-studying: #60A5FA;
-    --cat-working: #34D399;
-    --cat-creative: #A78BFA;
-    --cat-entertainment: #F87171;
-    --cat-social-media: #FB923C;
-    --cat-gaming: #FBBF24;
-    --cat-break: #6B7280;
-    --cat-idle: #374151;
+    --cat-studying: #3B82F6;
+    --cat-working: #10B981;
+    --cat-creative: #8B5CF6;
+    --cat-entertainment: #EF4444;
+    --cat-social-media: #F97316;
+    --cat-gaming: #F59E0B;
+    --cat-break: #9CA3AF;
+    --cat-idle: #D1D5DB;
 }
 
-/* Base Styles */
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    background-color: #0F0F10;
-    color: #E5E7EB;
+    background-color: #F5F5F5;
+    color: #111827;
     min-height: 100vh;
     -webkit-font-smoothing: antialiased;
 }
@@ -24,49 +22,34 @@ body {
 /* Animations */
 @keyframes pulse {
     0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
+    50% { opacity: 0.4; }
 }
-
 @keyframes fade-in {
     from { opacity: 0; }
     to { opacity: 1; }
 }
-
 @keyframes slideDown {
     from { opacity: 0; transform: translateY(-8px); }
     to { opacity: 1; transform: translateY(0); }
 }
+.fade-in { animation: fade-in 0.3s ease-in-out; }
 
-.fade-in {
-    animation: fade-in 0.3s ease-in-out;
-}
-
-/* Switch Toggle */
+/* Toggle Switch */
 .switch {
     position: relative;
     display: inline-block;
     width: 44px;
     height: 24px;
 }
-
-.switch input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-}
-
+.switch input { opacity: 0; width: 0; height: 0; }
 .switch .slider {
     position: absolute;
     cursor: pointer;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: rgba(255,255,255,0.1);
+    inset: 0;
+    background-color: #D1D5DB;
     transition: 0.3s;
     border-radius: 12px;
 }
-
 .switch .slider:before {
     position: absolute;
     content: "";
@@ -77,63 +60,49 @@ body {
     background-color: white;
     transition: 0.3s;
     border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.15);
 }
+.switch input:checked + .slider { background-color: #16A34A; }
+.switch input:checked + .slider:before { transform: translateX(20px); }
 
-.switch input:checked + .slider {
-    background-color: #22C55E;
-}
-
-.switch input:checked + .slider:before {
-    transform: translateX(20px);
-}
-
-/* Table Rows */
+/* Table */
 #logs-table tbody tr {
-    border-bottom: 1px solid rgba(255,255,255,0.05);
-    transition: background-color 0.15s;
+    border-bottom: 1px solid #F3F4F6;
+    transition: background-color 0.1s;
     cursor: pointer;
 }
-
-#logs-table tbody tr:hover {
-    background-color: rgba(255,255,255,0.04);
-}
+#logs-table tbody tr:hover { background-color: #F9FAFB; }
 
 /* Tab Pill (window title) */
 .tab-pill {
     display: inline-block;
-    background: rgba(255,255,255,0.08);
-    border: 1px solid rgba(255,255,255,0.15);
-    border-radius: 6px;
-    padding: 4px 8px;
+    background: #F3F4F6;
+    border: 1px solid #E5E7EB;
+    border-radius: 5px;
+    padding: 3px 8px;
     font-size: 12px;
-    color: #E5E7EB;
+    color: #374151;
 }
 
 /* Summary Card */
 .summary-card {
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 8px;
+    border: 1px solid #E5E7EB;
+    border-radius: 10px;
     padding: 16px;
-    background: rgba(255,255,255,0.02);
+    background: #FAFAFA;
     display: flex;
     flex-direction: column;
     gap: 8px;
 }
-
 .summary-time {
     font-size: 12px;
     color: #6B7280;
     font-weight: 500;
 }
-
-.summary-score {
-    font-size: 14px;
-    font-weight: 600;
-}
-
+.summary-score { font-size: 14px; font-weight: 600; }
 .summary-card p {
     font-size: 14px;
-    color: #E5E7EB;
+    color: #374151;
     line-height: 1.5;
     margin: 0;
 }
@@ -142,69 +111,55 @@ body {
 .setting-action-btn {
     width: 100%;
     padding: 8px 12px;
-    background: rgba(255,255,255,0.1);
-    border: 1px solid rgba(255,255,255,0.2);
-    border-radius: 6px;
-    color: #E5E7EB;
+    background: #F9FAFB;
+    border: 1px solid #E5E7EB;
+    border-radius: 8px;
+    color: #374151;
     font-size: 14px;
     cursor: pointer;
     transition: background-color 0.15s;
+    text-align: left;
 }
+.setting-action-btn:hover { background: #F3F4F6; }
 
-.setting-action-btn:hover {
-    background: rgba(255,255,255,0.15);
-}
-
-/* Details Element Styling */
-details > summary {
-    user-select: none;
-}
-
-details[open] > summary span:last-child {
-    transform: rotate(180deg);
-    transition: transform 0.3s;
-}
+/* Details Element */
+details > summary { user-select: none; }
 
 /* Chat History */
 .chat-history-list {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 8px;
 }
-
 .chat-turn {
     padding: 8px 12px;
     border-radius: 8px;
     font-size: 14px;
+    line-height: 1.5;
 }
-
 .chat-you {
-    background: rgba(255,255,255,0.1);
-    margin-left: 40px;
-    text-align: right;
-    color: #E5E7EB;
+    background: #F3F4F6;
+    margin-left: 32px;
+    color: #111827;
 }
-
 .chat-vero {
-    background: rgba(255,255,255,0.05);
-    margin-right: 40px;
-    text-align: left;
-    color: #6B7280;
+    background: #EFF6FF;
+    margin-right: 32px;
+    color: #1D4ED8;
 }
 
 /* Zone Item */
 .zone-item {
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 6px;
+    border: 1px solid #E5E7EB;
+    border-radius: 8px;
     padding: 8px 12px;
     font-size: 13px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background: rgba(255,255,255,0.02);
-    margin-bottom: 8px;
+    background: #FAFAFA;
+    margin-bottom: 6px;
 }
-
 .zone-item button {
     background: transparent;
     border: none;
@@ -212,49 +167,30 @@ details[open] > summary span:last-child {
     cursor: pointer;
     font-size: 12px;
     padding: 2px 6px;
-}
-
-.zone-item button:hover {
-    background: rgba(239,68,68,0.2);
     border-radius: 4px;
 }
+.zone-item button:hover { background: #FEF2F2; }
 
 /* Empty State */
-.empty-state {
-    color: #6B7280;
-    font-size: 14px;
-}
+.empty-state { color: #9CA3AF; font-size: 14px; }
 
-/* Calendar View Grid */
-#calendar-view {
-    overflow-x: auto;
-    min-height: 300px;
-}
-
-.calendar-grid {
-    display: grid;
-    gap: 8px;
-}
-
+/* Calendar */
+#calendar-view { overflow-x: auto; min-height: 300px; }
+.calendar-grid { display: grid; gap: 4px; }
 .calendar-cell {
-    background: rgba(255,255,255,0.02);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 6px;
-    padding: 8px;
+    background: #F9FAFB;
+    border: 1px solid #E5E7EB;
+    border-radius: 4px;
+    padding: 6px;
     min-height: 40px;
     cursor: pointer;
-    transition: background-color 0.15s;
+    transition: background-color 0.1s;
 }
-
-.calendar-cell:hover {
-    background: rgba(255,255,255,0.04);
-}
-
+.calendar-cell:hover { background: #F3F4F6; }
 .calendar-cell.active {
-    background: rgba(255,255,255,0.08);
-    border-color: rgba(255,255,255,0.15);
+    background: #EFF6FF;
+    border-color: #BFDBFE;
 }
-
 .calendar-activity {
     display: inline-block;
     width: 8px;
@@ -264,17 +200,14 @@ details[open] > summary span:last-child {
     vertical-align: middle;
 }
 
-/* Responsive */
-@media (max-width: 768px) {
-    body {
-        padding-bottom: 80px;
-    }
-
-    #calendar-view {
-        font-size: 12px;
-    }
+/* Interval pill active state */
+.interval-pill.active {
+    background: #111827 !important;
+    color: white;
 }
 
+/* Responsive */
+@media (max-width: 768px) { body { padding-bottom: 72px; } }
 @media (prefers-reduced-motion: reduce) {
     * {
         animation-duration: 0.01ms !important;
