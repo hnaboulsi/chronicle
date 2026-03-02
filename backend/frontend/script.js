@@ -1234,6 +1234,9 @@ const ONBOARDING_KEY = 'vero_onboarded_v2';
 
 if (refreshBtn) {
     refreshBtn.addEventListener('click', async () => {
+        // Refresh app category cache to fix productive % with updated LLM prompt
+        fetch(`${API}/api/refresh-app-categories`, { method: 'POST' }).catch(() => {});
+
         await Promise.allSettled([
             fetchData(true),
             fetchAnalytics(),
