@@ -1504,8 +1504,8 @@ async def ios_setup_page(db: Session = Depends(get_db)):
             leave_url = html.escape(leave_url_raw)
             arrive_shortcut = html.escape(arrive_shortcut_raw)
             leave_shortcut = html.escape(leave_shortcut_raw)
-            arrive_js = html.escape(json.dumps(arrive_url_raw))
-            leave_js = html.escape(json.dumps(leave_url_raw))
+            arrive_js = f'"{html.escape(arrive_url_raw)}"'
+            leave_js = f'"{html.escape(leave_url_raw)}"'
             zone_cards.append(
                 f"""
                 <div class="zone-card">
@@ -1578,9 +1578,9 @@ function copyURL(btn, url) {{
 
   <div class="section">
     <h2>Optional Event URLs</h2>
-    <div class="url-row"><span>{html.escape(walking_url)}</span><button class="copy-btn" onclick="copyURL(this, {html.escape(json.dumps(walking_url))})">Copy Walking</button></div>
-    <div class="url-row"><span>{html.escape(charge_on_url)}</span><button class="copy-btn" onclick="copyURL(this, {html.escape(json.dumps(charge_on_url))})">Copy Charge On</button></div>
-    <div class="url-row"><span>{html.escape(charge_off_url)}</span><button class="copy-btn" onclick="copyURL(this, {html.escape(json.dumps(charge_off_url))})">Copy Charge Off</button></div>
+    <div class="url-row"><span>{html.escape(walking_url)}</span><button class="copy-btn" onclick="copyURL(this, '{html.escape(walking_url)}')">Copy Walking</button></div>
+    <div class="url-row"><span>{html.escape(charge_on_url)}</span><button class="copy-btn" onclick="copyURL(this, '{html.escape(charge_on_url)}')">Copy Charge On</button></div>
+    <div class="url-row"><span>{html.escape(charge_off_url)}</span><button class="copy-btn" onclick="copyURL(this, '{html.escape(charge_off_url)}')">Copy Charge Off</button></div>
     <p class="muted" style="margin-top:0.75rem;">Faster setup: download prebuilt shortcuts, then use <code>Run Shortcut</code> in the personal automation instead of rebuilding request fields.</p>
     <div class="url-row"><span>Walking shortcut</span><a href="{html.escape(shortcut_links.get('walking', ''))}" class="copy-btn" style="text-decoration:none;">Download</a></div>
     <div class="url-row"><span>Charge On shortcut</span><a href="{html.escape(shortcut_links.get('charge_on', ''))}" class="copy-btn" style="text-decoration:none;">Download</a></div>

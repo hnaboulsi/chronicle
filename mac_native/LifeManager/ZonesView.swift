@@ -17,16 +17,13 @@ struct ZonesView: View {
                     }
                     .onDelete { indices in
                         guard let index = indices.first else { return }
-                        let zone = model.zones[index]
-                        if !(zone.is_default ?? false) {
-                            pendingDeleteZone = zone
-                            showDeleteConfirmation = true
-                        }
+                        pendingDeleteZone = model.zones[index]
+                        showDeleteConfirmation = true
                     }
                 } header: {
                     Text("Your Zones")
                 } footer: {
-                    Text("Built-in zones (marked as Default) can be edited but not deleted. Swipe to delete custom zones.")
+                    Text("Swipe left on a zone to delete it.")
                 }
             }
         }
@@ -111,10 +108,6 @@ private struct ZoneEditorSheet: View {
                     TextField("Name", text: $editable.name)
                     TextField("Slug", text: $editable.slug)
                         .disabled(editable.is_default ?? false)
-                        .onChange(of: editable.slug) { value in
-                            guard !(editable.is_default ?? false) else { return }
-                            editable.slug = slugify(value)
-                        }
                     Toggle("Enabled", isOn: $editable.enabled)
                 }
 
@@ -162,19 +155,9 @@ private struct ZoneEditorSheet: View {
                     }
                 }
 
-                if !slugValidationMessage.isEmpty {
-                    Section {
-                        Text(slugValidationMessage)
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                    }
-                }
-
-                if !(editable.is_default ?? false) {
-                    Section {
-                        Button("Delete Zone", role: .destructive) {
-                            showDeleteConfirmation = true
-                        }
+                Section {
+                    Button("Delete Zone", role: .destructive) {
+                        showDeleteConfirmation = true
                     }
                 }
 
@@ -199,7 +182,7 @@ private struct ZoneEditorSheet: View {
                             dismiss()
                         }
                     }
-                    .disabled(editable.name.isEmpty || editable.slug.isEmpty || !slugValidationMessage.isEmpty)
+                    .disabled(editable.name.isEmpty || editable.slug.isEmpty)
                 }
             }
             .confirmationDialog("Delete this zone?", isPresented: $showDeleteConfirmation) {
@@ -214,19 +197,5 @@ private struct ZoneEditorSheet: View {
                 Text("Are you sure you want to delete \"\(editable.name)\"?")
             }
         }
-    }
-
-    private var slugValidationMessage: String {
-        if editable.slug.isEmpty { return "" }
-        let pattern = "^[a-z0-9]+(?:-[a-z0-9]+)*$"
-        let range = editable.slug.range(of: pattern, options: .regularExpression)
-        return range == nil ? "Slug must use lowercase letters, numbers, and hyphens only." : ""
-    }
-
-    private func slugify(_ value: String) -> String {
-        value
-            .lowercased()
-            .replacingOccurrences(of: "[^a-z0-9]+", with: "-", options: .regularExpression)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
     }
 }

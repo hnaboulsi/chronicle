@@ -148,13 +148,14 @@ updateClock();
 const CAT_LABELS = {
     studying: 'Studying', working: 'Working', entertainment: 'Entertainment',
     social_media: 'Social Media', gaming: 'Gaming', creative: 'Creative',
-    break: 'Break', idle: 'Idle', unknown: 'Analyzing...',
+    break: 'Break', idle: 'Idle', other: 'Other', unknown: 'Analyzing...',
 };
 
 const CAT_COLORS = {
     studying: 'var(--cat-studying)', working: 'var(--cat-working)', creative: 'var(--cat-creative)',
     entertainment: 'var(--cat-entertainment)', social_media: 'var(--cat-social-media)',
     gaming: 'var(--cat-gaming)', break: 'var(--cat-break)', idle: 'var(--cat-idle)',
+    other: '#6B7280',
 };
 
 const PRODUCTIVE = new Set(['studying', 'working', 'creative']);
@@ -211,6 +212,9 @@ function updateUI(logs, states) {
     if (macOpenApp) {
         macOpenApp.href = launchUrl;
         macOpenApp.classList.toggle('hidden', !(isMacBrowser && macState === 'offline'));
+    }
+    if (macSetupLink) {
+        macSetupLink.classList.toggle('hidden', macState === 'online');
     }
 
     if (macState === 'offline') {
