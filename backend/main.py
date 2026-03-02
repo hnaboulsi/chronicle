@@ -89,6 +89,7 @@ except Exception:
 # iOS shortcut endpoints can't send auth headers; Mac clients send auth natively
 _NO_AUTH_PATHS = {
     "/api/ios-telemetry",
+    "/api/ios-event",
     "/api/ios-zone-event",
     "/api/healthz",
     "/api/login",
@@ -519,6 +520,28 @@ def receive_ios_telemetry(data: iOSTelemetry, background_tasks: BackgroundTasks,
 
     background_tasks.add_task(_bg_process_ios, data)
     return {"status": "ok"}
+
+
+@app.get("/api/ios-event")
+def receive_ios_event(kind: str, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """GET endpoint for charging and walking events. No JSON body required.
+    kind: charge_on | charge_off | walking
+    """
+    kind = (kind or "").lower().strip()
+    if kind == "charge_on":
+        data = iOSTelemetry(activity_type="Stationary", is_charging=True)
+    elif kind == "charge_off":
+        data = iOSTelemetry(activity_type="Stationary", is_charging=False)
+    elif kind == "walking":
+        data = iOSTelemetry(activity_type="Walking")
+    else:
+        raise HTTPException(status_code=400, detail=f"Unknown kind: {kind!r}. Valid: charge_on, charge_off, walking")
+
+    log_entry = ActivityLog(device="ios", activity_type=data.activity_type)
+    db.add(log_entry)
+    db.commit()
+    background_tasks.add_task(_bg_process_ios, data)
+    return {"status": "ok", "kind": kind}
 
 
 @app.api_route("/api/ios-zone-event", methods=["GET", "POST"])
@@ -1244,19 +1267,7 @@ function copyCmd(btn) {{
 
 @app.get("/setup/ios", response_class=HTMLResponse)
 async def ios_setup_page():
-    import shutil as _shutil
     backend_url = _get_backend_url()
-    is_remote = backend_url.startswith("https://")
-    can_auto_sign = bool(_shutil.which("shortcuts"))  # True only on local macOS
-    network_note = "Works from any network worldwide." if is_remote else "iPhone must be on the same WiFi network as your Mac."
-
-    remote_only = "" if is_remote else "display:none"
-    local_only = "display:none" if is_remote else ""
-    # Signing section: show only when on Railway (can't sign on Linux)
-    signing_section_display = "" if (is_remote and not can_auto_sign) else "display:none"
-    auto_signed_badge = "" if can_auto_sign else "display:none"
-    # "Sign all" button: only useful when running locally on macOS
-    sign_all_display = "" if (not is_remote and can_auto_sign) else "display:none"
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -1266,45 +1277,38 @@ async def ios_setup_page():
 <title>iPhone Setup — Vero</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
 <style>
-  body {{ font-family: 'Inter', sans-serif; background: #0d1117; color: #f0f6fc; padding: 2rem; max-width: 600px; margin: 0 auto; }}
-  h1 {{ font-size: 1.5rem; margin-bottom: 0.5rem; }}
-  h2 {{ font-size: 1.1rem; color: #58a6ff; margin: 2rem 0 0.75rem; }}
-  p {{ color: #8b949e; line-height: 1.6; }}
-  .step {{ background: rgba(22,27,34,0.8); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 1.25rem; margin: 1rem 0; }}
-  .step-num {{ font-size: 0.75rem; color: #58a6ff; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.5rem; }}
-  code {{ background: rgba(88,166,255,0.1); color: #58a6ff; padding: 0.2rem 0.5rem; border-radius: 6px; font-size: 0.9rem; font-family: monospace; }}
-  .url-box {{ background: rgba(88,166,255,0.08); border: 1px solid rgba(88,166,255,0.3); border-radius: 8px; padding: 1rem; font-family: monospace; font-size: 1.1rem; color: #58a6ff; word-break: break-all; margin: 1rem 0; }}
-  .action-btn {{ display: inline-block; text-align: center; background: #58a6ff; color: #000; padding: 0.75rem 1.5rem; border-radius: 10px; font-weight: 600; text-decoration: none; font-size: 1rem; border: none; cursor: pointer; }}
-  .action-btn:hover {{ background: #79b8ff; }}
-  .note {{ font-size: 0.85rem; color: #8b949e; margin-top: 0.75rem; }}
-  .divider {{ border: none; border-top: 1px solid rgba(255,255,255,0.08); margin: 2rem 0; }}
-  .badge-remote {{ background: rgba(63,185,80,0.15); color: #3fb950; border: 1px solid rgba(63,185,80,0.3); border-radius: 6px; padding: 0.2rem 0.6rem; font-size: 0.8rem; font-weight: 600; margin-left: 0.5rem; }}
-  .badge-signed {{ background: rgba(88,166,255,0.15); color: #58a6ff; border: 1px solid rgba(88,166,255,0.3); border-radius: 6px; padding: 0.2rem 0.6rem; font-size: 0.8rem; font-weight: 600; }}
-  .cmd-box {{ background: #161b22; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 1rem 1rem 1rem 1rem; font-family: 'SF Mono', 'Menlo', monospace; font-size: 0.85rem; color: #e6edf3; overflow-x: auto; white-space: pre-wrap; word-break: break-all; position: relative; margin: 0.75rem 0; line-height: 1.6; }}
-  .cmd-box .cmt {{ color: #8b949e; }}
-  .copy-btn {{ position: absolute; top: 0.5rem; right: 0.5rem; background: rgba(88,166,255,0.15); color: #58a6ff; border: 1px solid rgba(88,166,255,0.3); border-radius: 6px; padding: 0.25rem 0.6rem; font-size: 0.75rem; cursor: pointer; font-family: 'Inter', sans-serif; }}
-  .copy-btn:hover {{ background: rgba(88,166,255,0.3); }}
-  pre.cmd {{ background: #161b22; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 1rem; overflow-x: auto; font-size: 0.85rem; color: #c9d1d9; white-space: pre-wrap; word-break: break-all; position: relative; }}
-  pre.cmd .copy-btn {{ position: absolute; top: 0.5rem; right: 0.5rem; background: rgba(88,166,255,0.2); color: #58a6ff; border: 1px solid rgba(88,166,255,0.3); border-radius: 6px; padding: 0.25rem 0.5rem; font-size: 0.75rem; cursor: pointer; font-family: 'Inter', sans-serif; }}
-  pre.cmd .copy-btn:hover {{ background: rgba(88,166,255,0.4); }}
-  .signing-note {{ background: rgba(210,153,34,0.1); border: 1px solid rgba(210,153,34,0.3); border-radius: 8px; padding: 1rem; margin: 1rem 0; }}
-  .signing-note strong {{ color: #d29922; }}
+  body {{ font-family: 'Inter', sans-serif; background: #F5F5F5; color: #111827; padding: 2rem; max-width: 700px; margin: 0 auto; }}
+  h1 {{ font-size: 1.75rem; margin-bottom: 0.5rem; color: #111827; }}
+  h2 {{ font-size: 1.2rem; color: #111827; margin: 2.5rem 0 1rem; border-bottom: 1px solid #E5E7EB; padding-bottom: 0.5rem; }}
+  p {{ color: #374151; line-height: 1.7; }}
+  .section {{ background: #FFFFFF; border: 1px solid #E5E7EB; border-radius: 10px; padding: 1.5rem; margin: 1.5rem 0; }}
+  .step-num {{ font-size: 0.75rem; color: #6B7280; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.75rem; font-weight: 600; }}
+  code {{ background: #F3F4F6; color: #111827; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.95rem; font-family: 'SF Mono', monospace; }}
+  .url-box {{ background: #F3F4F6; border: 1px solid #E5E7EB; border-radius: 8px; padding: 1rem; font-family: 'SF Mono', monospace; font-size: 0.95rem; color: #111827; word-break: break-all; margin: 1rem 0; display: flex; align-items: center; justify-content: space-between; }}
+  .url-box .copy-btn {{ background: #FFFFFF; border: 1px solid #E5E7EB; color: #374151; padding: 0.4rem 0.8rem; border-radius: 6px; font-size: 0.85rem; cursor: pointer; font-family: 'Inter', sans-serif; }}
+  .url-box .copy-btn:hover {{ background: #F9FAFB; }}
+  .instructions {{ color: #374151; line-height: 1.8; margin: 1rem 0; }}
+  .instructions ol {{ margin: 0.5rem 0 1rem 1.5rem; }}
+  .instructions li {{ margin: 0.5rem 0; }}
+  .note {{ font-size: 0.9rem; color: #6B7280; margin-top: 0.75rem; }}
+  .verify-link {{ color: #4F46E5; text-decoration: none; font-weight: 500; }}
+  .verify-link:hover {{ text-decoration: underline; }}
+  nav {{ margin-bottom: 1.5rem; }}
+  nav a {{ color: #4F46E5; text-decoration: none; font-size: 0.95rem; }}
+  nav a:hover {{ text-decoration: underline; }}
+  .divider {{ border: none; border-top: 1px solid #E5E7EB; margin: 2rem 0; }}
 </style>
 <script>
-function copyCmd(btn) {{
-  // Clone the pre, remove the button node, then grab remaining text
-  const pre = btn.closest('pre');
-  const clone = pre.cloneNode(true);
-  clone.querySelectorAll('button').forEach(b => b.remove());
-  const text = clone.textContent.trim();
-  navigator.clipboard.writeText(text).then(() => {{
+function copyURL(btn, url) {{
+  navigator.clipboard.writeText(url).then(() => {{
+    const oldText = btn.textContent;
     btn.textContent = 'Copied!';
-    btn.style.color = '#3fb950';
-    setTimeout(() => {{ btn.textContent = 'Copy'; btn.style.color = ''; }}, 2000);
+    btn.style.background = '#ECFDF5';
+    btn.style.color = '#047857';
+    setTimeout(() => {{ btn.textContent = oldText; btn.style.background = ''; btn.style.color = ''; }}, 2000);
   }}).catch(() => {{
-    // Fallback for older browsers
     const ta = document.createElement('textarea');
-    ta.value = text; document.body.appendChild(ta); ta.select();
+    ta.value = url; document.body.appendChild(ta); ta.select();
     document.execCommand('copy'); document.body.removeChild(ta);
     btn.textContent = 'Copied!';
     setTimeout(() => btn.textContent = 'Copy', 2000);
@@ -1313,119 +1317,95 @@ function copyCmd(btn) {{
 </script>
 </head>
 <body>
-<nav style="margin-bottom:1.5rem;">
-  <a href="/" style="color:#8b949e;text-decoration:none;font-size:0.9rem;display:inline-flex;align-items:center;gap:0.4rem;">
-    ← Dashboard
-  </a>
+<nav>
+  <a href="/">← Dashboard</a>
 </nav>
-<h1>📱 iPhone Setup <span class="badge-remote" style="{remote_only}">☁️ Cloud</span></h1>
-<p>Follow these steps to set up low-battery iPhone automations. The default model is zone enter/leave events, not periodic GPS polling.</p>
 
-<!-- ── Step 1: Download ─────────────────────────────── -->
-<h2>Step 1 — Download only the helper shortcuts you actually need</h2>
-<div class="step">
-  <div class="step-num">On your Mac — open this page in Safari or Chrome</div>
-  <p>
-    <span style="{auto_signed_badge}" class="badge-signed">✅ Auto-signed</span>
-    <span style="{signing_section_display}" class="badge-signed" style="background:rgba(210,153,34,0.15);color:#d29922;border-color:rgba(210,153,34,0.3);">⚠️ Requires signing — see Step 2</span>
-  </p>
-  <p style="margin: 0.75rem 0 1rem; font-size:0.88rem; line-height:1.7;">
-    <strong style="color:#f0f6fc;">Walking</strong> <span style="color:#8b949e;">— Fires when your iPhone detects a walking workout (best when triggered by Apple Watch walking workouts).</span><br>
-    <strong style="color:#f0f6fc;">Charging On/Off</strong> <span style="color:#8b949e;">— Logs when you plug in or unplug (used for sleep inference).</span><br>
-    <strong style="color:#f0f6fc;">GPS Ping / Arrive</strong> <span style="color:#8b949e;">— Legacy helpers only. Zone enter/leave automations in Step 4 are the recommended default.</span>
-  </p>
-  <p style="margin-top:1rem">
-    <a class="action-btn" href="/setup/shortcut/download?kind=walking">⬇ Walking</a>&nbsp;
-    <a class="action-btn" href="/setup/shortcut/download?kind=charge_on">⬇ Charging On</a>&nbsp;
-    <a class="action-btn" href="/setup/shortcut/download?kind=charge_off">⬇ Charging Off</a>
-  </p>
-  <p class="note" style="margin-top:0.75rem;">Only download the legacy helpers if you intentionally want them:</p>
-  <p style="margin-top:0.5rem">
-    <a class="action-btn" href="/setup/shortcut/download?kind=gps" style="font-size:0.85rem;padding:0.55rem 1rem;">Legacy GPS Ping</a>&nbsp;
-    <a class="action-btn" href="/setup/shortcut/download?kind=arrive" style="font-size:0.85rem;padding:0.55rem 1rem;">Legacy Arrive</a>
-  </p>
-  <!-- One-click sign all — only shows when running locally on Mac -->
-  <div style="{sign_all_display}; margin-top:1rem;">
-    <a class="action-btn" href="/setup/shortcut/sign-all" style="background:#3fb950;color:#000;">⚡ Download &amp; Sign All to Desktop</a>
-    <p class="note">Saves all 5 signed shortcuts to your Desktop and opens Finder. Then AirDrop to iPhone.</p>
+<h1>iPhone Setup</h1>
+<p>Set up iOS automations to track your location, movement, and charging status. All automations use simple GET URLs — no JSON typing, no Smart Punctuation errors.</p>
+
+<h2>Zone Automations</h2>
+<div class="section">
+  <div class="step-num">Shortcuts App → Automation → + → Location → [Zone Name] → Arrives/Leaves</div>
+
+  <p class="instructions">For each zone:</p>
+  <ol class="instructions">
+    <li>Open Shortcuts app → <strong>Automation</strong> tab → <strong>+</strong></li>
+    <li>Choose <strong>Location</strong></li>
+    <li>Select the zone (e.g., Home, Office, Library)</li>
+    <li>Choose <strong>Arrives</strong> (or <strong>Leaves</strong>)</li>
+    <li>Set geofence radius to 50–100 meters</li>
+    <li>Tap <strong>Next</strong></li>
+    <li>Tap <strong>New Blank Automation</strong></li>
+    <li>Tap <strong>+ Add Action</strong> → search <strong>"Get Contents of URL"</strong></li>
+    <li>Copy the URL below for this zone and paste it into the URL field</li>
+    <li>Tap <strong>Done</strong></li>
+    <li>Tap the automation name → turn off <strong>"Ask Before Running"</strong></li>
+    <li>Repeat for each zone, and for both Arrives and Leaves</li>
+  </ol>
+
+  <p class="note"><strong>Focus Mode (optional):</strong> Before the "Get Contents of URL" action, you can add a "Set Focus" action if desired.</p>
+</div>
+
+<h2>Charging Automations</h2>
+<div class="section">
+  <div class="step-num">Shortcuts App → Automation → + → Charger</div>
+
+  <p class="instructions">Create two automations:</p>
+  <ol class="instructions">
+    <li>Open Shortcuts app → <strong>Automation</strong> tab → <strong>+</strong></li>
+    <li>Choose <strong>Charger</strong></li>
+    <li>Choose <strong>Is Connected</strong> (for charging on)</li>
+    <li>Tap <strong>Next</strong> → <strong>New Blank Automation</strong> → <strong>+ Add Action</strong> → "Get Contents of URL"</li>
+    <li>Copy the URL below and paste it</li>
+    <li>Tap <strong>Done</strong> → turn off <strong>"Ask Before Running"</strong></li>
+    <li>Repeat for <strong>Is Disconnected</strong> with the charging off URL</li>
+  </ol>
+
+  <p><strong>Charging On URL:</strong></p>
+  <div class="url-box">
+    <span>{backend_url}/api/ios-event?kind=charge_on</span>
+    <button class="copy-btn" onclick="copyURL(this, '{backend_url}/api/ios-event?kind=charge_on')">Copy</button>
+  </div>
+
+  <p><strong>Charging Off URL:</strong></p>
+  <div class="url-box">
+    <span>{backend_url}/api/ios-event?kind=charge_off</span>
+    <button class="copy-btn" onclick="copyURL(this, '{backend_url}/api/ios-event?kind=charge_off')">Copy</button>
   </div>
 </div>
 
-<!-- ── Step 2: Sign (Railway only) ─────────────────── -->
-<div style="{signing_section_display}">
-<h2>Step 2 — Download &amp; sign shortcuts on your Mac</h2>
-<div class="signing-note">
-  <strong>⚠️ Required when using Railway:</strong> iOS will not import unsigned shortcuts. Run this one-liner in Terminal — it downloads all 5 and signs them in one step.
-</div>
-<div class="step">
-  <div class="step-num">Open Terminal on your Mac and paste this command</div>
-  <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>cd ~/Desktop && for kind in gps arrive walking charge_on charge_off; do
-  curl -s "{backend_url}/setup/shortcut/download?kind=$kind" -o "Vero-$kind.shortcut" && \\
-  shortcuts sign -m anyone -i "Vero-$kind.shortcut" -o "Vero-$kind.shortcut" && \\
-  echo "Signed: $kind"
-done && echo "All 5 shortcuts ready on your Desktop."</pre>
-  <p class="note">This saves 5 signed <code>.shortcut</code> files to your Desktop. Then AirDrop them to your iPhone.</p>
-</div>
-</div>
+<h2>Walking Automation</h2>
+<div class="section">
+  <div class="step-num">Shortcuts App → Automation → + → Apple Watch Workout</div>
 
-<!-- ── Step 3: Send to iPhone ─────────────────────── -->
-<h2 id="step-send">Step 3 — Send to iPhone</h2>
-<div class="step">
-  <div class="step-num">Method A — AirDrop (fastest)</div>
-  <p>In Finder, right-click each <code>.shortcut</code> file → <strong>Share → AirDrop</strong> → select your iPhone. Tap <strong>Add Shortcut</strong> for each.</p>
-</div>
-<div class="step" style="{local_only}">
-  <div class="step-num">Method B — iCloud Drive (no AirDrop needed)</div>
-  <p><a class="action-btn" href="/setup/save-to-icloud" style="font-size:0.9rem;padding:0.5rem 1rem;">Save helper shortcut to iCloud Drive →</a></p>
-  <p class="note">On iPhone: <strong>Files app → iCloud Drive → Vero.shortcut → Add Shortcut</strong>. Use this for the walking helper if you do not want to AirDrop.</p>
-</div>
-
-<hr class="divider">
-
-<!-- ── Step 4: Automations ────────────────────────── -->
-<h2>Step 4 — Create automations on iPhone</h2>
-<div class="step">
-  <div class="step-num">In the Shortcuts app → Automation tab → + New Automation</div>
-  <p><strong>Preferred model: zone state, not 30-minute GPS polling.</strong></p>
-  <p class="note">Create geofences with a radius of about 50-100 meters for: <strong>Anchor House</strong>, <strong>Dwinelle Hall</strong>, <strong>Wheeler Hall</strong>, <strong>VLSB</strong>, and optionally <strong>Doe/Moffitt</strong> and <strong>RSF</strong>.</p>
-  <ol style="margin:0.5rem 0 1rem 1.5rem;color:#c9d1d9;line-height:1.8">
-    <li>For each zone, create an <strong>Arrive</strong> automation and a <strong>Leave</strong> automation.</li>
-    <li>In each automation, use <strong>Get Contents of URL</strong> to fetch exactly this URL, replacing <code>slug</code> with your zone's slug:</li>
-    <pre class="cmd" style="margin-top:0.5rem;"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>{backend_url}/api/ios-zone-event?zone=slug&transition=enter</pre>
-    <li style="margin-top:0.5rem;">For leaving a zone, use <code>transition=exit</code> at the end instead. Because it uses the URL, no JSON typing or Smart Punctuation errors can happen.</li>
-    <li>For Dwinelle and Wheeler, optionally add <strong>Set Focus → Class</strong> before the network action. For VLSB or Doe/Moffitt, optionally add <strong>Set Focus → Deep Work</strong>.</li>
-    <li>For Anchor House arrival, optionally turn Focus off before the network action.</li>
+  <p class="instructions">Create one automation:</p>
+  <ol class="instructions">
+    <li>Open Shortcuts app → <strong>Automation</strong> tab → <strong>+</strong></li>
+    <li>Choose <strong>Apple Watch Workout</strong></li>
+    <li>Select <strong>Walking</strong> → <strong>Starts</strong></li>
+    <li>Tap <strong>Next</strong> → <strong>New Blank Automation</strong> → <strong>+ Add Action</strong> → "Get Contents of URL"</li>
+    <li>Copy the URL below and paste it</li>
+    <li>Tap <strong>Done</strong> → turn off <strong>"Ask Before Running"</strong></li>
   </ol>
-  <p class="note">This tracks intentional blocks, commute timing, and time-in-zone. It is lower power and more accurate than 30-minute GPS polling.</p>
-  <p class="note">Apple supports automatic run for these trigger types when <strong>Ask Before Running</strong> is turned off, so <em>Arrive</em>, <em>Leave</em>, <em>Workout</em>, and <em>Charger</em> automations can stay hands-off once you set them up.</p>
 
-  <p><strong>Apple Watch walking signal</strong></p>
-  <p class="note">Create one more automation: <em>Workout → Walking → Starts</em> → Run Shortcut <strong>Vero Walking</strong>. In the Watch app on iPhone, enable <strong>Workout Start Reminder</strong> and <strong>Workout End Reminder</strong>.</p>
-
-  <p><strong>Sleep signal</strong></p>
-  <p class="note"><em>Charger connected</em> → Run Shortcut <strong>Vero Charging On</strong>; <em>Charger disconnected</em> → Run Shortcut <strong>Vero Charging Off</strong>.</p>
-
-  <p><strong>Legacy fallback only</strong></p>
-  <p class="note">If you still want a periodic heartbeat, you can keep the old Focus-loop GPS Ping shortcut, but it is no longer the recommended setup.</p>
+  <p><strong>Walking URL:</strong></p>
+  <div class="url-box">
+    <span>{backend_url}/api/ios-event?kind=walking</span>
+    <button class="copy-btn" onclick="copyURL(this, '{backend_url}/api/ios-event?kind=walking')">Copy</button>
+  </div>
 </div>
 
-<h2>Step 5 — Calendar sync (recommended setup)</h2>
-<div class="step">
-  <div class="step-num">Recommended</div>
-  <p>On your Mac, go to <strong>System Settings → Apple Account → iCloud</strong> and make sure <strong>Calendar</strong> is turned <strong>On</strong>.</p>
-  <p><strong>Detected target:</strong> the Mac helper writes to Apple Calendar locally. For cloud sync, the <strong>Vero</strong> calendar should live under the <strong>iCloud</strong> section in Calendar.app, not only under <strong>On My Mac</strong>.</p>
-  <p><strong>Fix this if needed:</strong> if you want Google visibility too, add Google under <strong>System Settings → Internet Accounts</strong>, enable Calendar for that account, and let Apple Calendar handle the sync. Vero still writes only to Apple Calendar on the Mac.</p>
+<h2>Verify Setup</h2>
+<div class="section">
+  <p>Run each automation once manually in the Shortcuts app. Then check <a class="verify-link" href="/api/ios-setup-status">/api/ios-setup-status</a> — all automations should show as configured.</p>
 </div>
 
-<h2>Your backend URL</h2>
-<div class="url-box">{backend_url}</div>
-<p class="note">{network_note}</p>
-
-<h2>Verify</h2>
-<div class="step">
-  <div class="step-num">Run each shortcut once manually in the Shortcuts app</div>
-  <p>Then check <a href="/api/ios-setup-status" style="color:#58a6ff">/api/ios-setup-status</a> — all items should show as configured. Personal automations are created per device, so build these on the iPhone that will actually run them.</p>
+<h2>Calendar Sync (Recommended)</h2>
+<div class="section">
+  <p>On your Mac: <strong>System Settings → Apple Account → iCloud</strong> and turn on <strong>Calendar</strong>. Make sure the <strong>Vero</strong> calendar is synced to iCloud, not just "On My Mac".</p>
 </div>
+
 </body>
 </html>"""
 
@@ -1468,27 +1448,13 @@ def _sign_shortcut_bytes(unsigned_bytes: bytes, name: str = "shortcut") -> bytes
                 pass
 
 
-def _build_shortcut_bytes(kind: str = "gps", sign: bool = True) -> bytes:
+def _build_shortcut_bytes(kind: str = "walking", sign: bool = True) -> bytes:
     """Generate shortcut bytes for all iOS automation types."""
     import plistlib
     import uuid
 
-    kind = (kind or "gps").lower()
+    kind = (kind or "walking").lower()
     templates = {
-        "gps": {
-            "name": "Vero GPS",
-            "activity": "ios_ping",
-            "is_charging": None,
-            "use_location_action": True,
-            "location_label": "current_location",
-        },
-        "arrive": {
-            "name": "Vero Arrive",
-            "activity": "Arrive",
-            "is_charging": "false",
-            "use_location_action": False,
-            "location_label": "arrive_trigger",
-        },
         "walking": {
             "name": "Vero Walking",
             "activity": "Walking",
@@ -1667,13 +1633,13 @@ async def download_shortcut(kind: str = "gps"):
 
 @app.get("/setup/shortcut/sign-all")
 async def sign_all_shortcuts():
-    """Download, sign, and save all 5 shortcuts to Desktop — macOS only."""
+    """Download, sign, and save all shortcuts to Desktop — macOS only."""
     import os, shutil, subprocess
     from fastapi.responses import HTMLResponse as HR
     if not shutil.which("shortcuts"):
         return HR("<p style='font-family:sans-serif;color:#f85149'>This endpoint only works when the backend is running locally on macOS.</p>")
     desktop = os.path.expanduser("~/Desktop")
-    kinds = ["gps", "arrive", "walking", "charge_on", "charge_off"]
+    kinds = ["walking", "charge_on", "charge_off"]
     saved = []
     failed = []
     for kind in kinds:
