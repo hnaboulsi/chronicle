@@ -1,450 +1,399 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Vero</title>
-    <meta name="description" content="Personal productivity agent — Mac tracking, iPhone automations, and calendar sync.">
-    <meta name="theme-color" content="#0f1117">
+    <meta name="description"
+        content="Personal productivity agent — Mac tracking, iPhone automations, and calendar sync.">
+    <meta name="theme-color" content="#0d0d0f">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Vero">
     <link rel="manifest" href="manifest.json">
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="apple-touch-icon" href="apple-touch-icon.svg">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: { base: '#0f1117', surface: '#1a1d27' },
-                    spacing: { 'safe-bottom': 'env(safe-area-inset-bottom)' }
-                }
-            }
-        };
-    </script>
+
+    <!-- Typography: Geist Sans & DM Mono -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1.3.0/dist/fonts/geist-sans/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+
     <link rel="stylesheet" href="style.css">
 </head>
-<body class="bg-base text-gray-100 font-sans antialiased">
-    <!-- Onboarding Overlay -->
-    <div id="onboarding-overlay" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
-        <div class="bg-surface border border-gray-700 rounded-xl p-8 w-96 shadow-xl">
+
+<body>
+    <!-- Onboarding Overlay (Merged Logic) -->
+    <div id="onboarding-overlay" class="onboarding-overlay hidden">
+        <div class="onboarding-card">
             <div class="onboarding-step" id="onboard-step-1">
-                <h2 class="text-xl font-semibold mb-3">Welcome to Vero</h2>
-                <p class="text-gray-400 text-sm mb-6">Control Center for Mac telemetry, iPhone automations, and calendar sync.</p>
-                <button class="w-full bg-gray-100 text-gray-900 font-medium py-2 rounded-lg hover:bg-white" onclick="nextOnboardStep(2)">Get Started</button>
+                <div style="font-size: 32px; margin-bottom: 16px;">🧠</div>
+                <h2>Welcome to Vero</h2>
+                <p>Personal productivity agent for Mac telemetry, iPhone automations, and calendar sync.</p>
+                <button class="btn-primary" style="width: 100%" onclick="nextOnboardStep(2)">Get Started</button>
             </div>
             <div class="onboarding-step hidden" id="onboard-step-2">
-                <h2 class="text-xl font-semibold mb-3">Mac Agent</h2>
-                <p class="text-gray-400 text-sm mb-6" id="onboard-mac-status">Checking if the background agent is connected...</p>
-                <button class="w-full bg-gray-100 text-gray-900 font-medium py-2 rounded-lg hover:bg-white" onclick="nextOnboardStep(3)">Next</button>
+                <h2>Mac Agent</h2>
+                <p id="onboard-mac-status">Checking background agent connection...</p>
+                <button class="btn-primary" style="width: 100%" onclick="nextOnboardStep(3)">Next</button>
             </div>
             <div class="onboarding-step hidden" id="onboard-step-3">
-                <h2 class="text-xl font-semibold mb-3">iPhone Setup</h2>
-                <p class="text-gray-400 text-sm mb-2">Set up required Arrive/Leave automations for each zone.</p>
-                <p class="text-gray-400 text-xs mb-6" id="onboard-ios-status"></p>
-                <a href="/setup/ios" class="block w-full text-center bg-gray-100 text-gray-900 font-medium py-2 rounded-lg hover:bg-white mb-3" target="_blank">Open iPhone Setup</a>
-                <button class="w-full border border-gray-700 text-gray-300 font-medium py-2 rounded-lg hover:bg-gray-800" onclick="nextOnboardStep(4)">Skip for now</button>
+                <h2>iPhone Setup</h2>
+                <p>Set up Arrive/Leave automations for your zones to enable location tracking.</p>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <a href="/setup/ios" class="btn-primary" target="_blank">Open iPhone Setup</a>
+                    <button class="btn-secondary" onclick="nextOnboardStep(4)">Skip for now</button>
+                </div>
             </div>
             <div class="onboarding-step hidden" id="onboard-step-4">
-                <h2 class="text-xl font-semibold mb-3">Your Timezone</h2>
-                <p class="text-gray-400 text-sm mb-4">Detected: <strong id="onboard-tz" class="text-gray-100">America/Los_Angeles</strong></p>
-                <button class="w-full bg-gray-100 text-gray-900 font-medium py-2 rounded-lg hover:bg-white mb-3" onclick="completeOnboarding()">Looks right — finish setup</button>
-                <button class="w-full border border-gray-700 text-gray-300 font-medium py-2 rounded-lg hover:bg-gray-800" onclick="openSettings(); completeOnboarding()">Change timezone</button>
+                <h2>Timezone</h2>
+                <p>Detected: <strong id="onboard-tz" style="color: var(--text-primary)">UTC</strong></p>
+                <button class="btn-primary" style="width: 100%" onclick="completeOnboarding()">Finish Setup</button>
             </div>
         </div>
     </div>
 
-    <div class="dashboard-container min-h-screen" id="main-dashboard">
-        <!-- Top Navigation Bar -->
-        <header class="sticky top-0 z-40 bg-surface border-b border-gray-700">
-            <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-                <div class="flex items-center gap-8">
-                    <div class="flex items-center gap-2">
-                        <span class="relative inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse" id="tracking-pulse"></span>
-                        <span class="text-lg font-semibold">Vero</span>
-                        <span class="text-xs px-2 py-1 bg-green-900/40 text-green-400 rounded border border-green-700" id="tracking-badge">Live</span>
-                    </div>
-                </div>
-                <div class="flex items-center gap-4">
-                    <button id="toggle-tracking-btn" class="text-sm px-3 py-2 rounded-lg border border-gray-700 hover:bg-gray-800 active" title="Toggle tracking">Tracking: ON</button>
-                    <button id="theme-toggle-btn" class="p-2 hover:bg-gray-800 rounded-lg border border-gray-700" title="Toggle theme">☀️</button>
-                    <button id="settings-btn" class="p-2 hover:bg-gray-800 rounded-lg border border-gray-700" title="Settings">Settings</button>
-                    <div id="clock" class="text-sm text-gray-400 min-w-16 text-right">Loading...</div>
-                </div>
+    <div class="dashboard-container" id="main-dashboard">
+        <!-- Header -->
+        <header class="glass-header glass-panel">
+            <div class="header-left">
+                <div class="pulse-ring" id="tracking-pulse"></div>
+                <h1>Vero <span class="badge" id="tracking-badge">Live</span></h1>
+            </div>
+            <div class="header-right">
+                <button id="toggle-tracking-btn" class="toggle-btn active" title="Toggle tracking">Tracking: ON</button>
+                <button id="theme-toggle-btn" class="icon-btn" title="Toggle theme" onclick="toggleTheme()">☀️</button>
+                <button id="settings-btn" class="icon-btn" title="Settings" onclick="openSettings()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path
+                            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z">
+                        </path>
+                    </svg>
+                </button>
+                <div class="datetime-display" id="clock">Loading...</div>
             </div>
         </header>
 
-        <!-- Main Content -->
-        <div class="max-w-6xl mx-auto px-6 py-8 space-y-8">
-            <!-- Check-In & Callout Banners -->
-            <div id="checkin-banner" class="hidden bg-blue-900/30 border border-blue-700 rounded-lg p-4 flex justify-between items-center mobile-view-section" data-view="dashboard">
-                <div class="flex items-center gap-3">
-                    <span id="checkin-message" class="text-sm text-blue-200">What are you up to?</span>
-                </div>
-                <div class="flex gap-2 items-center">
-                    <button id="checkin-confirm" class="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">Confirm</button>
-                    <input type="text" id="checkin-correction" placeholder="Actually I'm..." class="px-3 py-1 bg-gray-800 border border-blue-700 rounded text-sm" />
-                    <button id="checkin-send" class="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">Send</button>
-                    <button id="checkin-snooze" class="px-3 py-1 border border-blue-700 rounded text-sm text-blue-300 hover:bg-blue-900/50">Snooze</button>
-                    <button id="checkin-dismiss" class="px-3 py-1 border border-blue-700 rounded text-sm text-blue-300 hover:bg-blue-900/50">Dismiss</button>
-                </div>
+        <!-- Check-In Banner -->
+        <div id="checkin-banner" class="checkin-banner hidden">
+            <div class="checkin-content" style="display: flex; align-items: center; gap: 8px; flex: 1;">
+                <span class="checkin-icon">💬</span>
+                <span id="checkin-message">What are you up to?</span>
             </div>
-
-            <div id="callout-banner" class="hidden bg-amber-900/30 border border-amber-700 rounded-lg p-4 mobile-view-section" data-view="dashboard">
-                <p id="callout-message" class="mb-3 text-sm"></p>
-                <div class="flex gap-2">
-                    <input type="text" id="callout-reply" placeholder="Type what you're doing..." class="flex-1 px-3 py-2 bg-gray-800 border border-amber-700 rounded text-sm" />
-                    <button id="callout-submit" class="px-4 py-2 bg-amber-500 text-white rounded text-sm font-medium hover:bg-amber-600">Send</button>
-                    <button id="callout-dismiss" class="px-4 py-2 border border-amber-700 rounded text-sm hover:bg-amber-900/50">Dismiss</button>
-                </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <button id="checkin-confirm" class="btn-primary"
+                    style="padding: 4px 10px; font-size: 11px;">Confirm</button>
+                <input type="text" id="checkin-correction" placeholder="Actually..." class="recap-feedback-input"
+                    style="margin-top: 0; width: 120px; padding: 4px 8px;">
+                <button id="checkin-send" class="btn-secondary"
+                    style="padding: 4px 10px; font-size: 11px;">Send</button>
+                <button id="checkin-snooze" class="btn-secondary"
+                    style="padding: 4px 10px; font-size: 11px;">Snooze</button>
+                <button id="checkin-dismiss" class="btn-secondary"
+                    style="padding: 4px 10px; font-size: 11px;">×</button>
             </div>
+        </div>
 
-            <!-- Quick Chat Chips -->
-            <div class="flex gap-2 overflow-x-auto pb-2 mobile-view-section" data-view="dashboard">
-                <button class="px-3 py-1 bg-gray-700 text-sm rounded-full whitespace-nowrap hover:bg-gray-600" onclick="quickChat('Eating')">Eating</button>
-                <button class="px-3 py-1 bg-gray-700 text-sm rounded-full whitespace-nowrap hover:bg-gray-600" onclick="quickChat('Studying')">Studying</button>
-                <button class="px-3 py-1 bg-gray-700 text-sm rounded-full whitespace-nowrap hover:bg-gray-600" onclick="quickChat('Taking a break')">Taking a break</button>
-                <button class="px-3 py-1 bg-gray-700 text-sm rounded-full whitespace-nowrap hover:bg-gray-600" onclick="quickChat('Going to sleep')">Going to sleep</button>
-                <button class="px-3 py-1 bg-gray-700 text-sm rounded-full whitespace-nowrap hover:bg-gray-600" onclick="quickChat('Working out')">Working out</button>
+        <!-- Call-Out Banner -->
+        <div id="callout-banner" class="callout-banner hidden">
+            <div style="flex: 1;">
+                <span id="callout-message"></span>
             </div>
-
-            <!-- Quick Chat Bar -->
-            <div class="bg-surface border border-gray-700 rounded-lg p-4 flex gap-3 mobile-view-section" data-view="dashboard">
-                <input type="text" id="chat-input" class="flex-1 bg-gray-800 border border-gray-700 rounded px-4 py-2 text-sm focus:outline-none focus:border-gray-500" placeholder="Tell me what you're doing..." />
-                <button id="chat-send" class="px-4 py-2 bg-gray-100 text-gray-900 rounded font-medium text-sm hover:bg-white">Send</button>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <input type="text" id="callout-reply" placeholder="Reply..." class="recap-feedback-input"
+                    style="margin-top: 0; width: 150px; padding: 4px 8px;">
+                <button id="callout-submit" class="btn-primary" style="padding: 4px 10px; font-size: 11px;">Tell
+                    it</button>
+                <button id="callout-dismiss" class="btn-secondary"
+                    style="padding: 4px 10px; font-size: 11px;">×</button>
             </div>
+        </div>
 
-            <div id="chat-reply" class="hidden bg-surface border border-gray-700 rounded-lg p-4 mobile-view-section" data-view="dashboard">
+        <!-- Quick Actions & Chat -->
+        <div class="quick-action-container glass-panel" style="padding: 16px;">
+            <div class="quick-action-pills">
+                <button class="pill-action" onclick="setChatContext('Eating')">Eating</button>
+                <button class="pill-action" onclick="setChatContext('Studying')">Studying</button>
+                <button class="pill-action" onclick="setChatContext('Working')">Working</button>
+                <button class="pill-action" onclick="setChatContext('In a break')">Taking a break</button>
+                <button class="pill-action" onclick="setChatContext('Going to sleep')">Going to sleep</button>
+                <button class="pill-action" onclick="setChatContext('Working out')">Working out</button>
+            </div>
+            <div style="display: flex; gap: 8px; margin-top: 12px;">
+                <input type="text" id="chat-input" class="recap-feedback-input"
+                    style="flex: 1; margin-top: 0; padding: 10px 14px;" placeholder="Tell me what you're doing...">
+                <button id="chat-send" class="btn-primary" style="padding: 0 16px;">Send</button>
+            </div>
+            <div id="chat-reply" class="hidden"
+                style="margin-top: 12px; padding: 10px; background: var(--bg-elevated); border-radius: var(--radius-input); font-size: 13px;">
                 <span id="chat-reply-text"></span>
             </div>
-
-            <!-- Recent Chat -->
-            <section class="bg-surface border border-gray-700 rounded-lg mobile-view-section" data-view="dashboard">
-                <div class="p-4 border-b border-gray-700 flex justify-between items-center">
-                    <h2 class="font-semibold">Recent Chat</h2>
-                </div>
-                <div id="chat-history-list" class="p-4 space-y-3 max-h-96 overflow-y-auto">
-                    <p class="text-gray-500 text-sm">No chat yet.</p>
-                </div>
-            </section>
-
-            <!-- KPI Tiles (3 columns) -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mobile-view-section" data-view="dashboard">
-                <div class="bg-surface border border-gray-700 rounded-lg p-6">
-                    <div id="stat-active" class="text-3xl font-semibold text-gray-100 mb-1">0h 0m</div>
-                    <div class="text-xs text-gray-400 uppercase tracking-wider">
-                        Active Today <span class="kpi-help" data-tip="Active time = non-idle Mac telemetry points in your local day multiplied by polling interval.">?</span>
-                    </div>
-                    <div id="stat-active-note" class="text-[11px] text-gray-500 mt-2">Collecting data…</div>
-                </div>
-                <div class="bg-surface border border-gray-700 rounded-lg p-6">
-                    <div id="stat-productive" class="text-3xl font-semibold text-gray-100 mb-1">0%</div>
-                    <div class="text-xs text-gray-400 uppercase tracking-wider">
-                        Productive % <span class="kpi-help" data-tip="Productive % = productive minutes / active minutes. Productive categories: studying, working, creative.">?</span>
-                    </div>
-                    <div id="stat-productive-note" class="text-[11px] text-gray-500 mt-2">Waiting for active minutes…</div>
-                </div>
-                <div class="bg-surface border border-gray-700 rounded-lg p-6">
-                    <div id="stat-llm" class="text-3xl font-semibold text-gray-100 mb-1">0 / 30</div>
-                    <div class="text-xs text-gray-400 uppercase tracking-wider">AI Calls Today</div>
-                    <div class="text-[11px] text-gray-500 mt-2">Used / daily cap</div>
-                </div>
-            </div>
-
-            <!-- Device Status (2 columns) -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mobile-view-section" data-view="dashboard">
-                <div class="bg-surface border border-gray-700 rounded-lg p-6" id="card-mac">
-                    <div class="flex items-start justify-between mb-3">
-                        <div>
-                            <h3 class="font-semibold">Mac Agent</h3>
-                        </div>
-                    </div>
-                    <p class="text-lg font-semibold mb-1" id="mac-status">Waiting...</p>
-                    <p class="text-gray-400 text-sm mb-4" id="mac-detail">Checking the background agent</p>
-                    <div class="flex gap-2">
-                        <a id="mac-open-app" class="hidden px-3 py-2 text-xs bg-gray-800 hover:bg-gray-700 rounded border border-gray-700" href="vero://open">Open Vero</a>
-                        <a id="mac-setup-link" class="px-3 py-2 text-xs bg-gray-800 hover:bg-gray-700 rounded border border-gray-700" href="/setup/mac" target="_blank">Install / Repair</a>
-                    </div>
-                </div>
-                <div class="bg-surface border border-gray-700 rounded-lg p-6" id="card-ios">
-                    <div class="flex items-start justify-between mb-3">
-                        <h3 class="font-semibold">iPhone Events</h3>
-                    </div>
-                    <p class="text-lg font-semibold mb-1" id="ios-status">Waiting...</p>
-                    <p class="text-gray-400 text-sm" id="ios-detail">No location data yet</p>
-                </div>
-            </div>
-
-            <!-- Activity + Sleep Context -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mobile-view-section" data-view="dashboard">
-                <div class="bg-surface border border-gray-700 rounded-lg p-6" id="card-mode">
-                    <h3 class="font-semibold mb-3">Sleep Context</h3>
-                    <p class="text-lg font-semibold mb-1" id="focus-status">No signal</p>
-                    <p class="text-gray-400 text-sm" id="focus-detail">Waiting for iPhone events.</p>
-                </div>
-                <div class="bg-surface border border-gray-700 rounded-lg p-6" id="card-activity">
-                    <h3 class="font-semibold mb-3">Current Activity</h3>
-                    <p class="text-lg font-semibold mb-1" id="activity-category">—</p>
-                    <p class="text-gray-400 text-sm" id="activity-summary">—</p>
-                </div>
-            </div>
-
-            <!-- Today's Breakdown -->
-            <section class="bg-surface border border-gray-700 rounded-lg mobile-view-section" data-view="dashboard">
-                <div class="p-4 border-b border-gray-700">
-                    <h2 class="font-semibold">Today's Breakdown</h2>
-                </div>
-                <div id="analytics-chart" class="p-6 space-y-3">
-                    <p class="text-gray-500 text-sm">Collecting data...</p>
-                </div>
-            </section>
-
-            <!-- Activity Timeline -->
-            <section class="bg-surface border border-gray-700 rounded-lg mobile-view-section" data-view="activity">
-                <div class="p-4 border-b border-gray-700">
-                    <h2 class="font-semibold">Activity Timeline</h2>
-                    <p class="text-xs text-gray-500 mt-1">Telemetry-derived timeline (not Apple Calendar events). <span class="kpi-help" data-tip="Timeline shows sampled app activity from telemetry. Apple Calendar Sync writes only session events, so they can differ.">Why they differ?</span></p>
-                </div>
-                <div id="calendar-view" class="p-6 overflow-x-auto">
-                    <div class="grid gap-1" style="grid-template-columns: 60px repeat(7, minmax(80px, 1fr))">
-                        <div class="text-xs text-gray-500 font-semibold col-span-1"></div>
-                        <div class="text-xs text-gray-500 font-semibold text-center">Mon</div>
-                        <div class="text-xs text-gray-500 font-semibold text-center">Tue</div>
-                        <div class="text-xs text-gray-500 font-semibold text-center">Wed</div>
-                        <div class="text-xs text-gray-500 font-semibold text-center">Thu</div>
-                        <div class="text-xs text-gray-500 font-semibold text-center">Fri</div>
-                        <div class="text-xs text-gray-500 font-semibold text-center">Sat</div>
-                        <div class="text-xs text-gray-500 font-semibold text-center">Sun</div>
-                    </div>
-                    <p class="text-gray-500 text-sm mt-4">Loading...</p>
-                </div>
-            </section>
-
-            <!-- Live Activity Table -->
-            <section class="bg-surface border border-gray-700 rounded-lg mobile-view-section" data-view="activity">
-                <div class="p-4 border-b border-gray-700 flex justify-between items-center">
-                    <h2 class="font-semibold">Live Activity</h2>
-                    <div class="flex items-center gap-3">
-                        <div class="flex gap-1" id="interval-pills">
-                            <button class="interval-pill active px-3 py-1 text-xs hover:bg-gray-700 rounded" data-val="1">1m</button>
-                            <button class="interval-pill px-3 py-1 text-xs hover:bg-gray-700 rounded" data-val="5">5m</button>
-                            <button class="interval-pill px-3 py-1 text-xs hover:bg-gray-700 rounded" data-val="15">15m</button>
-                            <button class="interval-pill px-3 py-1 text-xs hover:bg-gray-700 rounded" data-val="30">30m</button>
-                        </div>
-                        <button id="refresh-btn" class="p-2 hover:bg-gray-700 rounded border border-gray-700 kpi-help" data-tip="Reload live activity logs, KPI stats, hourly recap, and Setup health status.">↻</button>
-                        <button id="clear-logs-btn" class="p-2 hover:bg-red-900 rounded border border-gray-700 text-red-400" title="Clear logs">Clear</button>
-                    </div>
-                </div>
-                <div class="overflow-x-auto max-h-[400px] overflow-y-auto">
-                    <table id="logs-table" class="w-full text-sm">
-                        <thead>
-                            <tr class="border-b border-gray-700">
-                                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-400 uppercase">Time</th>
-                                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-400 uppercase">Device</th>
-                                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-400 uppercase">Activity</th>
-                                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-400 uppercase">Context</th>
-                            </tr>
-                        </thead>
-                        <tbody id="logs-body"></tbody>
-                    </table>
-                </div>
-                <input type="range" id="polling-slider" style="display:none" min="1" max="60" value="1" step="1">
-                <span id="polling-label" style="display:none">Every 1m</span>
-            </section>
-
-            <!-- Hourly Recaps (Enhanced) -->
-            <section class="bg-surface border border-gray-700 rounded-lg mobile-view-section" data-view="activity">
-                <div class="p-4 border-b border-gray-700 flex items-center justify-between">
-                    <h2 class="font-semibold">Hourly Recaps</h2>
-                    <button id="trigger-recap-btn" onclick="triggerHourlyRecap()" class="text-xs px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 transition-colors border border-gray-700">Generate Now</button>
-                </div>
-                <div id="summaries-list" class="p-6 space-y-4 max-h-96 overflow-y-auto">
-                    <p class="text-gray-500 text-sm">No summaries yet — they generate each hour.</p>
-                </div>
-            </section>
-
-            <!-- Setup & Repair -->
-            <section class="bg-surface border border-gray-700 rounded-lg mobile-view-section" data-view="dashboard" id="control-center-repair">
-                <div class="p-4 border-b border-gray-700">
-                    <h2 class="font-semibold">Setup &amp; Repair</h2>
-                </div>
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 p-6">
-                    <div>
-                        <p class="text-xs text-gray-500 uppercase tracking-widest mb-2">Service Health</p>
-                        <p class="font-semibold" id="service-status">Checking…</p>
-                        <p class="text-xs text-gray-500 mt-1" id="service-detail">Verifying backend connection.</p>
-                    </div>
-                    <div>
-                        <p class="text-xs text-gray-500 uppercase tracking-widest mb-2">Calendar Sync</p>
-                        <p class="font-semibold" id="calendar-status">Checking…</p>
-                        <p class="text-xs text-gray-500 mt-1" id="calendar-detail">Syncing Mac productivity events.</p>
-                    </div>
-                    <div>
-                        <p class="text-xs text-gray-500 uppercase tracking-widest mb-2">iPhone Setup</p>
-                        <p class="font-semibold" id="ios-setup-status">Checking…</p>
-                        <p class="text-xs text-gray-500 mt-1" id="ios-setup-detail">Need Enter/Leave automations for zones.</p>
-                    </div>
-                    <div>
-                        <p class="text-xs text-gray-500 uppercase tracking-widest mb-2">Next Step</p>
-                        <p class="font-semibold" id="next-step-status">Start tracking</p>
-                        <p class="text-xs text-gray-500 mt-1" id="next-step-detail">Enable the Mac agent to begin.</p>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Footer -->
-            <footer class="text-center text-xs text-gray-500 border-t border-gray-700 pt-8 pb-8">
-                <div class="flex justify-center gap-6 mb-6">
-                    <span>Vero</span>
-                    <a href="/api/export?days=30" class="hover:text-gray-200">Export CSV</a>
-                    <a href="/setup/ios" class="hover:text-gray-200">iPhone Setup</a>
-                    <a href="/setup/mac" class="hover:text-gray-200">Mac Setup</a>
-                </div>
-                <details class="inline-block text-left">
-                    <summary class="cursor-pointer hover:text-gray-300 font-semibold">How It Works</summary>
-                    <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl mx-auto">
-                        <div>
-                            <h4 class="font-semibold mb-1 text-gray-300">Architecture</h4>
-                            <p class="text-xs text-gray-500">Two-app model: visible settings app + hidden login helper for telemetry.</p>
-                        </div>
-                        <div>
-                            <h4 class="font-semibold mb-1 text-gray-300">Agent Tasks</h4>
-                            <ul class="text-xs text-gray-500 space-y-0.5 list-disc list-inside">
-                                <li>Sends heartbeats every 60s</li>
-                                <li>Captures active app &amp; window</li>
-                                <li>Syncs calendar events</li>
-                            </ul>
-                        </div>
-                    </div>
-                </details>
-            </footer>
         </div>
+
+        <!-- Recent Chat -->
+        <section class="glass-panel">
+            <div class="feed-header">
+                <h2>Recent Chat</h2>
+            </div>
+            <div id="chat-history-list" class="chat-history-list">
+                <p class="text-muted">No chat yet.</p>
+            </div>
+        </section>
+
+        <!-- KPI Stats -->
+        <div class="stats-row">
+            <div class="stat-card glass-panel">
+                <div class="stat-number" id="stat-active">0h 0m</div>
+                <div class="stat-label">Active Today <span class="kpi-help"
+                        data-tip="Active time = non-idle telemetry points.">?</span></div>
+                <div id="stat-active-note" style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">
+                    Collecting...</div>
+            </div>
+            <div class="stat-card glass-panel">
+                <div class="stat-number" id="stat-productive">0%</div>
+                <div class="stat-label">Productive <span class="kpi-help"
+                        data-tip="Productive % = work/study minutes / active minutes.">?</span></div>
+                <div id="stat-productive-note" style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">
+                    Waiting...</div>
+            </div>
+            <div class="stat-card glass-panel">
+                <div class="stat-number" id="stat-llm">0/30</div>
+                <div class="stat-label">AI Budget</div>
+            </div>
+        </div>
+
+        <!-- Device & Focus State -->
+        <div class="device-states">
+            <div class="state-card glass-panel" id="card-mac">
+                <div class="card-icon">💻</div>
+                <div class="card-content">
+                    <h3>MacBook</h3>
+                    <p class="status-value color-muted" id="mac-status">Waiting...</p>
+                    <p class="sub-text" id="mac-detail">Checking agent</p>
+                    <div style="display: flex; gap: 8px; margin-top: 8px;">
+                        <a id="mac-open-app" class="btn-secondary" style="padding: 2px 8px; font-size: 10px;"
+                            href="vero://open">Open Vero</a>
+                        <a id="mac-setup-link" class="btn-secondary" style="padding: 2px 8px; font-size: 10px;"
+                            href="/setup/mac" target="_blank">Setup</a>
+                    </div>
+                </div>
+            </div>
+            <div class="state-card glass-panel" id="card-ios">
+                <div class="card-icon">📱</div>
+                <div class="card-content">
+                    <h3>iPhone</h3>
+                    <p class="status-value color-muted" id="ios-status">Waiting...</p>
+                    <p class="sub-text" id="ios-detail">No location data</p>
+                </div>
+            </div>
+            <div class="state-card glass-panel" id="card-mode">
+                <div class="card-icon">🌙</div>
+                <div class="card-content">
+                    <h3>Sleep Context</h3>
+                    <p class="status-value color-primary" id="focus-status">—</p>
+                    <p class="sub-text" id="focus-detail">Waiting for events</p>
+                </div>
+            </div>
+            <div class="state-card glass-panel" id="card-activity">
+                <div class="card-icon">⚡</div>
+                <div class="card-content">
+                    <h3>Current Activity</h3>
+                    <p class="status-value color-green" id="activity-category">Analyzing...</p>
+                    <p class="sub-text" id="activity-summary">&mdash;</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Breakdown -->
+        <section class="analytics-section glass-panel">
+            <div class="feed-header">
+                <h2>Today's Breakdown</h2>
+            </div>
+            <div id="analytics-chart" class="stacked-bar-chart">
+                <p class="text-muted">Collecting data...</p>
+            </div>
+        </section>
+
+        <!-- Timeline (Grid) -->
+        <section class="glass-panel" style="padding: 16px;">
+            <div class="feed-header">
+                <h2>Activity Timeline</h2>
+            </div>
+            <div id="calendar-view" style="overflow-x: auto;">
+                <p class="text-muted">Loading...</p>
+            </div>
+        </section>
+
+        <!-- Live Activity -->
+        <section class="activity-feed glass-panel">
+            <div class="feed-header">
+                <h2>Live Activity</h2>
+                <div style="display: flex; gap: 12px; align-items: center;">
+                    <div id="interval-pills"
+                        style="display: flex; gap: 4px; background: var(--bg-elevated); padding: 2px; border-radius: 6px;">
+                        <button class="toggle-btn active" style="border:none" data-val="1">1m</button>
+                        <button class="toggle-btn" style="border:none" data-val="5">5m</button>
+                        <button class="toggle-btn" style="border:none" data-val="15">15m</button>
+                        <button class="toggle-btn" style="border:none" data-val="30">30m</button>
+                    </div>
+                    <button id="refresh-btn" class="icon-btn" title="Refresh">↻</button>
+                    <button id="clear-logs-btn" class="icon-btn" style="color: var(--accent-red)"
+                        title="Clear Logs">×</button>
+                </div>
+            </div>
+            <div class="table-container">
+                <table id="logs-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Device</th>
+                            <th>Activity</th>
+                            <th>Context</th>
+                        </tr>
+                    </thead>
+                    <tbody id="logs-body"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Hourly Recaps -->
+        <section class="hourly-summaries glass-panel">
+            <div class="feed-header">
+                <h2>Hourly Recaps</h2>
+                <button id="trigger-recap-btn" onclick="triggerHourlyRecap()" class="toggle-btn">Generate Now</button>
+            </div>
+            <div id="summaries-list">
+                <p class="text-muted">No summaries yet.</p>
+            </div>
+        </section>
+
+        <!-- Setup & Health -->
+        <section class="glass-panel" id="control-center-repair">
+            <div class="feed-header">
+                <h2>Service & Repair</h2>
+            </div>
+            <div
+                style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; padding: 16px;">
+                <div>
+                    <p style="font-size: 10px; color: var(--text-muted); text-transform: uppercase;">Service Health</p>
+                    <p id="service-status" style="font-weight: 500;">Checking...</p>
+                    <p id="service-detail" class="sub-text">Connecting to backend</p>
+                </div>
+                <div>
+                    <p style="font-size: 10px; color: var(--text-muted); text-transform: uppercase;">Calendar Sync</p>
+                    <p id="calendar-status" style="font-weight: 500;">Checking...</p>
+                    <p id="calendar-detail" class="sub-text">Syncing session events</p>
+                </div>
+                <div>
+                    <p style="font-size: 10px; color: var(--text-muted); text-transform: uppercase;">iPhone Setup</p>
+                    <p id="ios-setup-status" style="font-weight: 500;">Checking...</p>
+                    <p id="ios-setup-detail" class="sub-text">Geofence automations</p>
+                </div>
+                <div>
+                    <p style="font-size: 10px; color: var(--text-muted); text-transform: uppercase;">Recommended</p>
+                    <p id="next-step-status" style="font-weight: 500;">Open Mac App</p>
+                    <p id="next-step-detail" class="sub-text">Ensure agent is running</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer
+            style="display: flex; justify-content: center; gap: 24px; padding: 48px 0; border-top: 1px solid var(--border); font-size: 11px; color: var(--text-muted);">
+            <span>Vero</span>
+            <a href="/api/export?days=30" style="color: inherit; text-decoration: none;">Export CSV</a>
+            <a href="/setup/ios" style="color: inherit; text-decoration: none;">iPhone Setup</a>
+            <a href="/setup/mac" style="color: inherit; text-decoration: none;">Mac Setup</a>
+            <details style="user-select: none;">
+                <summary style="cursor: pointer;">How it works</summary>
+                <div
+                    style="position: absolute; bottom: 80px; left: 50%; transform: translateX(-50%); width: 400px; background: var(--bg-surface); border: 1px solid var(--border); padding: 16px; border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+                    <h4 style="margin-bottom: 8px; color: var(--accent-green);">The Vero Agent</h4>
+                    <p style="line-height: 1.5; color: var(--text-secondary);">Minimal battery impact. Silently monitors
+                        active windows and syncs calendar jobs every 60s. Uses Apple Accessibility permissions.</p>
+                </div>
+            </details>
+        </footer>
     </div>
 
     <!-- Settings Drawer -->
-    <div id="settings-backdrop" class="hidden fixed inset-0 bg-black/50 z-40" onclick="closeSettings()"></div>
-    <aside id="settings-drawer" class="hidden fixed right-0 top-0 h-screen w-96 bg-surface border-l border-gray-700 overflow-y-auto z-50">
-        <div class="sticky top-0 bg-surface border-b border-gray-700 p-4 flex justify-between items-center">
-            <h2 class="font-semibold">Settings</h2>
-            <button class="p-2 hover:bg-gray-800 rounded-lg" onclick="closeSettings()">×</button>
+    <div id="settings-backdrop" class="settings-backdrop hidden" onclick="closeSettings()"></div>
+    <aside id="settings-drawer" class="settings-drawer hidden">
+        <div class="settings-header">
+            <h2>Settings</h2>
+            <button class="icon-btn" onclick="closeSettings()">×</button>
         </div>
-        <div class="p-6 space-y-6">
-            <div>
-                <h3 class="font-semibold mb-4">General</h3>
-                <div class="space-y-4">
-                    <div class="flex justify-between items-center">
-                        <label class="text-sm">Tracking</label>
-                        <label class="switch">
-                            <input type="checkbox" id="setting-tracking" checked>
-                            <span class="slider"></span>
-                        </label>
-                    </div>
-                    <div>
-                        <label class="text-sm block mb-2">Polling Interval</label>
-                        <select id="setting-polling" class="w-full bg-white/5 border border-white/10 rounded px-3 py-2 text-sm">
-                            <option value="60">1 minute</option>
-                            <option value="120">2 minutes</option>
-                            <option value="300">5 minutes</option>
-                            <option value="600">10 minutes</option>
-                            <option value="1800">30 minutes</option>
-                            <option value="3600">60 minutes</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="text-sm block mb-2">Timezone</label>
-                        <select id="setting-timezone" class="w-full bg-white/5 border border-white/10 rounded px-3 py-2 text-sm"></select>
-                    </div>
+        <div class="settings-content">
+            <div class="settings-section">
+                <h3>General Tracking</h3>
+                <div class="setting-row">
+                    <span class="setting-label">Enable Logging</span>
+                    <label class="switch">
+                        <input type="checkbox" id="setting-tracking" checked>
+                        <span class="switch-slider"></span>
+                    </label>
+                </div>
+                <div style="margin-top: 12px;">
+                    <label class="setting-label" style="display: block; margin-bottom: 8px;">Polling Interval</label>
+                    <select id="setting-polling" class="recap-feedback-input" style="margin-top: 0;">
+                        <option value="60">1 minute (Detailed)</option>
+                        <option value="300">5 minutes</option>
+                        <option value="600">10 minutes (Balanced)</option>
+                    </select>
+                </div>
+                <div style="margin-top: 12px;">
+                    <label class="setting-label" style="display: block; margin-bottom: 8px;">Timezone</label>
+                    <select id="setting-timezone" class="recap-feedback-input" style="margin-top: 0;"></select>
                 </div>
             </div>
-            <div class="border-t border-white/10 pt-6">
-                <h3 class="font-semibold mb-4">AI &amp; Budget</h3>
-                <div class="space-y-4">
-                    <div>
-                        <label class="text-sm block mb-2">AI Provider</label>
-                        <select id="setting-ai-provider" class="w-full bg-white/5 border border-white/10 rounded px-3 py-2 text-sm">
-                            <option value="auto">Auto</option>
-                            <option value="gemini">Gemini</option>
-                            <option value="openai">OpenAI</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="text-sm block mb-2">LLM Mode</label>
-                        <select id="setting-llm-mode" class="w-full bg-white/5 border border-white/10 rounded px-3 py-2 text-sm">
-                            <option value="ultra_save">Ultra Save</option>
-                            <option value="balanced">Balanced</option>
-                            <option value="quality">Quality</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="text-sm block mb-2">Daily AI Cap</label>
-                        <input type="number" id="setting-llm-cap" min="1" max="500" value="30" class="w-full bg-white/5 border border-white/10 rounded px-3 py-2 text-sm">
-                    </div>
-                    <div>
-                        <label class="text-sm block mb-2">Classification Interval</label>
-                        <select id="setting-class-interval" class="w-full bg-white/5 border border-white/10 rounded px-3 py-2 text-sm">
-                            <option value="300">5 minutes</option>
-                            <option value="600">10 minutes</option>
-                            <option value="1800">30 minutes</option>
-                            <option value="3600">60 minutes</option>
-                        </select>
-                    </div>
-                    <div class="flex justify-between items-center">
-                        <label class="text-sm">Hourly Summaries</label>
-                        <label class="switch">
-                            <input type="checkbox" id="setting-hourly">
-                            <span class="slider"></span>
-                        </label>
-                    </div>
+
+            <div class="settings-section">
+                <h3>AI & Insights</h3>
+                <div style="margin-top: 12px;">
+                    <label class="setting-label" style="display: block; margin-bottom: 8px;">Daily AI Cap</label>
+                    <input type="number" id="setting-llm-cap" class="recap-feedback-input" style="margin-top: 0;"
+                        min="1" max="500">
+                </div>
+                <div class="setting-row" style="margin-top: 12px;">
+                    <span class="setting-label">Hourly Summaries</span>
+                    <label class="switch">
+                        <input type="checkbox" id="setting-hourly">
+                        <span class="switch-slider"></span>
+                    </label>
                 </div>
             </div>
-            <div class="border-t border-white/10 pt-6">
-                <h3 class="font-semibold mb-4">Notifications</h3>
-                <button class="setting-action-btn" id="enable-notifications-btn" type="button">Enable Notifications</button>
-                <p class="text-xs text-gray-500 mt-2">Status: <span id="notification-status">Checking...</span></p>
+
+            <div class="settings-section">
+                <h3>Geofence Zones</h3>
+                <p class="sub-text" style="margin-bottom: 12px;">Define your locations for iPhone tracking.</p>
+                <div id="zones-list"></div>
+                <button class="btn-secondary" style="width: 100%; margin-top: 12px;" onclick="addZone()">+ Add
+                    Zone</button>
             </div>
-            <div class="border-t border-white/10 pt-6">
-                <h3 class="font-semibold mb-4">Zones</h3>
-                <p class="text-xs text-gray-500 mb-4">These zones drive low-battery iPhone geofencing.</p>
-                <div id="zones-list" class="space-y-2 mb-4">
-                    <p class="text-xs text-gray-500">Loading zones...</p>
-                </div>
-                <button class="setting-action-btn" id="add-zone-btn" type="button">Add Zone</button>
+
+            <div style="margin-top: 32px;">
+                <button id="settings-save-btn" class="btn-primary" style="width: 100%; padding: 12px;">Save
+                    Changes</button>
             </div>
-            <div class="border-t border-white/10 pt-6">
-                <h3 class="font-semibold mb-4">Service</h3>
-                <p class="text-xs text-gray-500 mb-2">Backend: <span id="setting-health">Checking...</span></p>
-                <a href="/setup/ios" class="text-xs text-blue-400 hover:text-blue-300" target="_blank">iOS Setup</a>
-            </div>
-            <button class="w-full bg-gray-200 text-gray-900 font-medium py-2 rounded-lg hover:bg-white mt-8" id="settings-save-btn">Save Settings</button>
         </div>
     </aside>
 
     <!-- AI Summary Modal -->
-    <div id="summary-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
-        <div class="bg-surface border border-gray-700 rounded-lg w-96 p-6">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="font-semibold">AI Activity Summary</h3>
-                <button id="close-modal-btn" class="p-1 hover:bg-gray-800 rounded">&times;</button>
+    <div id="summary-modal" class="onboarding-overlay hidden" onclick="if(event.target===this) closeSummaryModal()">
+        <div class="onboarding-card" style="text-align: left; width: 500px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <h2 style="margin-bottom: 0;">AI Activity Insight</h2>
+                <button class="icon-btn" onclick="closeSummaryModal()">×</button>
             </div>
-            <p id="summary-text" class="text-sm text-gray-400">Loading insights...</p>
+            <div id="summary-text" style="font-size: 14px; line-height: 1.6; color: var(--text-secondary);">
+                Analyzing your activity...
+            </div>
         </div>
     </div>
 
-    <!-- Mobile Bottom Nav -->
-    <nav class="md:hidden fixed bottom-0 left-0 right-0 bg-surface border-t border-gray-700 flex justify-around">
-        <button class="mobile-nav-item active flex-1 py-4 flex flex-col items-center gap-2" data-view="dashboard" onclick="switchView('dashboard')">
-            <span class="text-xs">Dashboard</span>
-        </button>
-        <button class="mobile-nav-item flex-1 py-4 flex flex-col items-center gap-2" data-view="activity" onclick="switchView('activity')">
-            <span class="text-xs">Activity</span>
-        </button>
-        <button class="mobile-nav-item flex-1 py-4 flex flex-col items-center gap-2" data-view="settings" onclick="switchView('settings'); openSettings()">
-            <span class="text-xs">Settings</span>
-        </button>
-    </nav>
-
     <script src="script.js"></script>
 </body>
+
 </html>
