@@ -1,4 +1,4 @@
-const CACHE = 'lm-v2';
+const CACHE = 'vero-v3';
 const ASSETS = [
     '/dashboard/index.html',
     '/dashboard/style.css',
