@@ -1,4 +1,4 @@
-const CACHE = 'vero-v3';
+const CACHE = 'vero-v4';
 const ASSETS = [
     '/dashboard/index.html',
     '/dashboard/style.css',

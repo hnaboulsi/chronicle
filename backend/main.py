@@ -1081,11 +1081,21 @@ def get_hourly_summaries(limit: int = 5, db: Session = Depends(get_db)):
     ]
 
 
+async def _run_hourly_summary_bg(now: datetime):
+    db = SessionLocal()
+    try:
+        await agent_logic._generate_and_store_hourly_summary(db, now)
+    except Exception as exc:
+        log.error("Background hourly summary error: %s", exc)
+    finally:
+        db.close()
+
+
 @app.post("/api/trigger-hourly-summary")
-async def trigger_hourly_summary(db: Session = Depends(get_db)):
+async def trigger_hourly_summary(background_tasks: BackgroundTasks):
     now = datetime.now(timezone.utc)
-    await agent_logic._generate_and_store_hourly_summary(db, now)
-    return {"status": "ok"}
+    background_tasks.add_task(_run_hourly_summary_bg, now)
+    return {"status": "queued"}
 
 
 @app.post("/api/prompt-reply")

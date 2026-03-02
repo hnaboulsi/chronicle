@@ -409,7 +409,7 @@ function renderStats(data) {
         if (data.total_active_minutes === 0 && (data.log_count || 0) === 0) {
             statActiveNote.textContent = 'No Mac telemetry today';
         } else if (data.total_active_minutes === 0 && (data.idle_log_count || 0) > 0) {
-            statActiveNote.textContent = `${data.idle_log_count} idle entries (move mouse to reset)`;
+            statActiveNote.textContent = `Mac idle — use keyboard/mouse to register active time`;
         } else {
             const freshness = data.data_freshness_seconds != null ? `${Math.floor(data.data_freshness_seconds / 60)}m ago` : 'n/a';
             statActiveNote.textContent = `Last telemetry: ${freshness}`;
@@ -481,14 +481,13 @@ async function triggerHourlyRecap() {
     if (btn) { btn.textContent = 'Generating…'; btn.disabled = true; }
     try {
         const res = await fetch(`${API}/api/trigger-hourly-summary`, { method: 'POST' });
-        await fetchHourlySummaries();
-        if (btn && res.ok) {
-            btn.textContent = 'Done!';
-            setTimeout(() => { btn.textContent = 'Generate Now'; btn.disabled = false; }, 2000);
-        } else if (btn) {
-            btn.textContent = 'No activity to summarize';
-            setTimeout(() => { btn.textContent = 'Generate Now'; btn.disabled = false; }, 2000);
+        if (btn) {
+            btn.textContent = res.ok ? 'Queued!' : 'Error — try again';
+            setTimeout(() => { btn.textContent = 'Generate Now'; btn.disabled = false; }, 3000);
         }
+        // Refresh summaries after delays to catch when the background task finishes
+        setTimeout(() => fetchHourlySummaries().catch(() => {}), 8000);
+        setTimeout(() => fetchHourlySummaries().catch(() => {}), 18000);
     } catch {
         if (btn) { btn.textContent = 'Generate Now'; btn.disabled = false; }
     }

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -60,8 +61,10 @@ async def _ask_gemini(prompt: str, model_kind: str = "default") -> str:
     if not _gemini_client:
         return ""
     try:
-        response = _gemini_client.models.generate_content(
-            model=_gemini_model(model_kind),
+        model = _gemini_model(model_kind)
+        response = await asyncio.to_thread(
+            _gemini_client.models.generate_content,
+            model=model,
             contents=prompt,
         )
         return (response.text or "").strip()

@@ -735,7 +735,7 @@ def _update_sleep_state(db: Session, now: datetime, activity_type: str, is_charg
         confidence += 0.10
         reasons.append("mac idle")
 
-    likely_asleep = confidence >= 0.6
+    likely_asleep = confidence >= 0.65  # requires sleep window + a signal, not just charging+stationary
     set_state(db, "user_asleep", "true" if likely_asleep else "false")
     set_state(db, "likely_asleep", "true" if likely_asleep else "false")
     set_state(db, "likely_asleep_confidence", f"{min(confidence, 0.99):.2f}")
