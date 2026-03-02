@@ -517,7 +517,10 @@ async def _generate_and_store_hourly_summary(db: Session, now: datetime, force_c
             log.warning("Hourly summary LLM failed, using deterministic fallback: %s", exc)
 
     if existing:
-        if source == "deterministic" and (getattr(existing, "summary_source", "llm") == "llm"):
+        # Only skip overwrite when this is a user-triggered partial (force_current=True) and
+        # we'd be downgrading an LLM summary to a weaker deterministic one.
+        # At end-of-hour (force_current=False), always overwrite — full data beats partial.
+        if force_current and source == "deterministic" and (getattr(existing, "summary_source", "llm") == "llm"):
             return
         existing.summary_text = result["summary"]
         existing.productivity_score = result.get("productivity_score")
