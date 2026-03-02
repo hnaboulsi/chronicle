@@ -145,6 +145,12 @@ def list_zones(db: Session) -> list[dict]:
     return [zone_to_dict(z) for z in zones]
 
 
+def normalize_zone_slug(slug: str) -> str:
+    """Sanitize a zone slug to lowercase alphanumeric + hyphens only."""
+    import re
+    return re.sub(r"[^a-z0-9-]", "", slug.strip().lower())
+
+
 def get_zone(db: Session, slug: str) -> LocationZone | None:
     ensure_default_zones(db)
     return db.query(LocationZone).filter(LocationZone.slug == slug).first()
