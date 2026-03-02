@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import os
 import base64
@@ -46,10 +47,20 @@ def _run_migrations() -> list[str]:
         try:
             if dialect == "postgresql":
                 conn.execute(text("ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS battery_pct INTEGER"))
+                conn.execute(text("ALTER TABLE hourly_summaries ADD COLUMN IF NOT EXISTS summary_source VARCHAR(32) DEFAULT 'llm'"))
+                conn.execute(text("ALTER TABLE hourly_summaries ADD COLUMN IF NOT EXISTS confidence FLOAT"))
+                conn.execute(text("ALTER TABLE hourly_summaries ADD COLUMN IF NOT EXISTS fallback_used BOOLEAN DEFAULT FALSE"))
             else:  # sqlite doesn't support IF NOT EXISTS on ALTER
                 cols = [r[1] for r in conn.execute(text("PRAGMA table_info(activity_logs)"))]
                 if "battery_pct" not in cols:
                     conn.execute(text("ALTER TABLE activity_logs ADD COLUMN battery_pct INTEGER"))
+                summary_cols = [r[1] for r in conn.execute(text("PRAGMA table_info(hourly_summaries)"))]
+                if "summary_source" not in summary_cols:
+                    conn.execute(text("ALTER TABLE hourly_summaries ADD COLUMN summary_source VARCHAR(32) DEFAULT 'llm'"))
+                if "confidence" not in summary_cols:
+                    conn.execute(text("ALTER TABLE hourly_summaries ADD COLUMN confidence FLOAT"))
+                if "fallback_used" not in summary_cols:
+                    conn.execute(text("ALTER TABLE hourly_summaries ADD COLUMN fallback_used BOOLEAN DEFAULT 0"))
 
             # Data migration: rename legacy app names to "Vero"
             conn.execute(text("""
@@ -58,9 +69,9 @@ def _run_migrations() -> list[str]:
                 WHERE app_name IN ('LifeManager', 'Vero Agent', 'Ambient')
             """))
 
-            # Reset migration (v2): zones are now user-defined only.
+            # Reset migration (v3): zones are now user-defined only.
             marker = conn.execute(
-                text("SELECT value FROM agent_states WHERE key = 'zones_reset_v2' LIMIT 1")
+                text("SELECT value FROM agent_states WHERE key = 'zones_reset_v3' LIMIT 1")
             ).scalar()
             if marker != "true":
                 conn.execute(text("DELETE FROM location_zones"))
@@ -69,10 +80,6 @@ def _run_migrations() -> list[str]:
                         """
                         DELETE FROM agent_states
                         WHERE key IN (
-                          'seen_arrive_automation',
-                          'seen_leave_automation',
-                          'seen_walking_automation',
-                          'seen_charging_automation',
                           'current_location',
                           'location_arrival',
                           'commute_start',
@@ -87,7 +94,65 @@ def _run_migrations() -> list[str]:
                     text(
                         """
                         INSERT INTO agent_states (key, value, updated_at)
-                        VALUES ('zones_reset_v2', 'true', CURRENT_TIMESTAMP)
+                        VALUES ('zones_reset_v3', 'true', CURRENT_TIMESTAMP)
+                        ON CONFLICT(key) DO UPDATE SET value='true', updated_at=CURRENT_TIMESTAMP
+                        """
+                    )
+                )
+
+            # Restore migration (v3b): automation-seen flags were incorrectly wiped by v3.
+            restore_marker = conn.execute(
+                text("SELECT value FROM agent_states WHERE key = 'automation_flags_restore_v1' LIMIT 1")
+            ).scalar()
+            if restore_marker != "true":
+                for flag in ('seen_arrive_automation', 'seen_leave_automation', 'seen_charging_automation'):
+                    existing = conn.execute(
+                        text("SELECT value FROM agent_states WHERE key = :k LIMIT 1"),
+                        {"k": flag}
+                    ).scalar()
+                    if existing is None:
+                        conn.execute(
+                            text(
+                                """
+                                INSERT INTO agent_states (key, value, updated_at)
+                                VALUES (:k, 'true', CURRENT_TIMESTAMP)
+                                ON CONFLICT(key) DO NOTHING
+                                """
+                            ),
+                            {"k": flag}
+                        )
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO agent_states (key, value, updated_at)
+                        VALUES ('automation_flags_restore_v1', 'true', CURRENT_TIMESTAMP)
+                        ON CONFLICT(key) DO UPDATE SET value='true', updated_at=CURRENT_TIMESTAMP
+                        """
+                    )
+                )
+            checkin_marker = conn.execute(
+                text("SELECT value FROM agent_states WHERE key = 'checkin_cleanup_v1' LIMIT 1")
+            ).scalar()
+            if checkin_marker != "true":
+                conn.execute(
+                    text(
+                        """
+                        DELETE FROM agent_states
+                        WHERE key IN (
+                          'pending_checkin',
+                          'checkin_guess',
+                          'pending_checkin_created_at',
+                          'pending_checkin_expires_at',
+                          'pending_checkin_context_key'
+                        )
+                        """
+                    )
+                )
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO agent_states (key, value, updated_at)
+                        VALUES ('checkin_cleanup_v1', 'true', CURRENT_TIMESTAMP)
                         ON CONFLICT(key) DO UPDATE SET value='true', updated_at=CURRENT_TIMESTAMP
                         """
                     )
@@ -241,19 +306,19 @@ _LOGIN_HTML = """<!DOCTYPE html>
 <title>Vero</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: #F5F5F5; color: #111827; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+  body { background: #0f1117; color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
          display: flex; align-items: center; justify-content: center; min-height: 100vh; -webkit-font-smoothing: antialiased; }
-  .card { background: #FFFFFF; border: 1px solid #E5E7EB; border-radius: 16px;
-          padding: 40px 36px; width: 100%; max-width: 360px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
-  h1 { font-size: 20px; font-weight: 600; margin-bottom: 4px; color: #111827; }
-  .subtitle { font-size: 13px; color: #6B7280; margin-bottom: 28px; }
-  label { display: block; font-size: 12px; font-weight: 500; color: #6B7280; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
-  input { width: 100%; background: #F9FAFB; border: 1px solid #E5E7EB;
-          border-radius: 8px; color: #111827; font-size: 15px; padding: 10px 14px; outline: none; }
-  input:focus { border-color: #9CA3AF; background: #FFFFFF; }
-  button { margin-top: 14px; width: 100%; background: #111827; border: none; border-radius: 8px;
+  .card { background: #1a1d27; border: 1px solid #2a2d3a; border-radius: 16px;
+          padding: 40px 36px; width: 100%; max-width: 360px; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+  h1 { font-size: 20px; font-weight: 600; margin-bottom: 4px; color: #f1f5f9; }
+  .subtitle { font-size: 13px; color: #94a3b8; margin-bottom: 28px; }
+  label { display: block; font-size: 12px; font-weight: 500; color: #94a3b8; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+  input { width: 100%; background: #13161f; border: 1px solid #374151;
+          border-radius: 8px; color: #f1f5f9; font-size: 15px; padding: 10px 14px; outline: none; }
+  input:focus { border-color: #64748b; background: #1a1d27; }
+  button { margin-top: 14px; width: 100%; background: #374151; border: none; border-radius: 8px;
            color: #fff; font-size: 14px; font-weight: 600; padding: 11px; cursor: pointer; }
-  button:hover { background: #374151; }
+  button:hover { background: #475569; }
   .error { margin-top: 14px; font-size: 13px; color: #EF4444; text-align: center; }
 </style>
 </head>
@@ -481,11 +546,16 @@ def _build_state_payload(db: Session) -> dict:
     states["mac_online"] = mac_status["mac_online"]
     states["mac_status"] = mac_status["mac_status"]
     states["mac_status_reason"] = mac_status["mac_status_reason"]
+    states["mac_idle"] = mac_status.get("mac_idle", False)
     states["mac_launch_url"] = "vero://open"
     states["last_mac_heartbeat"] = states.get("last_mac_heartbeat", "")
-    states["service_health"] = "ok" if mac_status["mac_status"] in {"online", "online_idle"} else (
+    states["service_health"] = "ok" if mac_status["mac_status"] in {"online"} else (
         "degraded" if mac_status["mac_status"] in {"degraded", "paused"} else "offline"
     )
+    states["likely_asleep"] = agent_logic.get_state(db, "likely_asleep", "false")
+    states["likely_asleep_reason"] = agent_logic.get_state(db, "likely_asleep_reason", "")
+    states["likely_asleep_confidence"] = agent_logic.get_state(db, "likely_asleep_confidence", "0.0")
+    states["current_intent"] = agent_logic.get_state(db, "context_current_intent", "")
     return states
 
 def _bg_process_mac(data: MacTelemetry):
@@ -546,7 +616,7 @@ def receive_mac_telemetry(data: MacTelemetry, background_tasks: BackgroundTasks,
         device="mac",
         app_name=data.app_name,
         window_title=data.window_title,
-        is_idle=data.idle_time_seconds > 60 * 30
+        is_idle=data.idle_time_seconds > 60 * 60  # 60 min idle = truly away from computer
     )
     db.add(log_entry)
     db.commit()
@@ -749,6 +819,20 @@ def update_settings(payload: Dict[str, Any], db: Session = Depends(get_db)):
     return {"status": "updated"}
 
 
+@app.get("/api/context/preferences")
+def get_context_preferences(db: Session = Depends(get_db)):
+    return agent_logic.get_context_preferences(db)
+
+
+@app.post("/api/context/preferences")
+def post_context_preferences(payload: Dict[str, Any], db: Session = Depends(get_db)):
+    try:
+        prefs = agent_logic.update_context_preferences(db, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"status": "updated", "preferences": prefs}
+
+
 @app.get("/api/version")
 async def api_version():
     return {
@@ -872,10 +956,10 @@ async def mcp_http_transport(payload: Dict[str, Any], db: Session = Depends(get_
             raise HTTPException(status_code=400, detail="message is required")
         return {"result": await chat_message({"message": message}, db)}
     if method == "get_pending_checkin":
-        return {"result": await get_checkin(db)}
+        return {"result": get_checkin(db)}
     if method == "reply_to_prompt":
         reply = str(params.get("reply") or "").strip()
-        return {"result": await handle_prompt_reply({"reply": reply}, db)}
+        return {"result": handle_prompt_reply({"reply": reply}, db)}
     if method == "list_zones":
         return {"result": {"zones": agent_logic.list_zones(db)}}
     if method == "upsert_zone":
@@ -990,16 +1074,103 @@ def get_hourly_summaries(limit: int = 5, db: Session = Depends(get_db)):
             ),
             "summary_text": s.summary_text,
             "productivity_score": s.productivity_score,
+            "source": getattr(s, "summary_source", "llm"),
+            "confidence": getattr(s, "confidence", None),
+            "fallback_used": bool(getattr(s, "fallback_used", False)),
         }
         for s in summaries
     ]
 
 
+async def _run_hourly_summary_bg(now: datetime):
+    db = SessionLocal()
+    try:
+        # force_current=True: generate for what the user has done so far this hour
+        await agent_logic._generate_and_store_hourly_summary(db, now, force_current=True)
+    except Exception as exc:
+        log.error("Background hourly summary error: %s", exc)
+    finally:
+        db.close()
+
+
 @app.post("/api/trigger-hourly-summary")
-async def trigger_hourly_summary(db: Session = Depends(get_db)):
+async def trigger_hourly_summary(background_tasks: BackgroundTasks):
     now = datetime.now(timezone.utc)
-    await agent_logic._generate_and_store_hourly_summary(db, now)
-    return {"status": "ok"}
+    background_tasks.add_task(_run_hourly_summary_bg, now)
+    return {"status": "queued"}
+
+
+@app.post("/api/refresh-app-categories")
+async def refresh_app_categories(db: Session = Depends(get_db)):
+    """Force re-classification of apps with updated LLM prompt."""
+    now = datetime.now(timezone.utc)
+    agent_logic.set_state(db, "last_category_cache_refresh", "")  # Clear timestamp to force refresh
+    agent_logic.set_state(db, "app_category_cache", "")  # Clear cache
+    await agent_logic._refresh_app_category_cache(db, now)
+    return {"status": "refreshed"}
+
+
+@app.post("/api/recap-feedback")
+async def recap_feedback(payload: Dict[str, Any], db: Session = Depends(get_db)):
+    """User gives feedback on an hourly recap. LLM verifies and updates if user is right."""
+    hour_start = payload.get("hour_start", "")
+    feedback = payload.get("feedback", "")
+    original_summary = payload.get("original_summary", "")
+
+    if not hour_start or not feedback:
+        return {"status": "error", "message": "Missing hour_start or feedback"}
+
+    summary = db.query(HourlySummary).filter(HourlySummary.hour_start == hour_start).first()
+    if not summary:
+        return {"status": "error", "message": "Summary not found"}
+
+    # Get activity logs for context
+    hour_end = datetime.fromisoformat(hour_start) + timedelta(hours=1)
+    logs = agent_logic.get_mac_logs_for_hour(db, since=hour_start, until=hour_end.isoformat())
+
+    # Ask LLM to verify feedback
+    verification_prompt = (
+        f"The user gave feedback on this activity recap:\n\n"
+        f"Original recap: {original_summary}\n"
+        f"User's feedback: {feedback}\n\n"
+        f"Based on the feedback, is the user correct that the recap missed something or got it wrong?\n"
+        f"Respond with ONLY JSON: {{\n"
+        f'  "user_is_correct": true/false,\n'
+        f'  "reasoning": "brief explanation",\n'
+        f'  "corrected_summary": "improved summary if user was right, otherwise null",\n'
+        f'  "adjusted_score": 6.5\n'
+        f"}}"
+    )
+
+    try:
+        result_text = await llm_client.ask_llm(verification_prompt)
+        start = result_text.find('{')
+        end = result_text.rfind('}') + 1
+        if start >= 0 and end > start:
+            result = json.loads(result_text[start:end])
+
+            if result.get("user_is_correct") and result.get("corrected_summary"):
+                # User was right — update the summary
+                summary.summary_text = result["corrected_summary"]
+                if "adjusted_score" in result:
+                    summary.productivity_score = result["adjusted_score"]
+                summary.summary_source = "llm_verified"
+                db.commit()
+                return {
+                    "status": "updated",
+                    "message": "Recap updated with your correction",
+                    "new_summary": result["corrected_summary"],
+                    "new_score": result.get("adjusted_score")
+                }
+            else:
+                # User was wrong or feedback wasn't specific enough
+                return {
+                    "status": "verified_incorrect",
+                    "message": result.get("reasoning", "LLM verified the original recap was accurate"),
+                    "original_is_correct": True
+                }
+    except Exception as e:
+        return {"status": "error", "message": f"LLM verification failed: {str(e)}"}
 
 
 @app.post("/api/prompt-reply")
@@ -1051,7 +1222,7 @@ async def chat_message(payload: Dict[str, Any], db: Session = Depends(get_db)):
     agent_logic.set_state(db, "last_user_checkin", now.isoformat())
 
     # Clear any pending check-in since user proactively told us
-    agent_logic.set_state(db, "pending_checkin", "")
+    agent_logic.clear_pending_checkin(db)
     agent_logic.set_state(db, "pending_prompt", "")
 
     # Build context for the LLM to understand and respond
@@ -1156,11 +1327,7 @@ def chat_history(db: Session = Depends(get_db)):
 @app.get("/api/checkin")
 def get_checkin(db: Session = Depends(get_db)):
     """Check if there's a pending check-in question for the user."""
-    checkin = agent_logic.get_state(db, "pending_checkin")
-    guess = agent_logic.get_state(db, "checkin_guess")
-    if not checkin:
-        return {"checkin": None}
-    return {"checkin": checkin, "guess": guess}
+    return agent_logic.get_checkin_payload(db, datetime.now(timezone.utc))
 
 
 @app.post("/api/checkin/confirm")
@@ -1178,10 +1345,36 @@ def confirm_checkin(payload: Dict[str, Any], db: Session = Depends(get_db)):
     elif correction:
         agent_logic.set_state(db, "user_self_report", correction)
 
-    agent_logic.set_state(db, "pending_checkin", "")
-    agent_logic.set_state(db, "checkin_guess", "")
+    context_key = agent_logic.get_state(db, "pending_checkin_context_key", "")
+    if context_key:
+        cooldown_until = now + timedelta(seconds=agent_logic.CHECKIN_COOLDOWN_SECONDS)
+        agent_logic.set_state(db, f"checkin_cooldown_until:{context_key}", cooldown_until.isoformat())
+    agent_logic.clear_pending_checkin(db)
     agent_logic.set_state(db, "last_user_checkin", now.isoformat())
     return {"status": "ok"}
+
+
+@app.post("/api/checkin/snooze")
+def snooze_checkin(payload: Dict[str, Any], db: Session = Depends(get_db)):
+    now = datetime.now(timezone.utc)
+    minutes = max(5, min(240, int(payload.get("minutes", 30))))
+    context_key = agent_logic.get_state(db, "pending_checkin_context_key", "")
+    if context_key:
+        cooldown_until = now + timedelta(minutes=minutes)
+        agent_logic.set_state(db, f"checkin_cooldown_until:{context_key}", cooldown_until.isoformat())
+    agent_logic.clear_pending_checkin(db)
+    return {"status": "snoozed", "minutes": minutes}
+
+
+@app.post("/api/checkin/dismiss")
+def dismiss_checkin(db: Session = Depends(get_db)):
+    now = datetime.now(timezone.utc)
+    context_key = agent_logic.get_state(db, "pending_checkin_context_key", "")
+    if context_key:
+        cooldown_until = now + timedelta(seconds=agent_logic.CHECKIN_COOLDOWN_SECONDS)
+        agent_logic.set_state(db, f"checkin_cooldown_until:{context_key}", cooldown_until.isoformat())
+    agent_logic.clear_pending_checkin(db)
+    return {"status": "dismissed"}
 
 
 @app.get("/api/healthz")
@@ -1445,7 +1638,7 @@ function copyCmd(btn) {{
 
 <h2>Step 3 — Run it once, then close it</h2>
 <div class="step">
-  <div class="step-num">In Xcode, choose the <strong>LifeManager</strong> scheme and press Run once</div>
+  <div class="step-num">In Xcode, choose the <strong>Vero app scheme</strong> (currently named <code>LifeManager</code>) and press Run once</div>
   <p>When the app opens, grant the permissions it asks for, then close the window. The goal is to register the hidden login helper, not keep a visible app open.</p>
   <p class="note">If you already have <code>Vero.app</code> in Applications, you can launch it directly with <code>open -a "Vero"</code>.</p>
 </div>
@@ -1532,21 +1725,23 @@ async def ios_setup_page(db: Session = Depends(get_db)):
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>iPhone Setup — Vero</title>
 <style>
-  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif; background:#f5f6f8; color:#111827; max-width:900px; margin:0 auto; padding:2rem; }}
+  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif; background:#0f1117; color:#f1f5f9; max-width:900px; margin:0 auto; padding:2rem; }}
+  a {{ color: #60a5fa; text-decoration: none; }}
+  a:hover {{ text-decoration: underline; }}
   h1 {{ font-size:1.8rem; margin:0 0 0.25rem 0; }}
   h2 {{ margin-top:2rem; font-size:1.15rem; }}
-  .section {{ background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:1rem 1.25rem; margin-top:1rem; }}
-  .checklist li {{ margin:0.35rem 0; color:#374151; }}
-  .zone-card {{ border:1px solid #e5e7eb; background:#fafafa; border-radius:10px; padding:0.85rem; margin-top:0.75rem; }}
-  .zone-card.empty {{ color:#6b7280; }}
+  .section {{ background:#1a1d27; border:1px solid #2a2d3a; border-radius:12px; padding:1rem 1.25rem; margin-top:1rem; }}
+  .checklist li {{ margin:0.35rem 0; color:#cbd5e1; }}
+  .zone-card {{ border:1px solid #2a2d3a; background:#13161f; border-radius:10px; padding:0.85rem; margin-top:0.75rem; }}
+  .zone-card.empty {{ color:#94a3b8; }}
   .zone-card h3 {{ margin:0; font-size:1rem; }}
-  .zone-card .slug {{ margin:0.2rem 0 0.7rem 0; color:#6b7280; font-size:0.8rem; }}
-  .url-row {{ display:flex; gap:0.5rem; align-items:center; justify-content:space-between; background:#fff; border:1px solid #e5e7eb; border-radius:8px; padding:0.55rem; margin-top:0.45rem; }}
-  .url-row span {{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:0.78rem; word-break:break-all; color:#1f2937; }}
-  .copy-btn {{ border:1px solid #d1d5db; background:#fff; color:#374151; border-radius:7px; padding:0.3rem 0.55rem; cursor:pointer; font-size:0.74rem; white-space:nowrap; }}
-  .copy-btn:hover {{ background:#f3f4f6; }}
-  .muted {{ color:#6b7280; font-size:0.9rem; }}
-  code {{ background:#f3f4f6; padding:0.15rem 0.4rem; border-radius:6px; }}
+  .zone-card .slug {{ margin:0.2rem 0 0.7rem 0; color:#94a3b8; font-size:0.8rem; }}
+  .url-row {{ display:flex; gap:0.5rem; align-items:center; justify-content:space-between; background:#1a1d27; border:1px solid #2a2d3a; border-radius:8px; padding:0.55rem; margin-top:0.45rem; }}
+  .url-row span {{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:0.78rem; word-break:break-all; color:#94a3b8; }}
+  .copy-btn {{ border:1px solid #374151; background:#1a1d27; color:#cbd5e1; border-radius:7px; padding:0.3rem 0.55rem; cursor:pointer; font-size:0.74rem; white-space:nowrap; }}
+  .copy-btn:hover {{ background:#252a3a; }}
+  .muted {{ color:#94a3b8; font-size:0.9rem; }}
+  code {{ background:#13161f; padding:0.15rem 0.4rem; border-radius:6px; }}
 </style>
 <script>
 function copyURL(btn, url) {{
@@ -1852,7 +2047,7 @@ async def sign_all_shortcuts():
 
 @app.get("/api/analytics/today")
 async def analytics_today(db: Session = Depends(get_db)):
-    """Daily analytics: time per category, productivity %, steps, LLM usage."""
+    """Daily analytics: local-day active time, productive %, and AI usage."""
     now = datetime.now(timezone.utc)
     today_start, today_end = agent_logic.user_day_bounds_utc(db, now)
     user_tz = agent_logic.resolve_user_timezone(db)
@@ -1868,53 +2063,82 @@ async def analytics_today(db: Session = Depends(get_db)):
     # Compute time per category using log intervals
     states = agent_logic.get_all_states(db)
     polling_secs = max(60, int(states.get("polling_interval_seconds", "60")))
+
+    # AI-generated app→category cache (updated hourly by _refresh_app_category_cache)
+    app_cache: dict[str, str] = {}
+    try:
+        raw = states.get("app_category_cache", "")
+        if raw:
+            app_cache = json.loads(raw)
+    except Exception:
+        pass
+
     category_minutes = {}
     total_active_minutes = 0
+    idle_count = 0
     for entry in logs:
-        if entry.is_idle:
-            continue
-        cat = "unknown"
-        # Classify each log entry using heuristics (no LLM to save budget)
-        text_data = f"{(entry.app_name or '').lower()} {(entry.window_title or '').lower()}"
-        for needles, result in [
-            (["instagram", "twitter", "x.com", "tiktok", "snapchat", "discord"], "social_media"),
-            (["youtube", "netflix", "reddit", "spotify", "hulu"], "entertainment"),
-            (["steam", "epic", "game"], "gaming"),
-            (["canvas", "gradescope", "homework", "lecture", "course", "quiz"], "studying"),
-            (["figma", "photoshop", "premiere", "final cut", "design"], "creative"),
-            (["vscode", "pycharm", "cursor", "terminal", "github", "slack", "notion"], "working"),
-        ]:
-            if any(n in text_data for n in needles):
-                cat = result
-                break
-        else:
-            cat = "break"
         interval_min = polling_secs / 60
-        category_minutes[cat] = category_minutes.get(cat, 0) + interval_min
         total_active_minutes += interval_min
+        if entry.is_idle:
+            idle_count += 1
+            category_minutes["idle"] = category_minutes.get("idle", 0) + interval_min
+            continue
+        app_name = (entry.app_name or "").strip()
+        # 1. Check AI cache first (personalized, updates hourly)
+        if app_name in app_cache:
+            cat = app_cache[app_name]
+        else:
+            # 2. Fall back to keyword heuristics
+            text_data = f"{app_name.lower()} {(entry.window_title or '').lower()}"
+            cat = "break"
+            for needles, result in [
+                (["instagram", "twitter", "x.com", "tiktok", "snapchat", "discord"], "social_media"),
+                (["youtube", "netflix", "reddit", "spotify", "hulu"], "entertainment"),
+                (["steam", "epic", "game"], "gaming"),
+                (["canvas", "gradescope", "homework", "lecture", "course", "quiz", "anki",
+                  "textbook", "study", "chegg", "coursera", "udemy", "khan", "edx", "mit"], "studying"),
+                (["figma", "photoshop", "premiere", "final cut", "sketch", "illustrator", "design", "canva"], "creative"),
+                (["vscode", "visual studio", "pycharm", "cursor", "intellij", "xcode", "android studio",
+                  "terminal", "iterm", "github", "gitlab", "linear", "jira", "notion", "confluence",
+                  "slack", "zoom", "vero", "lifemanager", "postman", "datagrip", "tableplus",
+                  "zed", "emacs", "vim"], "working"),
+            ]:
+                if any(n in text_data for n in needles):
+                    cat = result
+                    break
+        category_minutes[cat] = category_minutes.get(cat, 0) + interval_min
 
     productive_cats = {"studying", "working", "creative"}
     productive_minutes = sum(category_minutes.get(c, 0) for c in productive_cats)
     productive_pct = round((productive_minutes / total_active_minutes * 100) if total_active_minutes > 0 else 0)
 
-    # Steps
-    steps = states.get("steps_today", "0")
-
     # LLM usage
     llm_stats = agent_logic.llm_usage_snapshot(db, now)
+    last_log_ts = logs[-1].timestamp if logs else None
+    freshness_seconds = int((now.replace(tzinfo=None) - last_log_ts).total_seconds()) if last_log_ts else None
+    last_updated_at = (
+        last_log_ts.replace(tzinfo=timezone.utc).isoformat()
+        if last_log_ts else ""
+    )
 
     return {
         "category_minutes": category_minutes,
         "total_active_minutes": round(total_active_minutes),
         "productive_minutes": round(productive_minutes),
         "productive_pct": productive_pct,
-        "steps_today": int(steps) if steps else 0,
         "llm_used": llm_stats["daily_used"],
         "llm_cap": llm_stats["daily_cap"],
         "log_count": len(logs),
+        "idle_log_count": idle_count,
         "timezone": user_tz.key,
         "day_start_utc": today_start.replace(tzinfo=timezone.utc).isoformat(),
         "day_end_utc": today_end.replace(tzinfo=timezone.utc).isoformat(),
+        "last_updated_at": last_updated_at,
+        "data_freshness_seconds": freshness_seconds,
+        "active_minutes_formula": "Count non-idle Mac telemetry points in the local day and multiply by polling interval.",
+        "productive_formula": "productive_minutes / total_active_minutes where productive categories are studying, working, creative.",
+        # Backward compatibility for older clients.
+        "steps_today": int(states.get("steps_today", "0") or "0"),
     }
 
 

@@ -21,6 +21,7 @@ struct DashboardState: Codable {
     var backend_target_url: String?
     var mac_status: String?
     var mac_status_reason: String?
+    var mac_idle: Bool?
     var last_mac_heartbeat_age_seconds: Int?
     var last_mac_snapshot_age_seconds: Int?
     var current_activity_category: String?
@@ -29,6 +30,9 @@ struct DashboardState: Codable {
     var ios_recent_event: Bool?
     var user_timezone: String?
     var sleep_status_note: String?
+    var likely_asleep: String?
+    var likely_asleep_reason: String?
+    var likely_asleep_confidence: String?
     var service_health: String?
     var tracking_enabled: String?
 }
@@ -138,6 +142,18 @@ struct CalloutResponse: Codable {
 struct CheckinResponse: Codable {
     let checkin: String?
     let guess: String?
+    let created_at: String?
+    let expires_at: String?
+    let age_seconds: Int?
+    let can_snooze: Bool?
+    let can_dismiss: Bool?
+}
+
+struct ContextPreferences: Codable {
+    let current_intent: String
+    let sleep_start_hour: Int
+    let sleep_end_hour: Int
+    let special_mode: String
 }
 
 struct IOSSetupChecklistItem: Codable, Hashable {

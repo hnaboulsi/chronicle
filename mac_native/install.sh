@@ -26,6 +26,7 @@ codesign --remove-signature "$APP" 2>/dev/null || true
 codesign -s - "$APP" --force --deep 2>&1 | grep -v "code has no resources" || true
 
 echo "Installing to /Applications..."
+rm -rf "/Applications/LifeManager.app"
 rm -rf "/Applications/Vero.app"
 cp -R "$APP" "/Applications/Vero.app"
 

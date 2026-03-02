@@ -3,44 +3,22 @@ import SwiftUI
 struct MenuBarView: View {
     @EnvironmentObject private var model: NativeAppModel
     @EnvironmentObject private var menuBar: MenuBarManager
-    @Environment(\.openURL) var openURL
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Status
+            // Agent Status with error dot
             HStack(spacing: Spacing.sm) {
                 Circle()
-                    .fill(macStatusColor(model.state.mac_status))
+                    .fill(model.helperLastError.isEmpty ? Color.green : Color.red)
                     .frame(width: 8, height: 8)
 
                 VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text("Status")
+                    Text("Agent")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
-                    Text(model.state.mac_status?.replacingOccurrences(of: "_", with: " ").capitalized ?? "Unknown")
+                    Text(model.helperLastError.isEmpty ? "Running" : "Error")
                         .font(.subheadline)
                         .foregroundStyle(.primary)
-                }
-                Spacer()
-            }
-            .padding(.vertical, Spacing.sm)
-            .padding(.horizontal, Spacing.md)
-
-            Divider()
-
-            // Current Activity
-            HStack(spacing: Spacing.sm) {
-                Image(systemName: "figure.walk")
-                    .foregroundStyle(.blue)
-
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text("Activity")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Text(model.state.current_activity_category ?? "Unknown")
-                        .font(.subheadline)
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
                 }
                 Spacer()
             }
@@ -50,31 +28,48 @@ struct MenuBarView: View {
             Divider()
 
             // Current App
-            HStack(spacing: Spacing.sm) {
-                Image(systemName: "app.dashed")
-                    .foregroundStyle(.orange)
+            if !menuBar.currentApp.isEmpty {
+                HStack(spacing: Spacing.sm) {
+                    Image(systemName: "app.dashed")
+                        .foregroundStyle(.orange)
 
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text("App")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Text(menuBar.currentApp)
-                        .font(.caption)
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        Text("App")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Text(menuBar.currentApp)
+                            .font(.caption)
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                    }
+                    Spacer()
                 }
-                Spacer()
-            }
-            .padding(.vertical, Spacing.sm)
-            .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
+                .padding(.horizontal, Spacing.md)
 
-            Divider()
+                Divider()
+            }
+
+            // Error Message if Present
+            if !model.helperLastError.isEmpty {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text("Error")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.red)
+                    Text(model.helperLastError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .lineLimit(2)
+                }
+                .padding(.vertical, Spacing.sm)
+                .padding(.horizontal, Spacing.md)
+
+                Divider()
+            }
 
             // Actions
             VStack(spacing: 0) {
-                Button(action: {
-                    openURL(URL(string: "\(AppConstants.urlScheme)://open")!)
-                }) {
+                Button(action: { model.openWebDashboard() }) {
                     HStack {
                         Image(systemName: "rectangle.portrait")
                         Text("Open Dashboard")

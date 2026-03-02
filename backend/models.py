@@ -79,6 +79,9 @@ class HourlySummary(Base):
     hour_start = Column(DateTime, nullable=False, index=True)  # top of the hour (UTC)
     summary_text = Column(String, nullable=False)
     productivity_score = Column(Float, nullable=True)  # 0.0–10.0
+    summary_source = Column(String, nullable=False, default="llm")  # llm | deterministic
+    confidence = Column(Float, nullable=True)  # 0..1
+    fallback_used = Column(Boolean, default=False)
     created_at = Column(DateTime, default=_utc_now)
 
 
