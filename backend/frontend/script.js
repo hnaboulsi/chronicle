@@ -406,10 +406,8 @@ function renderStats(data) {
     document.getElementById('stat-productive').textContent = `${data.productive_pct}%`;
     document.getElementById('stat-llm').textContent = `${data.llm_used} / ${data.llm_cap}`;
     if (statActiveNote) {
-        if (data.total_active_minutes === 0 && (data.log_count || 0) === 0) {
+        if (data.total_active_minutes === 0) {
             statActiveNote.textContent = 'No Mac telemetry today';
-        } else if (data.total_active_minutes === 0 && (data.idle_log_count || 0) > 0) {
-            statActiveNote.textContent = `Mac idle — use keyboard/mouse to register active time`;
         } else {
             const freshness = data.data_freshness_seconds != null ? `${Math.floor(data.data_freshness_seconds / 60)}m ago` : 'n/a';
             statActiveNote.textContent = `Last telemetry: ${freshness}`;
@@ -428,13 +426,7 @@ function renderAnalytics(data) {
     const entries = Object.entries(cats).sort((a, b) => b[1] - a[1]);
 
     if (!entries.length) {
-        const idleCount = data.idle_log_count || 0;
-        const logCount = data.log_count || 0;
-        let msg = 'No activity logged yet today. Telemetry appears once the Mac agent connects.';
-        if (logCount > 0 && idleCount > 0) {
-            msg = `${idleCount} log entries are idle (system idle > 60 min). Using the computer will reset this.`;
-        }
-        chart.innerHTML = `<p class="empty-state">${esc(msg)}</p>`;
+        chart.innerHTML = `<p class="empty-state">No activity logged yet today. Telemetry appears once the Mac agent connects.</p>`;
         return;
     }
 

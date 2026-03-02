@@ -1993,28 +1993,31 @@ async def analytics_today(db: Session = Depends(get_db)):
     total_active_minutes = 0
     idle_count = 0
     for entry in logs:
+        interval_min = polling_secs / 60
+        total_active_minutes += interval_min
         if entry.is_idle:
             idle_count += 1
-            # Still count: Mac agent only sends data when Mac is awake, so any log = Mac in use
-        cat = "unknown"
+            category_minutes["idle"] = category_minutes.get("idle", 0) + interval_min
+            continue
         # Classify each log entry using heuristics (no LLM to save budget)
         text_data = f"{(entry.app_name or '').lower()} {(entry.window_title or '').lower()}"
+        cat = "break"
         for needles, result in [
             (["instagram", "twitter", "x.com", "tiktok", "snapchat", "discord"], "social_media"),
             (["youtube", "netflix", "reddit", "spotify", "hulu"], "entertainment"),
             (["steam", "epic", "game"], "gaming"),
-            (["canvas", "gradescope", "homework", "lecture", "course", "quiz", "anki", "textbook"], "studying"),
-            (["figma", "photoshop", "premiere", "final cut", "design"], "creative"),
-            (["vscode", "pycharm", "cursor", "terminal", "github", "slack", "notion", "vero", "lifemanager"], "working"),
+            (["canvas", "gradescope", "homework", "lecture", "course", "quiz", "anki",
+              "textbook", "study", "chegg", "coursera", "udemy", "khan", "edx", "mit"], "studying"),
+            (["figma", "photoshop", "premiere", "final cut", "sketch", "illustrator", "design", "canva"], "creative"),
+            (["vscode", "visual studio", "pycharm", "cursor", "intellij", "xcode", "android studio",
+              "terminal", "iterm", "github", "gitlab", "linear", "jira", "notion", "confluence",
+              "slack", "zoom", "vero", "lifemanager", "postman", "datagrip", "tableplus",
+              "zed", "emacs", "vim"], "working"),
         ]:
             if any(n in text_data for n in needles):
                 cat = result
                 break
-        else:
-            cat = "break"
-        interval_min = polling_secs / 60
         category_minutes[cat] = category_minutes.get(cat, 0) + interval_min
-        total_active_minutes += interval_min
 
     productive_cats = {"studying", "working", "creative"}
     productive_minutes = sum(category_minutes.get(c, 0) for c in productive_cats)
