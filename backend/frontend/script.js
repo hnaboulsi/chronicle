@@ -1415,18 +1415,27 @@ async function fetchChatHistory() {
         const res = await fetch(`${API}/api/chat/history`);
         if (!res.ok) throw new Error('chat-history');
         const data = await res.json();
-        const messages = (data.messages || []).slice(-4).reverse();
+        const messages = (data.messages || []).slice(-8);
         if (!messages.length) {
             chatHistoryList.innerHTML = '<p class="empty-state">No chat yet.</p>';
             return;
         }
-        chatHistoryList.innerHTML = messages.map((turn) => `
+        chatHistoryList.innerHTML = messages.map((turn) => {
+            const time = formatTime(turn.time) || (turn.time ? new Date(turn.time).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '');
+            return `
             <div class="chat-turn">
-                <div class="chat-turn-time">${esc(formatTime(turn.time) || (turn.time || ''))}</div>
-                <div class="chat-turn-line"><strong>You:</strong> ${esc(turn.user || '')}</div>
-                <div class="chat-turn-line"><strong>Vero:</strong> ${esc(turn.reply || '')}</div>
+                ${time ? `<div class="chat-turn-time">${esc(time)}</div>` : ''}
+                ${turn.user ? `<div class="chat-message chat-message-user">
+                    <div class="chat-message-label">You</div>
+                    <div class="chat-message-text">${esc(turn.user)}</div>
+                </div>` : ''}
+                ${turn.reply ? `<div class="chat-message chat-message-reply">
+                    <div class="chat-message-label">Vero</div>
+                    <div class="chat-message-text">${esc(turn.reply)}</div>
+                </div>` : ''}
             </div>
-        `).join('');
+            `;
+        }).join('');
     } catch {
         chatHistoryList.innerHTML = '<p class="empty-state">Could not load chat history.</p>';
     }
