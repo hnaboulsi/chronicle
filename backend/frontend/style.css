@@ -425,3 +425,132 @@ details > summary {
     border-color: #e5e7eb;
     color: #111827;
 }
+
+/* Additional light mode overrides for complete coverage */
+[data-theme="light"] h1,
+[data-theme="light"] h2,
+[data-theme="light"] h3,
+[data-theme="light"] h4,
+[data-theme="light"] h5,
+[data-theme="light"] h6 {
+    color: #111827;
+}
+
+[data-theme="light"] .sticky,
+[data-theme="light"] header {
+    background-color: #ffffff;
+    border-color: #e5e7eb;
+}
+
+[data-theme="light"] button:not([class*="hover"]) {
+    color: #111827;
+}
+
+[data-theme="light"] button:hover {
+    background-color: #f3f4f6;
+}
+
+[data-theme="light"] .hover:hover {
+    background-color: #f3f4f6;
+}
+
+[data-theme="light"] .hover\:bg-gray-800:hover {
+    background-color: #f3f4f6 !important;
+}
+
+[data-theme="light"] .hover\:bg-gray-700:hover {
+    background-color: #e5e7eb !important;
+}
+
+[data-theme="light"] .border {
+    border-color: #e5e7eb;
+}
+
+[data-theme="light"] table,
+[data-theme="light"] tr {
+    border-color: #e5e7eb;
+}
+
+[data-theme="light"] .summary-card,
+[data-theme="light"] .tab-pill,
+[data-theme="light"] .zone-editor,
+[data-theme="light"] .zone-url-line {
+    background-color: #ffffff;
+    border-color: #e5e7eb;
+}
+
+[data-theme="light"] .summary-card p {
+    color: #111827;
+}
+
+[data-theme="light"] .summary-time {
+    color: #6b7280;
+}
+
+[data-theme="light"] .tab-pill {
+    background-color: #f3f4f6;
+    color: #111827;
+}
+
+[data-theme="light"] .setting-input,
+[data-theme="light"] .zone-type,
+[data-theme="light"] .zone-enabled {
+    background-color: #f9fafb;
+    border-color: #e5e7eb;
+    color: #111827;
+}
+
+[data-theme="light"] .setting-input:focus,
+[data-theme="light"] .zone-type:focus,
+[data-theme="light"] .zone-enabled:focus {
+    border-color: #d1d5db;
+}
+
+[data-theme="light"] .setting-action-btn {
+    background-color: #f3f4f6;
+    color: #111827;
+    border-color: #e5e7eb;
+}
+
+[data-theme="light"] .setting-action-btn:hover {
+    background-color: #e5e7eb;
+}
+
+[data-theme="light"] .chart-label,
+[data-theme="light"] .chart-bar-time {
+    color: #6b7280;
+}
+
+[data-theme="light"] .chart-bar-track {
+    background-color: #e5e7eb;
+}
+
+[data-theme="light"] .chat-turn {
+    background-color: #f9fafb;
+    border-color: #e5e7eb;
+}
+
+[data-theme="light"] .chat-turn-time {
+    color: #6b7280;
+}
+
+[data-theme="light"] .chat-turn-line {
+    color: #111827;
+}
+
+[data-theme="light"] .settings-note {
+    color: #6b7280;
+}
+
+[data-theme="light"] .empty-state {
+    color: #6b7280;
+}
+
+[data-theme="light"] #theme-toggle-btn {
+    color: #111827;
+}
+
+[data-theme="light"] .interval-pill.active {
+    background-color: #111827 !important;
+    color: #ffffff !important;
+}
