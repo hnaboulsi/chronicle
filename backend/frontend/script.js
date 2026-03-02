@@ -55,6 +55,8 @@ const activityCategory = document.getElementById('activity-category');
 const activitySummary = document.getElementById('activity-summary');
 const logsBody = document.getElementById('logs-body');
 const refreshBtn = document.getElementById('refresh-btn');
+const clearLogsBtn = document.getElementById('clear-logs-btn');
+const themeToggleBtn = document.getElementById('theme-toggle-btn');
 const pollingSlider = document.getElementById('polling-slider');
 const pollingLabel = document.getElementById('polling-label');
 const serviceStatusEl = document.getElementById('service-status');
@@ -72,8 +74,9 @@ let uiTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 let lastAnalyticsRefreshMs = 0;
 
 function parseServerTimestamp(value) {
-    const raw = String(value || '').trim();
+    let raw = String(value || '').trim();
     if (!raw) return null;
+    if (/[+-]\d{2}:\d{2}Z$/.test(raw)) raw = raw.slice(0, -1);
     if (/Z$|[+-]\d{2}:\d{2}$/.test(raw)) {
         const dt = new Date(raw);
         return Number.isNaN(dt.getTime()) ? null : dt;
@@ -133,6 +136,45 @@ function localHourNumber(value) {
     }).format(dt);
     const parsed = parseInt(hourText, 10);
     return Number.isNaN(parsed) ? null : parsed;
+}
+
+function timeAgo(timestamp) {
+    const dt = timestamp instanceof Date ? timestamp : parseServerTimestamp(timestamp);
+    if (!dt) return '';
+    const now = new Date();
+    const diffSeconds = Math.floor((now - dt) / 1000);
+    if (diffSeconds < 60) return diffSeconds <= 1 ? 'just now' : `${diffSeconds}s ago`;
+    const diffMinutes = Math.floor(diffSeconds / 60);
+    if (diffMinutes < 60) return `${diffMinutes}m ago`;
+    const diffHours = Math.floor(diffMinutes / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays}d ago`;
+}
+
+// ── Theme Toggle ──
+const THEME_KEY = 'vero_theme';
+
+function initTheme() {
+    const savedTheme = localStorage.getItem(THEME_KEY) || 'dark';
+    applyTheme(savedTheme);
+}
+
+function applyTheme(theme) {
+    if (theme === 'light') {
+        document.documentElement.setAttribute('data-theme', 'light');
+        if (themeToggleBtn) themeToggleBtn.textContent = '🌙';
+    } else {
+        document.documentElement.removeAttribute('data-theme');
+        if (themeToggleBtn) themeToggleBtn.textContent = '☀️';
+    }
+    localStorage.setItem(THEME_KEY, theme);
+}
+
+function toggleTheme() {
+    const current = localStorage.getItem(THEME_KEY) || 'dark';
+    const next = current === 'dark' ? 'light' : 'dark';
+    applyTheme(next);
 }
 
 // ── Clock ──
@@ -251,10 +293,14 @@ function updateUI(logs, states) {
     // iOS Card
     const latestIos = logs.find(l => l.device === 'ios');
     if (latestIos) {
-        iosStatus.textContent = latestIos.location_label || 'Connected';
+        const zone = latestIos.location_label || 'Unknown';
+        const transitionType = (latestIos.activity_type || '').toLowerCase();
+        const prefix = transitionType.includes('enter') ? 'In' : transitionType.includes('leave') ? 'Left' : 'At';
+        const age = timeAgo(latestIos.timestamp);
+        iosStatus.textContent = `${prefix} ${zone}`;
         iosStatus.style.color = '#16A34A';
         const battStr = latestIos.battery_pct != null ? ` · ${latestIos.battery_pct}% battery` : '';
-        iosDetail.textContent = (latestIos.activity_type || 'Tracking') + battStr;
+        iosDetail.textContent = age + battStr;
         iosDetail.style.color = '#6B7280';
     } else {
         iosStatus.textContent = states.ios_recent_ping ? 'Connected' : 'Idle';
@@ -266,14 +312,14 @@ function updateUI(logs, states) {
     // Sleep context
     const sleepLikely = String(states.likely_asleep || 'false') === 'true';
     focusStatus.textContent = sleepLikely ? 'Likely Asleep' : 'Likely Awake';
-    focusStatus.style.color = sleepLikely ? '#0F766E' : '#374151';
+    focusStatus.style.color = sleepLikely ? '#0F766E' : '#94a3b8';
     focusDetail.textContent = states.likely_asleep_reason || states.sleep_status_note || 'Waiting for iPhone events.';
 
     // AI Reading
     const cat = states.current_activity_category || 'unknown';
     activityCategory.textContent = CAT_LABELS[cat] || cat;
     activitySummary.textContent = states.current_activity_summary || '\u2014';
-    activityCategory.style.color = PRODUCTIVE.has(cat) ? '#16A34A' : DISTRACTED.has(cat) ? '#EF4444' : '#111827';
+    activityCategory.style.color = PRODUCTIVE.has(cat) ? '#16A34A' : DISTRACTED.has(cat) ? '#EF4444' : '#e2e8f0';
 
     // Logs Table
     logsBody.innerHTML = '';
@@ -315,6 +361,21 @@ function updateUI(logs, states) {
     refreshAnalyticsIfStale();
 }
 
+async function clearLogs() {
+    if (!confirm('Are you sure? This will delete all activity logs.')) return;
+    try {
+        const res = await fetch(`${API}/api/logs/clear`, { method: 'POST' });
+        if (res.ok) {
+            allLogsCache = [];
+            logsBody.innerHTML = '';
+            renderCalendar();
+            fetchAnalytics();
+        }
+    } catch (e) {
+        console.error('Clear logs error:', e);
+    }
+}
+
 // ── Analytics ──
 async function fetchAnalytics() {
     try {
@@ -339,8 +400,12 @@ function renderStats(data) {
     document.getElementById('stat-productive').textContent = `${data.productive_pct}%`;
     document.getElementById('stat-llm').textContent = `${data.llm_used} / ${data.llm_cap}`;
     if (statActiveNote) {
-        const freshness = data.data_freshness_seconds != null ? `${Math.floor(data.data_freshness_seconds / 60)}m ago` : 'n/a';
-        statActiveNote.textContent = `Last telemetry: ${freshness}`;
+        if (data.total_active_minutes === 0) {
+            statActiveNote.textContent = 'No Mac activity today';
+        } else {
+            const freshness = data.data_freshness_seconds != null ? `${Math.floor(data.data_freshness_seconds / 60)}m ago` : 'n/a';
+            statActiveNote.textContent = `Last telemetry: ${freshness}`;
+        }
     }
     if (statProductiveNote) {
         statProductiveNote.textContent = data.total_active_minutes > 0
@@ -355,7 +420,7 @@ function renderAnalytics(data) {
     const entries = Object.entries(cats).sort((a, b) => b[1] - a[1]);
 
     if (!entries.length) {
-        chart.innerHTML = '<p class="empty-state">Collecting data...</p>';
+        chart.innerHTML = '<p class="empty-state">No activity logged yet today. Telemetry appears once the Mac agent connects.</p>';
         return;
     }
 
@@ -401,10 +466,18 @@ async function triggerHourlyRecap() {
     const btn = document.getElementById('trigger-recap-btn');
     if (btn) { btn.textContent = 'Generating…'; btn.disabled = true; }
     try {
-        await fetch(`${API}/api/trigger-hourly-summary`, { method: 'POST' });
+        const res = await fetch(`${API}/api/trigger-hourly-summary`, { method: 'POST' });
         await fetchHourlySummaries();
-    } catch { }
-    if (btn) { btn.textContent = 'Generate Now'; btn.disabled = false; }
+        if (btn && res.ok) {
+            btn.textContent = 'Done!';
+            setTimeout(() => { btn.textContent = 'Generate Now'; btn.disabled = false; }, 2000);
+        } else if (btn) {
+            btn.textContent = 'No activity to summarize';
+            setTimeout(() => { btn.textContent = 'Generate Now'; btn.disabled = false; }, 2000);
+        }
+    } catch {
+        if (btn) { btn.textContent = 'Generate Now'; btn.disabled = false; }
+    }
 }
 
 // Words to ignore when extracting keywords from window titles
@@ -608,14 +681,22 @@ async function renderCalendar() {
             html += `<div style="font-size:12px;color:#6B7280;font-weight:600;text-align:center;">${day.label}</div>`;
         });
 
-        // Hour rows (8am-10pm)
-        for (let hour = 8; hour < 22; hour++) {
-            const h12 = hour % 12 || 12;
-            const ampm = hour < 12 ? 'AM' : 'PM';
+        // Hour rows (10am-2am next day)
+        for (let hour = 10; hour < 26; hour++) {
+            const displayHour = hour % 24;
+            const h12 = displayHour % 12 || 12;
+            const ampm = displayHour < 12 ? 'AM' : 'PM';
             const hourStr = `${h12} ${ampm}`;
             html += `<div style="font-size:11px;color:#6B7280;text-align:right;padding-right:8px;">${hourStr}</div>`;
-            days.forEach(day => {
-                const logs = dayMap[day.key]?.[hour] || [];
+            days.forEach((day, dayIdx) => {
+                let dayKey = day.key;
+                let lookupHour = displayHour;
+                if (hour >= 24) {
+                    const nextDate = new Date();
+                    nextDate.setDate(new Date(day.key + 'T00:00:00').getDate() + 1);
+                    dayKey = localDateKey(nextDate);
+                }
+                const logs = dayMap[dayKey]?.[lookupHour] || [];
                 const categories = logs.map(l => inferCategory(l.app_name || '', l.window_title || '')).filter(c => c !== 'unknown');
                 const topCat = categories.length ? categories[0] : null;
                 const calendarColors = {
@@ -626,9 +707,9 @@ async function renderCalendar() {
                     social_media: '#EA580C',
                     gaming: '#D97706',
                     break: '#6B7280',
-                    idle: '#D1D5DB',
+                    idle: '#374151',
                 };
-                const actualColor = topCat ? (calendarColors[topCat] || '#D1D5DB') : '#D1D5DB';
+                const actualColor = topCat ? (calendarColors[topCat] || '#374151') : '#374151';
                 html += `<div style="min-height:30px;background:${actualColor}26;border:1px solid ${actualColor}66;border-radius:4px;cursor:pointer;" title="${topCat || 'inactive'}"></div>`;
             });
         }
@@ -1091,6 +1172,10 @@ if (refreshBtn) {
     });
 }
 
+if (clearLogsBtn) {
+    clearLogsBtn.addEventListener('click', clearLogs);
+}
+
 const rerunOnboardingBtn = document.getElementById('rerun-onboarding-btn');
 if (rerunOnboardingBtn) {
     rerunOnboardingBtn.addEventListener('click', () => {
@@ -1241,6 +1326,11 @@ async function sendChat() {
     chatSendBtn.disabled = false;
 }
 
+function quickChat(text) {
+    chatInput.value = text;
+    sendChat();
+}
+
 chatSendBtn.addEventListener('click', sendChat);
 chatInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChat(); });
 
@@ -1284,7 +1374,7 @@ async function fetchCheckin() {
             const ageHint = data.age_seconds != null && data.age_seconds > 0
                 ? ` (${Math.floor(data.age_seconds / 60)}m old)`
                 : '';
-            checkinMessage.textContent = `${data.checkin}${ageHint}`;
+            checkinMessage.textContent = `Just checking in — ${data.checkin}${ageHint}`;
             checkinBanner.classList.remove('hidden');
             if (data.checkin !== lastCheckinNotification) {
                 lastCheckinNotification = data.checkin;
@@ -1478,17 +1568,22 @@ window.addEventListener('resize', () => {
 });
 
 if (!localStorage.getItem(ONBOARDING_KEY)) checkOnboarding();
+initTheme();
+
+if (themeToggleBtn) {
+    themeToggleBtn.addEventListener('click', toggleTheme);
+}
 
 // Polling fallback + analytics/checkin refresh
 setInterval(() => {
     if (!sseConnected) fetchData();
-}, 5000);
-setInterval(fetchHourlySummaries, 60000);
+}, 15000);
+setInterval(fetchHourlySummaries, 300000);
 setInterval(renderCalendar, 120000); // refresh calendar every 2 min
-setInterval(fetchCallout, 60000);
+setInterval(fetchCallout, 120000);
 setInterval(fetchAnalytics, 120000);
-setInterval(fetchCheckin, 30000);
-setInterval(fetchChatHistory, 60000);
+setInterval(fetchCheckin, 60000);
+setInterval(fetchChatHistory, 120000);
 setInterval(checkIosSetupStatus, 120000); // re-check every 2 min
 setInterval(fetchControlCenterStatus, 60000);
 
