@@ -468,16 +468,16 @@ function buildLiveHourCard(nowLogs) {
     if (!allKeywords.length) return '';
 
     const chips = allKeywords.map(k =>
-        `<span style="padding:2px 10px;background:#F3F4F6;border:1px solid #E5E7EB;border-radius:12px;font-size:12px;color:#374151;">${esc(k)}</span>`
+        `<span style="padding:2px 10px;background:#1e2130;border:1px solid #2a2d3a;border-radius:12px;font-size:12px;color:#94a3b8;">${esc(k)}</span>`
     ).join('');
 
     const minutesIn = Math.floor((now - hourStart) / 60000);
 
-    return `<div class="summary-card" style="border:1px solid #C7D2FE;background:#EEF2FF;">
+    return `<div class="summary-card" style="border:1px solid #312e81;background:#1e1b4b20;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
             <span class="summary-time">${esc(dateStr)}, ${esc(timeStr)} — ${esc(endTimeStr)}</span>
-            <span style="display:flex;align-items:center;gap:6px;font-size:11px;color:#4F46E5;font-weight:600;">
-                <span style="width:6px;height:6px;border-radius:50%;background:#4F46E5;display:inline-block;animation:pulse 2s infinite;"></span>
+            <span style="display:flex;align-items:center;gap:6px;font-size:11px;color:#a5b4fc;font-weight:600;">
+                <span style="width:6px;height:6px;border-radius:50%;background:#818cf8;display:inline-block;animation:pulse 2s infinite;"></span>
                 ${minutesIn}m in
             </span>
         </div>
@@ -550,13 +550,13 @@ async function fetchHourlySummaries() {
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
                     <span class="summary-time">${esc(dateStr)}, ${esc(timeStr)} — ${esc(endTimeStr)}</span>
                     <div style="display:flex;align-items:center;gap:6px;">
-                        <span style="background:${summarySource === 'deterministic' ? '#E5E7EB' : '#DBEAFE'};color:${summarySource === 'deterministic' ? '#374151' : '#1D4ED8'};padding:3px 6px;border-radius:4px;font-weight:600;font-size:11px;border:1px solid ${summarySource === 'deterministic' ? '#D1D5DB' : '#BFDBFE'};">${esc(sourceLabel)}${confidence ? ` ${esc(confidence)}` : ''}</span>
+                        <span style="background:${summarySource === 'deterministic' ? '#1e2130' : '#1e3a5f'};color:${summarySource === 'deterministic' ? '#94a3b8' : '#60a5fa'};padding:3px 6px;border-radius:4px;font-weight:600;font-size:11px;border:1px solid ${summarySource === 'deterministic' ? '#2a2d3a' : '#1d4ed8'};">${esc(sourceLabel)}${confidence ? ` ${esc(confidence)}` : ''}</span>
                         <span style="background:${scoreColor}1a;color:${scoreColor};padding:4px 8px;border-radius:4px;font-weight:600;font-size:12px;border:1px solid ${scoreColor}33;">${esc(score)}/10</span>
                     </div>
                 </div>
                 <p style="margin-bottom:8px;">${esc(s.summary_text)}</p>
                 <div style="font-size:12px;color:#6B7280;display:flex;gap:6px;flex-wrap:wrap;">
-                    ${topApps ? `<span style="padding:2px 8px;background:#F3F4F6;border:1px solid #E5E7EB;border-radius:4px;color:#374151;">${esc(topApps)}</span>` : ''}
+                    ${topApps ? `<span style="padding:2px 8px;background:#1e2130;border:1px solid #2a2d3a;border-radius:4px;color:#94a3b8;">${esc(topApps)}</span>` : ''}
                 </div>
             </div>`;
         }).join('');
@@ -1363,7 +1363,7 @@ async function checkIosSetupStatus() {
             // Show warning badge on iPhone card
             const warning = document.createElement('div');
             warning.id = 'ios-setup-warning';
-            warning.style.cssText = 'margin-top:0.5rem;padding:0.4rem 0.7rem;background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;font-size:0.75rem;color:#92400E;cursor:pointer;';
+            warning.style.cssText = 'margin-top:0.5rem;padding:0.4rem 0.7rem;background:#451a03;border:1px solid #78350f;border-radius:8px;font-size:0.75rem;color:#fbbf24;cursor:pointer;';
             warning.innerHTML = `${unconfigured.length} required iPhone automation${unconfigured.length > 1 ? 's' : ''} missing — <u>tap to fix</u>`;
             warning.onclick = () => window.open('/setup/ios', '_blank');
             cardIos.appendChild(warning);
