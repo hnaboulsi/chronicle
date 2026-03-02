@@ -596,14 +596,17 @@ def receive_ios_event(kind: str, background_tasks: BackgroundTasks, db: Session 
     kind = (kind or "").lower().strip()
     if kind == "charge_on":
         data = iOSTelemetry(activity_type="Stationary", is_charging=True)
+        display_type = "Charging On"
     elif kind == "charge_off":
         data = iOSTelemetry(activity_type="Stationary", is_charging=False)
+        display_type = "Charging Off"
     elif kind == "walking":
         data = iOSTelemetry(activity_type="Walking")
+        display_type = "Walking"
     else:
         raise HTTPException(status_code=400, detail=f"Unknown kind: {kind!r}. Valid: charge_on, charge_off, walking")
 
-    log_entry = ActivityLog(device="ios", activity_type=data.activity_type)
+    log_entry = ActivityLog(device="ios", activity_type=display_type)
     db.add(log_entry)
     db.commit()
     background_tasks.add_task(_bg_process_ios, data)
