@@ -325,7 +325,8 @@ function updateUI(logs, states) {
         logsBody.innerHTML = '';
         logs.forEach((entry, i) => {
             const tr = document.createElement('tr');
-            tr.onclick = () => openSummaryModal(entry.id);
+            // Disabled: activity insight modal on row click
+            // tr.onclick = () => openSummaryModal(entry.id);
 
             const tdTime = document.createElement('td');
             tdTime.textContent = formatTime(entry.timestamp);
@@ -591,6 +592,38 @@ document.getElementById('toggle-tracking-btn').addEventListener('click', async (
         updateTrackingUI(next);
     } catch { }
 });
+
+// ── Interval Pills ──
+const intervalPillsContainer = document.getElementById('interval-pills');
+if (intervalPillsContainer) {
+    intervalPillsContainer.addEventListener('click', async (e) => {
+        const pill = e.target.closest('[data-val]');
+        if (!pill) return;
+
+        const mins = parseInt(pill.dataset.val);
+        console.log(`[Interval Pills] Changing polling interval to ${mins} minutes`);
+
+        // Update UI immediately
+        document.querySelectorAll('#interval-pills [data-val]').forEach(p => p.classList.remove('active'));
+        pill.classList.add('active');
+
+        // Send to backend
+        try {
+            const response = await fetch(`${API}/api/settings`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ polling_interval_seconds: mins * 60 })
+            });
+            if (response.ok) {
+                console.log(`[Interval Pills] Successfully saved: ${mins}m`);
+            } else {
+                console.warn(`[Interval Pills] API returned status ${response.status}`);
+            }
+        } catch (err) {
+            console.error(`[Interval Pills] Error:`, err);
+        }
+    });
+}
 
 // ── Chat ──
 async function sendChat() {
