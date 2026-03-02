@@ -435,6 +435,24 @@ async def initialize_runtime():
         _STARTUP_STATUS["startup_errors"].append(msg)
         log.error(msg)
 
+    # Start background task for hourly summary generation (even if Mac is offline)
+    loop.create_task(_hourly_summary_scheduler())
+
+
+async def _hourly_summary_scheduler():
+    """Background task: generates missed hourly summaries every 5 minutes."""
+    await asyncio.sleep(10)  # Wait 10s for DB to stabilize on startup
+    while True:
+        try:
+            await asyncio.sleep(300)  # Check every 5 minutes
+            db = SessionLocal()
+            now = datetime.now(timezone.utc)
+            summaries_enabled = agent_logic.get_state(db, "hourly_summaries_enabled", "true") == "true"
+            if summaries_enabled:
+                await agent_logic._generate_and_store_hourly_summary(db, now)
+            db.close()
+        except Exception as exc:
+            log.error(f"Hourly summary scheduler error: {exc}")
 
 
 def _run_async(coro):
@@ -2087,6 +2105,7 @@ async def analytics_today(db: Session = Depends(get_db)):
     category_minutes = {}
     total_active_minutes = 0
     idle_count = 0
+    unclassified_apps = {}
     for entry in logs:
         interval_min = polling_secs / 60
         total_active_minutes += interval_min
@@ -2117,7 +2136,12 @@ async def analytics_today(db: Session = Depends(get_db)):
                 if any(n in text_data for n in needles):
                     cat = result
                     break
+            if cat == "break":
+                unclassified_apps[app_name] = unclassified_apps.get(app_name, 0) + 1
         category_minutes[cat] = category_minutes.get(cat, 0) + interval_min
+
+    if unclassified_apps:
+        log.debug("Unclassified apps (defaulted to break): %s", unclassified_apps)
 
     productive_cats = {"studying", "working", "creative"}
     productive_minutes = sum(category_minutes.get(c, 0) for c in productive_cats)

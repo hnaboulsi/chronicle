@@ -438,9 +438,8 @@ async function fetchHourlySummaries() {
         list.innerHTML = data.map(s => {
             const date = parseServerTimestamp(s.hour_start_local || s.hour_start);
             const endDate = date ? new Date(date.getTime() + 60 * 60 * 1000) : null;
-            const fmt = { hour: '2-digit', minute: '2-digit', hour12: true };
-            const timeStr = date
-                ? `${date.toLocaleTimeString([], fmt)} – ${endDate.toLocaleTimeString([], fmt)}`
+const timeStr = (date && endDate)
+                ? `${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true })} — ${endDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true })}`
                 : 'Previous Hour';
             const score = s.productivity_score != null ? s.productivity_score.toFixed(1) : '—';
             const scoreColor = s.productivity_score >= 7 ? 'var(--accent-green)' : s.productivity_score >= 4 ? 'var(--accent-amber)' : 'var(--accent-red)';
@@ -508,7 +507,8 @@ async function triggerHourlyRecap() {
     btn.disabled = true;
     try {
         await fetch(`${API}/api/trigger-hourly-summary`, { method: 'POST' });
-        setTimeout(fetchHourlySummaries, 8000);
+        setTimeout(fetchHourlySummaries, 12000);
+        setTimeout(fetchHourlySummaries, 22000);  // second try for slow LLM
     } catch { }
     setTimeout(() => { btn.textContent = 'Generate Now'; btn.disabled = false; }, 3000);
 }
@@ -564,8 +564,80 @@ async function loadSettings() {
         }
         if (s.user_timezone) sel.value = s.user_timezone;
 
-        fetchZones();
+// Load zones
+        await fetchZones();
     } catch { }
+}
+
+async function fetchZones() {
+    const list = document.getElementById('zones-list');
+    if (!list) return;
+    try {
+        const res = await fetch(`${API}/api/zones`);
+        const data = await res.json();
+        const zones = data.zones || [];
+        if (!zones.length) {
+            list.innerHTML = '<p class="text-muted">No zones yet. Add one to track your locations.</p>';
+            return;
+        }
+        list.innerHTML = zones.map(zone => `
+            <div class="zone-item" style="padding:12px;border:1px solid var(--border);border-radius:6px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
+                <div>
+                    <div style="font-weight:500;">${esc(zone.label || zone.name)}</div>
+                    <div style="font-size:12px;color:var(--text-muted);">${zone.latitude?.toFixed(4)}, ${zone.longitude?.toFixed(4)}</div>
+                    <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Radius: ${zone.radius_meters}m</div>
+                </div>
+                <button class="btn-secondary" style="padding:6px 12px;font-size:11px;" onclick="deleteZone(${zone.id})">Delete</button>
+            </div>
+        `).join('');
+    } catch (e) {
+        list.innerHTML = '<p class="text-muted">Could not load zones.</p>';
+    }
+}
+
+async function addZone() {
+    const name = prompt('Zone name (e.g., Home, Work, Campus):');
+    if (!name) return;
+    const latStr = prompt('Latitude:');
+    if (!latStr) return;
+    const lonStr = prompt('Longitude:');
+    if (!lonStr) return;
+    const radiusStr = prompt('Radius in meters (default 500):', '500');
+    const lat = parseFloat(latStr);
+    const lon = parseFloat(lonStr);
+    const radius = parseInt(radiusStr) || 500;
+    if (isNaN(lat) || isNaN(lon) || isNaN(radius)) {
+        alert('Invalid coordinates or radius');
+        return;
+    }
+    try {
+        const res = await fetch(`${API}/api/zones`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ label: name, latitude: lat, longitude: lon, radius_meters: radius })
+        });
+        if (res.ok) {
+            await fetchZones();
+        } else {
+            alert('Error creating zone');
+        }
+    } catch (e) {
+        alert('Error: ' + e.message);
+    }
+}
+
+async function deleteZone(zoneId) {
+    if (!confirm('Delete this zone?')) return;
+    try {
+        const res = await fetch(`${API}/api/zones/${zoneId}`, { method: 'DELETE' });
+        if (res.ok) {
+            await fetchZones();
+        } else {
+            alert('Error deleting zone');
+        }
+    } catch (e) {
+        alert('Error: ' + e.message);
+    }
 }
 
 document.getElementById('settings-save-btn').onclick = async () => {
