@@ -266,7 +266,7 @@ async def classify_activity_context(recent_activities: list, user_self_report: s
     }
 
 
-async def generate_hourly_summary(logs: list, hour_start: str) -> dict:
+async def generate_hourly_summary(logs: list, hour_start: str, app_cache: dict = None) -> dict:
     if not logs:
         return {"summary": "No activity recorded this hour.", "productivity_score": None}
 
@@ -274,14 +274,17 @@ async def generate_hourly_summary(logs: list, hour_start: str) -> dict:
     for a in logs:
         app = a.get("app_name", "Unknown")
         title = a.get("window_title", "") or ""
-        lines.append(f"- {app}: {title[:80]}")
+        cat = (app_cache or {}).get(app, "")
+        annotation = f" ({cat})" if cat else ""
+        lines.append(f"- {app}{annotation}: {title[:80]}")
     activity_text = "\n".join(lines)
 
     prompt = (
-        f"You are a productivity analyst. Here is what the user did on their Mac during the hour starting at {hour_start}:\n\n"
+        f"You are a productivity analyst. Here is what the user did on their Mac during {hour_start}:\n\n"
         f"{activity_text}\n\n"
-        "IMPORTANT CONTEXT: 'Vero' and 'LifeManager' are personal productivity tracking apps (like a journal/dashboard), NOT social media. "
-        "Do NOT classify them as social media.\n\n"
+        "CONTEXT: App names in parentheses show the category (working/studying/creative/entertainment/etc). "
+        "'Cursor' is an AI code editor for coding. 'Antigravity' is a productivity app. "
+        "'Vero' and 'LifeManager' are personal productivity tracking apps (NOT social media).\n\n"
         "Write a 2-3 sentence summary of what they worked on, how focused they were, and whether time was well spent. "
         "Then give a productivity score 0-10.\n\n"
         'Respond ONLY with valid JSON: {"summary": "...", "productivity_score": 7.5}'

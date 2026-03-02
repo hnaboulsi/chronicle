@@ -506,8 +506,9 @@ async def _generate_and_store_hourly_summary(db: Session, now: datetime, force_c
 
     if can_use_llm(db, now):
         try:
+            app_cache = json.loads(get_state(db, "app_category_cache") or "{}")
             register_llm_call(db, now)
-            llm_result = await llm_client.generate_hourly_summary(logs, hour_label)
+            llm_result = await llm_client.generate_hourly_summary(logs, hour_label, app_cache)
             if llm_result and llm_result.get("summary"):
                 result = llm_result
                 source = "llm"
@@ -850,7 +851,7 @@ async def _refresh_app_category_cache(db: Session, now: datetime):
         "- social_media: Instagram, Twitter/X, TikTok, Snapchat\n"
         "- gaming: games, Steam, game launchers\n"
         "- break: Finder, System Preferences, casual/unknown browsing\n\n"
-        "Notes: 'Vero'/'LifeManager' = working. 'Code'/'Visual Studio Code' = working.\n\n"
+        "Notes: 'Vero'/'LifeManager'/'Code'/'Visual Studio Code'/'Cursor'/'Antigravity' = working. 'Cursor' is an AI code editor. 'Antigravity' is a productivity app.\n\n"
         f"Apps:\n{app_list}\n\n"
         'Respond ONLY with JSON: {"AppName": "category", ...}'
     )
@@ -971,16 +972,24 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session):
         # Refresh AI-driven app category cache (at most once per hour)
         await _refresh_app_category_cache(db, now)
 
-    last_summary_str = get_state(db, "last_hourly_summary")
-    if last_summary_str:
-        dt = datetime.fromisoformat(last_summary_str)
-        last_summary = dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
-    else:
-        last_summary = datetime.min.replace(tzinfo=timezone.utc)
     summaries_enabled = get_state(db, "hourly_summaries_enabled", DEFAULTS["hourly_summaries_enabled"]) == "true"
-    if summaries_enabled and (now - last_summary).total_seconds() > 1800:
-        set_state(db, "last_hourly_summary", now.isoformat())
-        await _generate_and_store_hourly_summary(db, now)
+    if summaries_enabled:
+        local_tz = resolve_user_timezone(db)
+        current_hour_start = now.astimezone(local_tz).replace(minute=0, second=0, microsecond=0)
+        last_summary_str = get_state(db, "last_hourly_summary")
+        last_summary_hour_start = None
+        if last_summary_str:
+            try:
+                dt = datetime.fromisoformat(last_summary_str)
+                dt = dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+                last_summary_hour_start = dt.astimezone(local_tz).replace(minute=0, second=0, microsecond=0)
+            except Exception:
+                pass
+        if last_summary_hour_start is None or last_summary_hour_start < current_hour_start:
+            set_state(db, "last_hourly_summary", now.isoformat())
+            await _generate_and_store_hourly_summary(db, now)  # previous completed hour
+        # Always update current partial hour summary
+        await _generate_and_store_hourly_summary(db, now, force_current=True)
 
 
 def _record_ios_event(db: Session, now: datetime):
