@@ -55,9 +55,9 @@ updateClock();
 
 // ── Category labels and colors ──
 const CAT_LABELS = {
-    studying: '📚 Studying', working: '💼 Working', entertainment: '🎬 Entertainment',
-    social_media: '📲 Social Media', gaming: '🎮 Gaming', creative: '🎨 Creative',
-    break: '☕ Break', idle: '💤 Idle', unknown: '🔍 Analyzing...',
+    studying: 'Studying', working: 'Working', entertainment: 'Entertainment',
+    social_media: 'Social Media', gaming: 'Gaming', creative: 'Creative',
+    break: 'Break', idle: 'Idle', unknown: 'Analyzing...',
 };
 
 const CAT_COLORS = {
@@ -123,62 +123,62 @@ function updateUI(logs, states) {
 
     if (macState === 'offline') {
         macStatus.textContent = 'Offline';
-        macStatus.style.color = 'var(--danger)';
+        macStatus.style.color = '#EF4444';
         if (states.last_mac_heartbeat_age_seconds != null) {
             const mins = Math.max(1, Math.ceil(states.last_mac_heartbeat_age_seconds / 60));
             macDetail.textContent = states.mac_status_reason || `Last heartbeat ${mins}m ago`;
         } else {
             macDetail.textContent = states.mac_status_reason || 'Not connected';
         }
-        macDetail.style.color = 'var(--text-tertiary)';
+        macDetail.style.color = '#9CA3AF';
     } else if (macState === 'degraded') {
         macStatus.textContent = 'Needs Access';
-        macStatus.style.color = 'var(--warning)';
+        macStatus.style.color = '#D97706';
         macDetail.textContent = states.mac_status_reason || 'Grant Accessibility and browser permissions';
-        macDetail.style.color = 'var(--text-secondary)';
+        macDetail.style.color = '#6B7280';
     } else if (macState === 'paused') {
         macStatus.textContent = 'Paused';
-        macStatus.style.color = 'var(--warning)';
+        macStatus.style.color = '#D97706';
         macDetail.textContent = states.mac_status_reason || 'Tracking is paused';
-        macDetail.style.color = 'var(--text-secondary)';
+        macDetail.style.color = '#6B7280';
     } else if (macState === 'online_idle') {
         macStatus.textContent = 'Online, idle';
-        macStatus.style.color = 'var(--text-primary)';
+        macStatus.style.color = '#111827';
         macDetail.textContent = latestMacApp || states.mac_status_reason || 'Agent connected';
-        macDetail.style.color = 'var(--text-secondary)';
+        macDetail.style.color = '#6B7280';
     } else {
         macStatus.textContent = 'Online';
-        macStatus.style.color = 'var(--text-primary)';
+        macStatus.style.color = '#111827';
         macDetail.textContent = latestMacApp || states.mac_status_reason || 'Agent connected';
-        macDetail.style.color = 'var(--text-secondary)';
+        macDetail.style.color = '#6B7280';
     }
 
     // iOS Card
     const latestIos = logs.find(l => l.device === 'ios');
     if (latestIos) {
         iosStatus.textContent = latestIos.location_label || 'Connected';
-        iosStatus.style.color = 'var(--success)';
-        const battStr = latestIos.battery_pct != null ? ` · 🔋${latestIos.battery_pct}%` : '';
+        iosStatus.style.color = '#16A34A';
+        const battStr = latestIos.battery_pct != null ? ` · ${latestIos.battery_pct}% battery` : '';
         iosDetail.textContent = (latestIos.activity_type || 'Tracking') + battStr;
-        iosDetail.style.color = 'var(--text-secondary)';
+        iosDetail.style.color = '#6B7280';
     } else {
         iosStatus.textContent = states.ios_recent_ping ? 'Connected' : 'Idle';
-        iosStatus.style.color = states.ios_recent_ping ? 'var(--success)' : 'var(--text-tertiary)';
+        iosStatus.style.color = states.ios_recent_ping ? '#16A34A' : '#9CA3AF';
         iosDetail.textContent = states.ios_recent_ping ? 'Tracking location' : 'No pings received';
-        iosDetail.style.color = 'var(--text-tertiary)';
+        iosDetail.style.color = '#9CA3AF';
     }
 
     // Focus Mode
     const isStudy = states.study_mode === 'active';
     focusStatus.textContent = isStudy ? 'Study Mode' : 'Off';
-    focusStatus.style.color = isStudy ? 'var(--warning)' : 'var(--text-secondary)';
+    focusStatus.style.color = isStudy ? '#D97706' : '#6B7280';
     focusDetail.textContent = isStudy ? 'Distraction alerts on' : 'Normal';
 
     // AI Reading
     const cat = states.current_activity_category || 'unknown';
     activityCategory.textContent = CAT_LABELS[cat] || cat;
     activitySummary.textContent = states.current_activity_summary || '\u2014';
-    activityCategory.style.color = PRODUCTIVE.has(cat) ? 'var(--success)' : DISTRACTED.has(cat) ? 'var(--danger)' : 'var(--text-primary)';
+    activityCategory.style.color = PRODUCTIVE.has(cat) ? '#16A34A' : DISTRACTED.has(cat) ? '#EF4444' : '#111827';
 
     // Logs Table
     logsBody.innerHTML = '';
@@ -196,7 +196,7 @@ function updateUI(logs, states) {
         tdTime.textContent = time;
 
         const tdDevice = document.createElement('td');
-        tdDevice.textContent = isMac ? '💻' : '📱';
+        tdDevice.textContent = isMac ? 'Mac' : 'iPhone';
 
         const tdActivity = document.createElement('td');
         tdActivity.textContent = isMac ? (entry.app_name || '') : (entry.activity_type || 'Ping');
@@ -211,7 +211,7 @@ function updateUI(logs, states) {
             tdContext.appendChild(pill);
         } else if (!isMac) {
             tdContext.textContent = entry.location_label || '\u2014';
-            tdContext.style.color = 'var(--text-secondary)';
+            tdContext.style.color = '#6B7280';
         }
 
         tr.append(tdTime, tdDevice, tdActivity, tdContext);
@@ -252,7 +252,7 @@ function renderAnalytics(data) {
     const maxMin = Math.max(...entries.map(e => e[1]), 1);
     chart.innerHTML = entries.map(([cat, mins]) => {
         const pct = Math.max(2, (mins / maxMin) * 100);
-        const color = CAT_COLORS[cat] || 'var(--text-tertiary)';
+        const color = CAT_COLORS[cat] || '#9CA3AF';
         const label = cat.replace('_', ' ');
         const h = Math.floor(mins / 60);
         const m = Math.round(mins % 60);
@@ -358,16 +358,16 @@ function buildLiveHourCard(nowLogs) {
     if (!allKeywords.length) return '';
 
     const chips = allKeywords.map(k =>
-        `<span style="padding:2px 10px;background:rgba(255,255,255,0.08);border-radius:12px;font-size:12px;">${esc(k)}</span>`
+        `<span style="padding:2px 10px;background:#F3F4F6;border:1px solid #E5E7EB;border-radius:12px;font-size:12px;color:#374151;">${esc(k)}</span>`
     ).join('');
 
     const minutesIn = Math.floor((now - hourStart) / 60000);
 
-    return `<div class="summary-card" style="border:1px solid rgba(99,102,241,0.3);background:rgba(99,102,241,0.05);">
+    return `<div class="summary-card" style="border:1px solid #C7D2FE;background:#EEF2FF;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
             <span class="summary-time">${esc(dateStr)}, ${esc(timeStr)} — ${esc(endTimeStr)}</span>
-            <span style="display:flex;align-items:center;gap:6px;font-size:11px;color:#818CF8;font-weight:600;">
-                <span style="width:6px;height:6px;border-radius:50%;background:#818CF8;display:inline-block;animation:pulse 2s infinite;"></span>
+            <span style="display:flex;align-items:center;gap:6px;font-size:11px;color:#4F46E5;font-weight:600;">
+                <span style="width:6px;height:6px;border-radius:50%;background:#4F46E5;display:inline-block;animation:pulse 2s infinite;"></span>
                 ${minutesIn}m in
             </span>
         </div>
@@ -444,11 +444,11 @@ async function fetchHourlySummaries() {
             return `<div class="summary-card">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
                     <span class="summary-time">${esc(dateStr)}, ${esc(timeStr)} — ${esc(endTimeStr)}</span>
-                    <span style="background:${scoreColor}20;color:${scoreColor};padding:4px 8px;border-radius:4px;font-weight:600;font-size:12px;">${esc(score)}/10</span>
+                    <span style="background:${scoreColor}1a;color:${scoreColor};padding:4px 8px;border-radius:4px;font-weight:600;font-size:12px;border:1px solid ${scoreColor}33;">${esc(score)}/10</span>
                 </div>
                 <p style="margin-bottom:8px;">${esc(s.summary_text)}</p>
                 <div style="font-size:12px;color:#6B7280;display:flex;gap:6px;flex-wrap:wrap;">
-                    ${topApps ? `<span style="padding:2px 8px;background:rgba(255,255,255,0.08);border-radius:4px;">📱 ${esc(topApps)}</span>` : ''}
+                    ${topApps ? `<span style="padding:2px 8px;background:#F3F4F6;border:1px solid #E5E7EB;border-radius:4px;color:#374151;">${esc(topApps)}</span>` : ''}
                 </div>
             </div>`;
         }).join('');
@@ -686,17 +686,17 @@ function updateNotificationPermissionUI() {
     const perm = Notification.permission;
     if (perm === 'granted') {
         statusEl.textContent = 'Enabled';
-        statusEl.style.color = 'var(--success)';
+        statusEl.style.color = '#16A34A';
         btn.textContent = 'Enabled';
         btn.disabled = true;
     } else if (perm === 'denied') {
         statusEl.textContent = 'Blocked in browser';
-        statusEl.style.color = 'var(--warning)';
+        statusEl.style.color = '#D97706';
         btn.textContent = 'Blocked';
         btn.disabled = true;
     } else {
         statusEl.textContent = 'Not enabled';
-        statusEl.style.color = 'var(--text-secondary)';
+        statusEl.style.color = '#6B7280';
         btn.textContent = 'Enable';
         btn.disabled = false;
     }
@@ -836,7 +836,7 @@ async function loadSettings() {
         if (hRes.ok) {
             const h = await hRes.json();
             document.getElementById('setting-health').textContent = h.status === 'ok' ? 'Healthy' : h.status;
-            document.getElementById('setting-health').style.color = h.status === 'ok' ? 'var(--success)' : 'var(--warning)';
+            document.getElementById('setting-health').style.color = h.status === 'ok' ? '#16A34A' : '#D97706';
         }
     } catch { }
 }
@@ -1096,8 +1096,8 @@ async function checkIosSetupStatus() {
             // Show warning badge on iPhone card
             const warning = document.createElement('div');
             warning.id = 'ios-setup-warning';
-            warning.style.cssText = 'margin-top:0.5rem;padding:0.4rem 0.7rem;background:rgba(210,153,34,0.15);border:1px solid rgba(210,153,34,0.4);border-radius:8px;font-size:0.75rem;color:#d29922;cursor:pointer;';
-            warning.innerHTML = `⚠ ${unconfigured.length} iPhone automation${unconfigured.length > 1 ? 's' : ''} still need setup — <u>tap to fix</u>`;
+            warning.style.cssText = 'margin-top:0.5rem;padding:0.4rem 0.7rem;background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;font-size:0.75rem;color:#92400E;cursor:pointer;';
+            warning.innerHTML = `${unconfigured.length} iPhone automation${unconfigured.length > 1 ? 's' : ''} still need setup — <u>tap to fix</u>`;
             warning.onclick = () => window.open('/setup/ios', '_blank');
             cardIos.appendChild(warning);
         }
@@ -1119,7 +1119,7 @@ async function fetchControlCenterStatus() {
         if (serviceStatusEl && serviceDetailEl) {
             const status = health?.status || 'unknown';
             serviceStatusEl.textContent = status === 'ok' ? 'Healthy' : (status === 'degraded' ? 'Degraded' : 'Unknown');
-            serviceStatusEl.style.color = status === 'ok' ? 'var(--success)' : 'var(--warning)';
+            serviceStatusEl.style.color = status === 'ok' ? '#16A34A' : '#D97706';
             if (status === 'ok') {
                 serviceDetailEl.textContent = `Railway is serving traffic. Build ${health?.build?.git_sha || 'unknown'} is live.`;
             } else {
@@ -1132,15 +1132,15 @@ async function fetchControlCenterStatus() {
         if (calendarStatusEl && calendarDetailEl) {
             if (!latestStates || latestStates.mac_status === 'offline') {
                 calendarStatusEl.textContent = 'Waiting for Mac';
-                calendarStatusEl.style.color = 'var(--warning)';
+                calendarStatusEl.style.color = '#D97706';
                 calendarDetailEl.textContent = 'The Mac helper is the only calendar writer. Open Vero so it can pull queued calendar jobs.';
             } else if (pendingJobs > 0) {
                 calendarStatusEl.textContent = `${pendingJobs} Queued`;
-                calendarStatusEl.style.color = 'var(--warning)';
+                calendarStatusEl.style.color = '#D97706';
                 calendarDetailEl.textContent = 'Recommended: System Settings > Apple Account > iCloud > Calendar ON, then keep the Vero calendar under the iCloud section in Calendar.app.';
             } else {
                 calendarStatusEl.textContent = 'Ready';
-                calendarStatusEl.style.color = 'var(--success)';
+                calendarStatusEl.style.color = '#16A34A';
                 calendarDetailEl.textContent = 'The Mac helper will write new sessions to Apple Calendar locally. For cloud sync, keep iCloud Calendar ON and the Vero calendar under iCloud.';
             }
         }
@@ -1150,15 +1150,15 @@ async function fetchControlCenterStatus() {
             const configured = checklist.filter(item => item.configured).length;
             if (!checklist.length) {
                 iosSetupStatusEl.textContent = 'Not configured';
-                iosSetupStatusEl.style.color = 'var(--warning)';
+                iosSetupStatusEl.style.color = '#D97706';
                 iosSetupDetailEl.textContent = 'Set up zone enter/leave automations first. Walking and charging automations are optional quality-of-life signals.';
             } else if (configured === checklist.length) {
                 iosSetupStatusEl.textContent = `${configured}/${checklist.length} Ready`;
-                iosSetupStatusEl.style.color = 'var(--success)';
+                iosSetupStatusEl.style.color = '#16A34A';
                 iosSetupDetailEl.textContent = 'Zone automations are configured. Geofencing is the low-battery default and is more accurate than periodic GPS polling.';
             } else {
                 iosSetupStatusEl.textContent = `${configured}/${checklist.length} Ready`;
-                iosSetupStatusEl.style.color = 'var(--warning)';
+                iosSetupStatusEl.style.color = '#D97706';
                 iosSetupDetailEl.textContent = 'Finish the missing automations in iPhone Setup. Start with zone enter/leave events, then add walking and charging if you want more context.';
             }
         }

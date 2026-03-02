@@ -162,22 +162,22 @@ struct DiagnosticsView: View {
         .formStyle(.grouped)
         .navigationTitle("Diagnostics")
         .confirmationDialog(
-            clearConfirmTitle,
+            "Clear Activity Data",
             isPresented: Binding(
                 get: { showClearConfirm != nil },
                 set: { if !$0 { showClearConfirm = nil } }
-            )
-        ) {
-            Button("Delete", role: .destructive) {
-                if let val = showClearConfirm {
-                    let minutes: Int? = val == -1 ? nil : val
-                    Task { await model.clearActivityLogs(minutes: minutes) }
-                    showClearConfirm = nil
-                }
+            ),
+            titleVisibility: .visible,
+            presenting: showClearConfirm
+        ) { val in
+            Button(val == -1 ? "Delete all today" : "Delete last \(val)m", role: .destructive) {
+                let minutes: Int? = val == -1 ? nil : val
+                Task { await model.clearActivityLogs(minutes: minutes) }
+                showClearConfirm = nil
             }
             Button("Cancel", role: .cancel) { showClearConfirm = nil }
-        } message: {
-            Text(clearConfirmTitle)
+        } message: { val in
+            Text(val == -1 ? "Delete all activity logs for today?" : "Delete activity logs from the last \(val) minute\(val == 1 ? "" : "s")?")
         }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
@@ -188,11 +188,6 @@ struct DiagnosticsView: View {
                 }
             }
         }
-    }
-
-    private var clearConfirmTitle: String {
-        guard let val = showClearConfirm else { return "" }
-        return val == -1 ? "Delete all activity logs for today?" : "Delete activity logs from the last \(val) minute\(val == 1 ? "" : "s")?"
     }
 
 }
