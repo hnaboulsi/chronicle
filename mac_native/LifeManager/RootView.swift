@@ -37,7 +37,7 @@ struct RootView: View {
                             Label("Zones", systemImage: "location")
                         }
                         NavigationLink(value: AppScreen.chat) {
-                            Label("Chat", systemImage: "bubble.left.and.bubble.right.fill")
+                            Label("Context", systemImage: "slider.horizontal.3")
                         }
                     }
                     Section("System") {
@@ -61,9 +61,6 @@ struct RootView: View {
                                     StatusBadge(label: "\(model.calendarJobs.count)", color: .indigo)
                                 }
                             }
-                        }
-                        NavigationLink(value: AppScreen.iphone) {
-                            Label("iPhone Setup", systemImage: "iphone")
                         }
                     }
                 }
@@ -124,8 +121,6 @@ struct RootView: View {
             DiagnosticsView()
         case .calendar:
             CalendarView()
-        case .iphone:
-            iPhoneSetupView()
         case .chat:
             ChatView()
         }

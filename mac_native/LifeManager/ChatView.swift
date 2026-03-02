@@ -2,83 +2,119 @@ import SwiftUI
 
 struct ChatView: View {
     @EnvironmentObject private var model: NativeAppModel
-    @State private var inputText = ""
-    @State private var isSending = false
+    @State private var currentIntent = ""
+    @State private var sleepStartHour = 1
+    @State private var sleepEndHour = 9
+    @State private var specialMode = "normal"
+    @State private var isSaving = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            if model.chatTurns.isEmpty {
-                emptyState
-            } else {
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(spacing: Spacing.lg) {
-                            ForEach(Array(model.chatTurns.enumerated()), id: \.offset) { index, turn in
-                                VStack(spacing: Spacing.xs) {
-                                    Text(formattedTime(turn.time))
-                                        .font(.caption2)
-                                        .foregroundStyle(.tertiary)
-                                        .frame(maxWidth: .infinity)
-                                    ChatBubble(text: turn.user, isUser: true)
-                                    ChatBubble(text: turn.reply, isUser: false)
-                                }
-                                .id(index)
-                            }
-                        }
-                        .padding(Spacing.lg)
+        Form {
+            Section("Current Intent") {
+                TextField("What are you doing right now?", text: $currentIntent, axis: .vertical)
+                    .lineLimit(3, reservesSpace: true)
+                Text("This helps Vero interpret your activity and summaries.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Sleep Window") {
+                Stepper(value: $sleepStartHour, in: 0 ... 23, step: 1) {
+                    HStack {
+                        Text("Sleep Start")
+                        Spacer()
+                        Text(hourLabel(sleepStartHour))
+                            .foregroundStyle(.secondary)
                     }
-                    .onAppear {
-                        proxy.scrollTo(model.chatTurns.count - 1, anchor: .bottom)
+                }
+                Stepper(value: $sleepEndHour, in: 0 ... 23, step: 1) {
+                    HStack {
+                        Text("Sleep End")
+                        Spacer()
+                        Text(hourLabel(sleepEndHour))
+                            .foregroundStyle(.secondary)
                     }
-                    .onChange(of: model.chatTurns.count) { _ in
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            proxy.scrollTo(model.chatTurns.count - 1, anchor: .bottom)
-                        }
+                }
+                Text("Vero combines this schedule with charging and activity signals to estimate sleep.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Day Mode") {
+                Picker("Special Mode", selection: $specialMode) {
+                    Text("Normal").tag("normal")
+                    Text("Travel").tag("travel")
+                    Text("Exam").tag("exam")
+                    Text("Rest").tag("rest")
+                }
+            }
+
+            Section("Current Sleep Assessment") {
+                Text(model.state.likely_asleep_reason ?? "No signal yet")
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                if let raw = model.state.likely_asleep_confidence, let confidence = Double(raw) {
+                    ProgressView(value: confidence, total: 1.0) {
+                        Text("Confidence")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
 
-            Divider()
-
-            HStack(alignment: .center, spacing: Spacing.sm) {
-                TextField("Reply to Vero...", text: $inputText)
-                    .textFieldStyle(.plain)
-                    .padding(.horizontal, Spacing.md)
-                    .padding(.vertical, Spacing.sm)
-                    .background(Color(NSColor.controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
-                    .onSubmit { sendReply() }
-
-                Button(action: sendReply) {
-                    Image(systemName: isSending ? "clock.fill" : "arrow.up.circle.fill")
-                        .font(.system(size: 26))
-                        .foregroundStyle(canSend ? Color.indigo : Color.secondary.opacity(0.4))
+            Section {
+                Button(action: save) {
+                    if isSaving {
+                        ProgressView()
+                    } else {
+                        Text("Save Context")
+                            .fontWeight(.semibold)
+                    }
                 }
-                .buttonStyle(.plain)
-                .disabled(!canSend)
+                .disabled(isSaving)
             }
-            .padding(Spacing.md)
+
+            if !model.chatTurns.isEmpty {
+                Section("Recent Chat (for reference)") {
+                    ForEach(Array(model.chatTurns.suffix(4).reversed().enumerated()), id: \.offset) { _, turn in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(formattedTime(turn.time))
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            Text("You: \(turn.user)")
+                                .font(.caption)
+                            Text("Vero: \(turn.reply)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
         }
-        .navigationTitle("Chat")
+        .formStyle(.grouped)
+        .navigationTitle("Context")
+        .onAppear {
+            syncFromModel()
+        }
+        .onChange(of: model.contextPreferences.current_intent) { _ in
+            syncFromModel()
+        }
     }
 
-    private var emptyState: some View {
-        VStack {
-            Spacer()
-            VStack(spacing: Spacing.sm) {
-                Image(systemName: "bubble.left.and.bubble.right")
-                    .font(.system(size: 32))
-                    .foregroundStyle(.secondary)
-                Text("No conversations yet")
-                    .foregroundStyle(.secondary)
-                    .font(.subheadline)
-            }
-            Spacer()
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    private func syncFromModel() {
+        currentIntent = model.contextPreferences.current_intent
+        sleepStartHour = model.contextPreferences.sleep_start_hour
+        sleepEndHour = model.contextPreferences.sleep_end_hour
+        specialMode = model.contextPreferences.special_mode
+    }
+
+    private func hourLabel(_ hour: Int) -> String {
+        let period = hour >= 12 ? "PM" : "AM"
+        let normalized = hour % 12 == 0 ? 12 : hour % 12
+        return "\(normalized):00 \(period)"
     }
 
     private func formattedTime(_ raw: String) -> String {
-        // Try ISO 8601 (new format from backend)
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         if let date = formatter.date(from: raw) {
@@ -87,7 +123,6 @@ struct ChatView: View {
             display.timeZone = .current
             return display.string(from: date)
         }
-        // Try without fractional seconds
         formatter.formatOptions = [.withInternetDateTime]
         if let date = formatter.date(from: raw) {
             let display = DateFormatter()
@@ -95,22 +130,25 @@ struct ChatView: View {
             display.timeZone = .current
             return display.string(from: date)
         }
-        // Fall back to raw string (old HH:MM format)
         return raw
     }
 
-    private var canSend: Bool {
-        !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isSending
-    }
-
-    private func sendReply() {
-        let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !isSending else { return }
-        inputText = ""
-        isSending = true
+    private func save() {
+        isSaving = true
+        model.contextPreferences = ContextPreferences(
+            current_intent: currentIntent,
+            sleep_start_hour: sleepStartHour,
+            sleep_end_hour: sleepEndHour,
+            special_mode: specialMode
+        )
         Task {
-            await model.sendReply(text)
-            isSending = false
+            await model.saveContextPreferences()
+            isSaving = false
         }
     }
+}
+
+#Preview {
+    ChatView()
+        .environmentObject(NativeAppModel())
 }

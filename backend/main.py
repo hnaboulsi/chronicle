@@ -46,10 +46,20 @@ def _run_migrations() -> list[str]:
         try:
             if dialect == "postgresql":
                 conn.execute(text("ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS battery_pct INTEGER"))
+                conn.execute(text("ALTER TABLE hourly_summaries ADD COLUMN IF NOT EXISTS summary_source VARCHAR(32) DEFAULT 'llm'"))
+                conn.execute(text("ALTER TABLE hourly_summaries ADD COLUMN IF NOT EXISTS confidence FLOAT"))
+                conn.execute(text("ALTER TABLE hourly_summaries ADD COLUMN IF NOT EXISTS fallback_used BOOLEAN DEFAULT FALSE"))
             else:  # sqlite doesn't support IF NOT EXISTS on ALTER
                 cols = [r[1] for r in conn.execute(text("PRAGMA table_info(activity_logs)"))]
                 if "battery_pct" not in cols:
                     conn.execute(text("ALTER TABLE activity_logs ADD COLUMN battery_pct INTEGER"))
+                summary_cols = [r[1] for r in conn.execute(text("PRAGMA table_info(hourly_summaries)"))]
+                if "summary_source" not in summary_cols:
+                    conn.execute(text("ALTER TABLE hourly_summaries ADD COLUMN summary_source VARCHAR(32) DEFAULT 'llm'"))
+                if "confidence" not in summary_cols:
+                    conn.execute(text("ALTER TABLE hourly_summaries ADD COLUMN confidence FLOAT"))
+                if "fallback_used" not in summary_cols:
+                    conn.execute(text("ALTER TABLE hourly_summaries ADD COLUMN fallback_used BOOLEAN DEFAULT 0"))
 
             # Data migration: rename legacy app names to "Vero"
             conn.execute(text("""
@@ -58,9 +68,9 @@ def _run_migrations() -> list[str]:
                 WHERE app_name IN ('LifeManager', 'Vero Agent', 'Ambient')
             """))
 
-            # Reset migration (v2): zones are now user-defined only.
+            # Reset migration (v3): zones are now user-defined only.
             marker = conn.execute(
-                text("SELECT value FROM agent_states WHERE key = 'zones_reset_v2' LIMIT 1")
+                text("SELECT value FROM agent_states WHERE key = 'zones_reset_v3' LIMIT 1")
             ).scalar()
             if marker != "true":
                 conn.execute(text("DELETE FROM location_zones"))
@@ -87,7 +97,34 @@ def _run_migrations() -> list[str]:
                     text(
                         """
                         INSERT INTO agent_states (key, value, updated_at)
-                        VALUES ('zones_reset_v2', 'true', CURRENT_TIMESTAMP)
+                        VALUES ('zones_reset_v3', 'true', CURRENT_TIMESTAMP)
+                        ON CONFLICT(key) DO UPDATE SET value='true', updated_at=CURRENT_TIMESTAMP
+                        """
+                    )
+                )
+            checkin_marker = conn.execute(
+                text("SELECT value FROM agent_states WHERE key = 'checkin_cleanup_v1' LIMIT 1")
+            ).scalar()
+            if checkin_marker != "true":
+                conn.execute(
+                    text(
+                        """
+                        DELETE FROM agent_states
+                        WHERE key IN (
+                          'pending_checkin',
+                          'checkin_guess',
+                          'pending_checkin_created_at',
+                          'pending_checkin_expires_at',
+                          'pending_checkin_context_key'
+                        )
+                        """
+                    )
+                )
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO agent_states (key, value, updated_at)
+                        VALUES ('checkin_cleanup_v1', 'true', CURRENT_TIMESTAMP)
                         ON CONFLICT(key) DO UPDATE SET value='true', updated_at=CURRENT_TIMESTAMP
                         """
                     )
@@ -481,11 +518,15 @@ def _build_state_payload(db: Session) -> dict:
     states["mac_online"] = mac_status["mac_online"]
     states["mac_status"] = mac_status["mac_status"]
     states["mac_status_reason"] = mac_status["mac_status_reason"]
+    states["mac_idle"] = mac_status.get("mac_idle", False)
     states["mac_launch_url"] = "vero://open"
     states["last_mac_heartbeat"] = states.get("last_mac_heartbeat", "")
-    states["service_health"] = "ok" if mac_status["mac_status"] in {"online", "online_idle"} else (
+    states["service_health"] = "ok" if mac_status["mac_status"] in {"online"} else (
         "degraded" if mac_status["mac_status"] in {"degraded", "paused"} else "offline"
     )
+    states["likely_asleep"] = agent_logic.get_state(db, "likely_asleep", "false")
+    states["likely_asleep_reason"] = agent_logic.get_state(db, "likely_asleep_reason", "")
+    states["likely_asleep_confidence"] = agent_logic.get_state(db, "likely_asleep_confidence", "0.0")
     return states
 
 def _bg_process_mac(data: MacTelemetry):
@@ -749,6 +790,20 @@ def update_settings(payload: Dict[str, Any], db: Session = Depends(get_db)):
     return {"status": "updated"}
 
 
+@app.get("/api/context/preferences")
+def get_context_preferences(db: Session = Depends(get_db)):
+    return agent_logic.get_context_preferences(db)
+
+
+@app.post("/api/context/preferences")
+def post_context_preferences(payload: Dict[str, Any], db: Session = Depends(get_db)):
+    try:
+        prefs = agent_logic.update_context_preferences(db, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"status": "updated", "preferences": prefs}
+
+
 @app.get("/api/version")
 async def api_version():
     return {
@@ -872,10 +927,10 @@ async def mcp_http_transport(payload: Dict[str, Any], db: Session = Depends(get_
             raise HTTPException(status_code=400, detail="message is required")
         return {"result": await chat_message({"message": message}, db)}
     if method == "get_pending_checkin":
-        return {"result": await get_checkin(db)}
+        return {"result": get_checkin(db)}
     if method == "reply_to_prompt":
         reply = str(params.get("reply") or "").strip()
-        return {"result": await handle_prompt_reply({"reply": reply}, db)}
+        return {"result": handle_prompt_reply({"reply": reply}, db)}
     if method == "list_zones":
         return {"result": {"zones": agent_logic.list_zones(db)}}
     if method == "upsert_zone":
@@ -990,6 +1045,9 @@ def get_hourly_summaries(limit: int = 5, db: Session = Depends(get_db)):
             ),
             "summary_text": s.summary_text,
             "productivity_score": s.productivity_score,
+            "source": getattr(s, "summary_source", "llm"),
+            "confidence": getattr(s, "confidence", None),
+            "fallback_used": bool(getattr(s, "fallback_used", False)),
         }
         for s in summaries
     ]
@@ -1051,7 +1109,7 @@ async def chat_message(payload: Dict[str, Any], db: Session = Depends(get_db)):
     agent_logic.set_state(db, "last_user_checkin", now.isoformat())
 
     # Clear any pending check-in since user proactively told us
-    agent_logic.set_state(db, "pending_checkin", "")
+    agent_logic.clear_pending_checkin(db)
     agent_logic.set_state(db, "pending_prompt", "")
 
     # Build context for the LLM to understand and respond
@@ -1156,11 +1214,7 @@ def chat_history(db: Session = Depends(get_db)):
 @app.get("/api/checkin")
 def get_checkin(db: Session = Depends(get_db)):
     """Check if there's a pending check-in question for the user."""
-    checkin = agent_logic.get_state(db, "pending_checkin")
-    guess = agent_logic.get_state(db, "checkin_guess")
-    if not checkin:
-        return {"checkin": None}
-    return {"checkin": checkin, "guess": guess}
+    return agent_logic.get_checkin_payload(db, datetime.now(timezone.utc))
 
 
 @app.post("/api/checkin/confirm")
@@ -1178,10 +1232,36 @@ def confirm_checkin(payload: Dict[str, Any], db: Session = Depends(get_db)):
     elif correction:
         agent_logic.set_state(db, "user_self_report", correction)
 
-    agent_logic.set_state(db, "pending_checkin", "")
-    agent_logic.set_state(db, "checkin_guess", "")
+    context_key = agent_logic.get_state(db, "pending_checkin_context_key", "")
+    if context_key:
+        cooldown_until = now + timedelta(seconds=agent_logic.CHECKIN_COOLDOWN_SECONDS)
+        agent_logic.set_state(db, f"checkin_cooldown_until:{context_key}", cooldown_until.isoformat())
+    agent_logic.clear_pending_checkin(db)
     agent_logic.set_state(db, "last_user_checkin", now.isoformat())
     return {"status": "ok"}
+
+
+@app.post("/api/checkin/snooze")
+def snooze_checkin(payload: Dict[str, Any], db: Session = Depends(get_db)):
+    now = datetime.now(timezone.utc)
+    minutes = max(5, min(240, int(payload.get("minutes", 30))))
+    context_key = agent_logic.get_state(db, "pending_checkin_context_key", "")
+    if context_key:
+        cooldown_until = now + timedelta(minutes=minutes)
+        agent_logic.set_state(db, f"checkin_cooldown_until:{context_key}", cooldown_until.isoformat())
+    agent_logic.clear_pending_checkin(db)
+    return {"status": "snoozed", "minutes": minutes}
+
+
+@app.post("/api/checkin/dismiss")
+def dismiss_checkin(db: Session = Depends(get_db)):
+    now = datetime.now(timezone.utc)
+    context_key = agent_logic.get_state(db, "pending_checkin_context_key", "")
+    if context_key:
+        cooldown_until = now + timedelta(seconds=agent_logic.CHECKIN_COOLDOWN_SECONDS)
+        agent_logic.set_state(db, f"checkin_cooldown_until:{context_key}", cooldown_until.isoformat())
+    agent_logic.clear_pending_checkin(db)
+    return {"status": "dismissed"}
 
 
 @app.get("/api/healthz")
@@ -1445,7 +1525,7 @@ function copyCmd(btn) {{
 
 <h2>Step 3 — Run it once, then close it</h2>
 <div class="step">
-  <div class="step-num">In Xcode, choose the <strong>LifeManager</strong> scheme and press Run once</div>
+  <div class="step-num">In Xcode, choose the <strong>Vero app scheme</strong> (currently named <code>LifeManager</code>) and press Run once</div>
   <p>When the app opens, grant the permissions it asks for, then close the window. The goal is to register the hidden login helper, not keep a visible app open.</p>
   <p class="note">If you already have <code>Vero.app</code> in Applications, you can launch it directly with <code>open -a "Vero"</code>.</p>
 </div>
@@ -1852,7 +1932,7 @@ async def sign_all_shortcuts():
 
 @app.get("/api/analytics/today")
 async def analytics_today(db: Session = Depends(get_db)):
-    """Daily analytics: time per category, productivity %, steps, LLM usage."""
+    """Daily analytics: local-day active time, productive %, and AI usage."""
     now = datetime.now(timezone.utc)
     today_start, today_end = agent_logic.user_day_bounds_utc(db, now)
     user_tz = agent_logic.resolve_user_timezone(db)
@@ -1897,24 +1977,32 @@ async def analytics_today(db: Session = Depends(get_db)):
     productive_minutes = sum(category_minutes.get(c, 0) for c in productive_cats)
     productive_pct = round((productive_minutes / total_active_minutes * 100) if total_active_minutes > 0 else 0)
 
-    # Steps
-    steps = states.get("steps_today", "0")
-
     # LLM usage
     llm_stats = agent_logic.llm_usage_snapshot(db, now)
+    last_log_ts = logs[-1].timestamp if logs else None
+    freshness_seconds = int((now.replace(tzinfo=None) - last_log_ts).total_seconds()) if last_log_ts else None
+    last_updated_at = (
+        last_log_ts.replace(tzinfo=timezone.utc).isoformat()
+        if last_log_ts else ""
+    )
 
     return {
         "category_minutes": category_minutes,
         "total_active_minutes": round(total_active_minutes),
         "productive_minutes": round(productive_minutes),
         "productive_pct": productive_pct,
-        "steps_today": int(steps) if steps else 0,
         "llm_used": llm_stats["daily_used"],
         "llm_cap": llm_stats["daily_cap"],
         "log_count": len(logs),
         "timezone": user_tz.key,
         "day_start_utc": today_start.replace(tzinfo=timezone.utc).isoformat(),
         "day_end_utc": today_end.replace(tzinfo=timezone.utc).isoformat(),
+        "last_updated_at": last_updated_at,
+        "data_freshness_seconds": freshness_seconds,
+        "active_minutes_formula": "Count non-idle Mac telemetry points in the local day and multiply by polling interval.",
+        "productive_formula": "productive_minutes / total_active_minutes where productive categories are studying, working, creative.",
+        # Backward compatibility for older clients.
+        "steps_today": int(states.get("steps_today", "0") or "0"),
     }
 
 

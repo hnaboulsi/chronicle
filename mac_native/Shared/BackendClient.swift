@@ -13,6 +13,9 @@ enum BackendError: LocalizedError {
             return "The saved backend configuration is invalid. Reconnect to your cloud backend."
         case let .invalidResponse(statusCode):
             if let statusCode {
+                if statusCode == 401 {
+                    return "Auth token mismatch. Reconnect backend credentials in the app."
+                }
                 return "The backend returned an unexpected response (\(statusCode))."
             }
             return "The backend returned an unexpected response."
@@ -176,6 +179,21 @@ final class BackendClient {
     func fetchIOSSetupStatus() async throws -> IOSSetupStatusResponse {
         let data = try await perform(try request(path: "api/ios-setup-status"))
         return try decode(IOSSetupStatusResponse.self, from: data)
+    }
+
+    func fetchContextPreferences() async throws -> ContextPreferences {
+        let data = try await perform(try request(path: "api/context/preferences"))
+        return try decode(ContextPreferences.self, from: data)
+    }
+
+    func saveContextPreferences(currentIntent: String, sleepStartHour: Int, sleepEndHour: Int, specialMode: String) async throws {
+        let body: [String: Any] = [
+            "current_intent": currentIntent,
+            "sleep_start_hour": sleepStartHour,
+            "sleep_end_hour": sleepEndHour,
+            "special_mode": specialMode,
+        ]
+        _ = try await perform(try request(path: "api/context/preferences", method: "POST", jsonBody: body))
     }
 
     @discardableResult

@@ -11,7 +11,6 @@ enum AppScreen: String, CaseIterable, Identifiable {
     case permissions
     case diagnostics
     case calendar
-    case iphone
     case chat
 
     var id: String { rawValue }
@@ -30,10 +29,8 @@ enum AppScreen: String, CaseIterable, Identifiable {
             return "Diagnostics"
         case .calendar:
             return "Calendar"
-        case .iphone:
-            return "iPhone Setup"
         case .chat:
-            return "Chat"
+            return "Context"
         }
     }
 }
@@ -56,6 +53,12 @@ final class NativeAppModel: ObservableObject {
     @Published var zones: [ZoneRecord] = []
     @Published var iosSetupPack: IOSSetupPackResponse?
     @Published var iosSetupStatus: IOSSetupStatusResponse?
+    @Published var contextPreferences = ContextPreferences(
+        current_intent: "",
+        sleep_start_hour: 1,
+        sleep_end_hour: 9,
+        special_mode: "normal"
+    )
     @Published var calendarJobs: [CalendarJob] = []
     @Published var chatTurns: [ChatTurn] = []
     @Published var health: HealthResponse?
@@ -112,6 +115,7 @@ final class NativeAppModel: ObservableObject {
             async let healthTask = backend.fetchHealth()
             async let iosPackTask: IOSSetupPackResponse? = try? backend.fetchIOSSetupPack()
             async let iosStatusTask: IOSSetupStatusResponse? = try? backend.fetchIOSSetupStatus()
+            async let contextTask: ContextPreferences? = try? backend.fetchContextPreferences()
             async let permissionsTask = PermissionSnapshot.capture()
 
             state = try await stateTask
@@ -122,6 +126,9 @@ final class NativeAppModel: ObservableObject {
             health = try await healthTask
             iosSetupPack = await iosPackTask
             iosSetupStatus = await iosStatusTask
+            if let context = await contextTask {
+                contextPreferences = context
+            }
             permissionSnapshot = await permissionsTask
 
             store.trackingEnabled = settings.tracking_enabled
@@ -154,6 +161,21 @@ final class NativeAppModel: ObservableObject {
             lastSavedSettings = settings
             lastSavedNotificationLevel = notificationLevel
             statusMessage = "Saved."
+            await refreshAll()
+        } catch {
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    func saveContextPreferences() async {
+        do {
+            try await backend.saveContextPreferences(
+                currentIntent: contextPreferences.current_intent,
+                sleepStartHour: contextPreferences.sleep_start_hour,
+                sleepEndHour: contextPreferences.sleep_end_hour,
+                specialMode: contextPreferences.special_mode
+            )
+            statusMessage = "Context updated."
             await refreshAll()
         } catch {
             statusMessage = error.localizedDescription

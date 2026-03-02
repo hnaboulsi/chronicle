@@ -6,6 +6,19 @@ struct DiagnosticsView: View {
 
     var body: some View {
         Form {
+            if !activeAlerts.isEmpty {
+                Section("Action Needed") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(activeAlerts, id: \.self) { alert in
+                            Label(alert, systemImage: "exclamationmark.triangle.fill")
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+
             Section {
                 HStack {
                     Text("Desired State")
@@ -40,7 +53,7 @@ struct DiagnosticsView: View {
                     }
                 }
             } header: {
-                Text("Vero Agent")
+                Text("Agent Status")
             } footer: {
                 Text("Vero Agent runs as a login item and sends heartbeats every 60 seconds.")
             }
@@ -93,6 +106,8 @@ struct DiagnosticsView: View {
                         InfoRow(label: "Error", value: error, color: .red)
                     }
                 }
+            } header: {
+                Text("Backend & Auth")
             }
 
             if let errors = model.health?.startup_errors, !errors.isEmpty {
@@ -155,8 +170,12 @@ struct DiagnosticsView: View {
                 Button("Open Tracking Screen") {
                     model.selectedScreen = .tracking
                 }
+                Button("Reconnect Backend Credentials") {
+                    model.selectedScreen = .tracking
+                    model.statusMessage = "Open Tracking and re-enter backend URL/auth if needed."
+                }
             } header: {
-                Text("Troubleshooting")
+                Text("Recovery Actions")
             }
         }
         .formStyle(.grouped)
@@ -190,4 +209,17 @@ struct DiagnosticsView: View {
         }
     }
 
+    private var activeAlerts: [String] {
+        var alerts: [String] = []
+        if model.statusMessage.contains("401") || model.statusMessage.localizedCaseInsensitiveContains("auth token mismatch") {
+            alerts.append("Auth token mismatch. Reconnect backend credentials.")
+        }
+        if model.statusMessage.localizedCaseInsensitiveContains("unexpected response (401)") {
+            alerts.append("Backend authentication failed. Verify dashboard password credentials.")
+        }
+        if !model.helperLastError.isEmpty {
+            alerts.append("Agent error: \(model.helperLastError)")
+        }
+        return alerts
+    }
 }

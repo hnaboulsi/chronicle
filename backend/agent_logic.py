@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -26,55 +27,17 @@ DEFAULTS = {
     "sleep_source": "iphone_only",
     "user_timezone": "America/Los_Angeles",
     "tracking_enabled": "true",
+    "sleep_start_hour": "1",
+    "sleep_end_hour": "9",
+    "context_special_mode": "normal",
+    "context_current_intent": "",
 }
 
-DEFAULT_ZONES = [
-    {
-        "slug": "anchor-house",
-        "name": "Anchor House",
-        "radius_meters": 90,
-        "enabled": True,
-        "zone_type": "home",
-        "focus_mode": "",
-        "sort_order": 10,
-    },
-    {
-        "slug": "vlsb",
-        "name": "VLSB",
-        "radius_meters": 75,
-        "enabled": True,
-        "zone_type": "study",
-        "focus_mode": "Deep Work",
-        "sort_order": 20,
-    },
-    {
-        "slug": "campus",
-        "name": "Campus",
-        "radius_meters": 500,
-        "enabled": True,
-        "zone_type": "study",
-        "focus_mode": "Class",
-        "sort_order": 35,
-    },
-    {
-        "slug": "campbell",
-        "name": "Campbell Home",
-        "radius_meters": 90,
-        "enabled": True,
-        "zone_type": "home",
-        "focus_mode": "",
-        "sort_order": 50,
-    },
-    {
-        "slug": "doe",
-        "name": "Doe Library",
-        "radius_meters": 90,
-        "enabled": True,
-        "zone_type": "study",
-        "focus_mode": "Deep Work",
-        "sort_order": 60,
-    },
-]
+DEFAULT_ZONES: list[dict] = []
+SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+CHECKIN_TTL_SECONDS = 60 * 60
+CHECKIN_COOLDOWN_SECONDS = 4 * 60 * 60
+CHECKIN_IGNORE_LOCATIONS = {"", "unknown", "test", "charging_trigger", "walking_trigger"}
 
 
 def get_state(db: Session, key: str, default: str = "") -> str:
@@ -105,6 +68,8 @@ def ensure_default_settings(db: Session):
 
 
 def ensure_default_zones(db: Session):
+    if not DEFAULT_ZONES:
+        return
     # Only seed default zones on first run (empty table)
     if db.query(LocationZone).count() > 0:
         return
@@ -137,9 +102,24 @@ def list_zones(db: Session) -> list[dict]:
 
 
 def normalize_zone_slug(slug: str) -> str:
-    """Sanitize a zone slug to lowercase alphanumeric + hyphens only."""
-    import re
-    return re.sub(r"[^a-z0-9-]", "", slug.strip().lower())
+    """Normalize to lowercase/kebab-case slug."""
+    cleaned = re.sub(r"[^a-z0-9]+", "-", (slug or "").strip().lower())
+    return cleaned.strip("-")
+
+
+def _parse_bool(value, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text = str(value).strip().lower()
+    if text in {"true", "1", "yes", "y", "on"}:
+        return True
+    if text in {"false", "0", "no", "n", "off"}:
+        return False
+    return default
 
 
 def get_zone(db: Session, slug: str) -> LocationZone | None:
@@ -149,22 +129,41 @@ def get_zone(db: Session, slug: str) -> LocationZone | None:
 
 def upsert_zone(db: Session, payload: dict, zone_id: int | None = None) -> dict:
     ensure_default_zones(db)
+    incoming_slug = normalize_zone_slug(str(payload.get("slug") or ""))
+    incoming_name = str(payload.get("name") or "").strip()
     zone = None
     if zone_id is not None:
         zone = db.query(LocationZone).filter(LocationZone.id == zone_id).first()
-    elif payload.get("slug"):
-        zone = db.query(LocationZone).filter(LocationZone.slug == payload["slug"]).first()
+    elif incoming_slug:
+        zone = db.query(LocationZone).filter(LocationZone.slug == incoming_slug).first()
 
     if zone is None:
         zone = LocationZone()
         db.add(zone)
 
-    zone.slug = str(payload.get("slug") or zone.slug or "").strip()
-    zone.name = str(payload.get("name") or zone.name or "").strip()
+    if incoming_slug:
+        zone.slug = incoming_slug
+    elif incoming_name and not zone.slug:
+        zone.slug = normalize_zone_slug(incoming_name)
+    else:
+        zone.slug = normalize_zone_slug(str(zone.slug or ""))
+
+    zone.name = incoming_name or str(zone.name or "").strip()
     if not zone.slug or not zone.name:
         raise ValueError("slug and name are required")
+    if not SLUG_RE.match(zone.slug):
+        raise ValueError("slug must use lowercase letters, numbers, and hyphens only")
+
+    db.flush()
+    duplicate_query = db.query(LocationZone).filter(LocationZone.slug == zone.slug)
+    if zone.id is not None:
+        duplicate_query = duplicate_query.filter(LocationZone.id != zone.id)
+    duplicate = duplicate_query.first()
+    if duplicate:
+        raise ValueError("slug already exists")
+
     zone.radius_meters = max(25, int(payload.get("radius_meters", zone.radius_meters or 75)))
-    zone.enabled = bool(payload.get("enabled", zone.enabled if zone.enabled is not None else True))
+    zone.enabled = _parse_bool(payload.get("enabled"), zone.enabled if zone.enabled is not None else True)
     zone.zone_type = str(payload.get("zone_type", zone.zone_type or "custom")).strip() or "custom"
     zone.focus_mode = str(payload.get("focus_mode", zone.focus_mode or "")).strip()
     zone.sort_order = int(payload.get("sort_order", zone.sort_order or 0))
@@ -179,10 +178,8 @@ def clear_recent_logs(db: Session, minutes: int | None = None) -> int:
         cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes)
         count = db.query(ActivityLog).filter(ActivityLog.timestamp >= cutoff).delete()
     else:
-        today = datetime.now(timezone.utc).date()
-        count = db.query(ActivityLog).filter(
-            ActivityLog.timestamp >= datetime(today.year, today.month, today.day)
-        ).delete()
+        today_start_utc, _ = user_day_bounds_utc(db, datetime.now(timezone.utc))
+        count = db.query(ActivityLog).filter(ActivityLog.timestamp >= today_start_utc).delete()
     db.commit()
     return count
 
@@ -196,8 +193,28 @@ def delete_zone(db: Session, zone_id: int) -> bool:
     return True
 
 
-def _today_key(now: datetime) -> str:
-    return now.strftime("%Y-%m-%d")
+def resolve_user_timezone(db: Session) -> ZoneInfo:
+    tz_name = get_state(db, "user_timezone", DEFAULTS["user_timezone"])
+    try:
+        return ZoneInfo(tz_name)
+    except Exception:
+        return ZoneInfo(DEFAULTS["user_timezone"])
+
+
+def local_day_key(db: Session, now: datetime | None = None) -> str:
+    now = now or datetime.now(timezone.utc)
+    return now.astimezone(resolve_user_timezone(db)).strftime("%Y-%m-%d")
+
+
+def user_day_bounds_utc(db: Session, now: datetime | None = None) -> tuple[datetime, datetime]:
+    now = now or datetime.now(timezone.utc)
+    tz = resolve_user_timezone(db)
+    local_now = now.astimezone(tz)
+    local_start = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    local_end = local_start + timedelta(days=1)
+    utc_start = local_start.astimezone(timezone.utc).replace(tzinfo=None)
+    utc_end = local_end.astimezone(timezone.utc).replace(tzinfo=None)
+    return utc_start, utc_end
 
 
 def _safe_int(value: str, default: int) -> int:
@@ -233,7 +250,7 @@ def _age_seconds(value: str | None, now: datetime | None = None) -> int | None:
 def llm_usage_snapshot(db: Session, now: datetime | None = None) -> dict:
     now = now or datetime.now(timezone.utc)
     cap = _safe_int(get_state(db, "llm_daily_cap", DEFAULTS["llm_daily_cap"]), 30)
-    today = _today_key(now)
+    today = local_day_key(db, now)
     used_raw = get_state(db, f"llm_calls:{today}", "0")
     used = _safe_int(used_raw, 0)
     return {"daily_cap": cap, "daily_used": used, "daily_remaining": max(cap - used, 0)}
@@ -246,7 +263,7 @@ def can_use_llm(db: Session, now: datetime | None = None) -> bool:
 
 def register_llm_call(db: Session, now: datetime | None = None):
     now = now or datetime.now(timezone.utc)
-    today = _today_key(now)
+    today = local_day_key(db, now)
     key = f"llm_calls:{today}"
     used = _safe_int(get_state(db, key, "0"), 0)
     set_state(db, key, str(used + 1))
@@ -445,33 +462,77 @@ def _maybe_start_session(db: Session, category: str, summary: str, now: datetime
     log.info("Session started: %s - %s", category, summary)
 
 
-async def _generate_and_store_hourly_summary(db: Session, now: datetime):
-    # Snap to clean hour boundaries: cover the previous complete hour
-    # DB stores naive UTC datetimes, so strip tzinfo before filtering
-    now_naive = now.replace(tzinfo=None)
-    hour_end = now_naive.replace(minute=0, second=0, microsecond=0)
-    hour_start = hour_end - timedelta(hours=1)
+def _deterministic_hourly_summary(logs: list[dict], hour_label: str) -> dict:
+    app_counts: dict[str, int] = {}
+    for row in logs:
+        app = (row.get("app_name") or "Unknown App").strip() or "Unknown App"
+        app_counts[app] = app_counts.get(app, 0) + 1
+    top_apps = sorted(app_counts.items(), key=lambda item: item[1], reverse=True)[:3]
+    app_text = ", ".join(app for app, _ in top_apps) if top_apps else "mixed activity"
+    summary = f"In {hour_label}, activity was mostly in {app_text}."
+    score = 6.0 if top_apps else 4.5
+    return {"summary": summary, "productivity_score": score}
 
-    # Skip if we already have a summary for this hour
+
+async def _generate_and_store_hourly_summary(db: Session, now: datetime):
+    tz = resolve_user_timezone(db)
+    local_now = now.astimezone(tz)
+    local_hour_end = local_now.replace(minute=0, second=0, microsecond=0)
+    local_hour_start = local_hour_end - timedelta(hours=1)
+    hour_start = local_hour_start.astimezone(timezone.utc).replace(tzinfo=None)
+    hour_end = local_hour_end.astimezone(timezone.utc).replace(tzinfo=None)
+
     existing = db.query(HourlySummary).filter(HourlySummary.hour_start == hour_start).first()
-    if existing:
-        return
 
     logs = get_mac_logs_for_hour(db, since=hour_start, until=hour_end)
     if not logs:
         return
 
-    hour_label = f"{hour_start.strftime('%I:%M %p')} — {hour_end.strftime('%I:%M %p')}"
-    result = await llm_client.generate_hourly_summary(logs, hour_label)
+    hour_label = f"{local_hour_start.strftime('%I:%M %p')} — {local_hour_end.strftime('%I:%M %p')} ({tz.key})"
+    fallback = _deterministic_hourly_summary(logs, hour_label)
+    result = fallback
+    source = "deterministic"
+    confidence = 0.35
+    fallback_used = True
 
-    summary = HourlySummary(
-        hour_start=hour_start,
-        summary_text=result["summary"],
-        productivity_score=result.get("productivity_score"),
-    )
-    db.add(summary)
+    if can_use_llm(db, now):
+        try:
+            register_llm_call(db, now)
+            llm_result = await llm_client.generate_hourly_summary(logs, hour_label)
+            if llm_result and llm_result.get("summary"):
+                result = llm_result
+                source = "llm"
+                confidence = 0.75
+                fallback_used = False
+        except Exception as exc:
+            log.warning("Hourly summary LLM failed, using deterministic fallback: %s", exc)
+
+    if existing:
+        if source == "deterministic" and (getattr(existing, "summary_source", "llm") == "llm"):
+            return
+        existing.summary_text = result["summary"]
+        existing.productivity_score = result.get("productivity_score")
+        if hasattr(existing, "summary_source"):
+            existing.summary_source = source
+        if hasattr(existing, "confidence"):
+            existing.confidence = confidence
+        if hasattr(existing, "fallback_used"):
+            existing.fallback_used = fallback_used
+    else:
+        summary = HourlySummary(
+            hour_start=hour_start,
+            summary_text=result["summary"],
+            productivity_score=result.get("productivity_score"),
+        )
+        if hasattr(summary, "summary_source"):
+            summary.summary_source = source
+        if hasattr(summary, "confidence"):
+            summary.confidence = confidence
+        if hasattr(summary, "fallback_used"):
+            summary.fallback_used = fallback_used
+        db.add(summary)
     db.commit()
-    log.info("Hourly summary stored for %s", hour_label)
+    log.info("Hourly summary stored for %s (%s)", hour_label, source)
 
 
 def _guess_activity(location: str, prev_location: str, now: datetime, db: Session) -> str:
@@ -519,10 +580,67 @@ def _update_study_mode(db: Session, location_label: str, zone_type: str = ""):
         set_state(db, "study_mode", "inactive")
 
 
+def _location_context_key(location: str) -> str:
+    return normalize_zone_slug(location or "unknown") or "unknown"
+
+
+def _is_checkin_ignored_location(location: str) -> bool:
+    normalized = normalize_zone_slug(location or "")
+    return normalized in CHECKIN_IGNORE_LOCATIONS
+
+
+def _set_pending_checkin(db: Session, message: str, now: datetime, context_key: str, guess: str = ""):
+    created = now.isoformat()
+    expires = (now + timedelta(seconds=CHECKIN_TTL_SECONDS)).isoformat()
+    set_state(db, "pending_checkin", message)
+    set_state(db, "checkin_guess", guess)
+    set_state(db, "pending_checkin_created_at", created)
+    set_state(db, "pending_checkin_expires_at", expires)
+    set_state(db, "pending_checkin_context_key", context_key)
+
+
+def clear_pending_checkin(db: Session):
+    set_state(db, "pending_checkin", "")
+    set_state(db, "checkin_guess", "")
+    set_state(db, "pending_checkin_created_at", "")
+    set_state(db, "pending_checkin_expires_at", "")
+    set_state(db, "pending_checkin_context_key", "")
+
+
+def _checkin_is_active(db: Session, now: datetime | None = None) -> bool:
+    now = now or datetime.now(timezone.utc)
+    checkin = get_state(db, "pending_checkin")
+    if not checkin:
+        return False
+    expires_at = _parse_iso_dt(get_state(db, "pending_checkin_expires_at"))
+    if expires_at and now >= expires_at:
+        clear_pending_checkin(db)
+        return False
+    return True
+
+
+def get_checkin_payload(db: Session, now: datetime | None = None) -> dict:
+    now = now or datetime.now(timezone.utc)
+    if not _checkin_is_active(db, now):
+        return {"checkin": None}
+    created_at = _parse_iso_dt(get_state(db, "pending_checkin_created_at"))
+    expires_at = _parse_iso_dt(get_state(db, "pending_checkin_expires_at"))
+    age_seconds = int((now - created_at).total_seconds()) if created_at else None
+    return {
+        "checkin": get_state(db, "pending_checkin"),
+        "guess": get_state(db, "checkin_guess"),
+        "created_at": created_at.isoformat() if created_at else "",
+        "expires_at": expires_at.isoformat() if expires_at else "",
+        "age_seconds": age_seconds,
+        "can_snooze": True,
+        "can_dismiss": True,
+    }
+
+
 def _maybe_generate_checkin(db: Session, current_location: str, prev_location: str, now: datetime):
-    if not current_location:
+    if not current_location or _is_checkin_ignored_location(current_location):
         return
-    if current_location in {"charging_trigger", "walking_trigger"}:
+    if _checkin_is_active(db, now):
         return
 
     last_checkin_str = get_state(db, "last_user_checkin")
@@ -535,14 +653,19 @@ def _maybe_generate_checkin(db: Session, current_location: str, prev_location: s
         except Exception as e:
             log.debug("Failed to parse last checkin time: %s", e)
 
-    if needs_checkin and not get_state(db, "pending_checkin"):
+    context_key = _location_context_key(current_location)
+    cooldown_key = f"checkin_cooldown_until:{context_key}"
+    cooldown_until = _parse_iso_dt(get_state(db, cooldown_key))
+    if cooldown_until and now < cooldown_until:
+        needs_checkin = False
+
+    if needs_checkin:
         guess = _guess_activity(current_location, prev_location, now, db)
         if guess and "what are you up to" not in guess.lower():
             checkin_msg = f"At {current_location} — {guess.rstrip('.')}?"
         else:
             checkin_msg = f"At {current_location} — what are you working on?"
-        set_state(db, "pending_checkin", checkin_msg)
-        set_state(db, "checkin_guess", guess or "")
+        _set_pending_checkin(db, checkin_msg, now, context_key, guess or "")
         log.info("Check-in generated: %s", checkin_msg)
 
 
@@ -577,18 +700,40 @@ def _handle_location_change(db: Session, current_location: str, now: datetime, z
 
 
 def _update_sleep_state(db: Session, now: datetime, activity_type: str, is_charging: bool | None):
-    tz_name = get_state(db, "user_timezone", DEFAULTS["user_timezone"])
-    try:
-        tz = ZoneInfo(tz_name)
-    except Exception:
-        log.debug("Invalid timezone %r, falling back to %s", tz_name, DEFAULTS["user_timezone"])
-        tz = ZoneInfo(DEFAULTS["user_timezone"])
-    local_hour = now.replace(tzinfo=ZoneInfo("UTC")).astimezone(tz).hour
-    if local_hour >= 22 or local_hour <= 4:
-        if is_charging and activity_type == "Stationary":
-            set_state(db, "user_asleep", "true")
-    else:
-        set_state(db, "user_asleep", "false")
+    tz = resolve_user_timezone(db)
+    local_hour = now.astimezone(tz).hour
+    sleep_start = _safe_int(get_state(db, "sleep_start_hour", DEFAULTS["sleep_start_hour"]), 1) % 24
+    sleep_end = _safe_int(get_state(db, "sleep_end_hour", DEFAULTS["sleep_end_hour"]), 9) % 24
+    in_sleep_window = (
+        (local_hour >= sleep_start or local_hour < sleep_end)
+        if sleep_start > sleep_end
+        else (sleep_start <= local_hour < sleep_end)
+    )
+
+    confidence = 0.05
+    reasons: list[str] = []
+    if in_sleep_window:
+        confidence += 0.45
+        reasons.append(f"in sleep window ({sleep_start:02d}:00-{sleep_end:02d}:00)")
+    if is_charging:
+        confidence += 0.30
+        reasons.append("charging")
+    if (activity_type or "").lower() == "stationary":
+        confidence += 0.20
+        reasons.append("stationary")
+    if get_state(db, "last_mac_idle", "false") == "true":
+        confidence += 0.10
+        reasons.append("mac idle")
+
+    likely_asleep = confidence >= 0.6
+    set_state(db, "user_asleep", "true" if likely_asleep else "false")
+    set_state(db, "likely_asleep", "true" if likely_asleep else "false")
+    set_state(db, "likely_asleep_confidence", f"{min(confidence, 0.99):.2f}")
+    note = "Likely asleep" if likely_asleep else "Likely awake"
+    if reasons:
+        note += f" ({', '.join(reasons)})"
+    set_state(db, "likely_asleep_reason", note)
+    set_state(db, "sleep_status_note", note)
 
 
 def compute_mac_status(states: dict, now: datetime | None = None) -> dict:
@@ -610,7 +755,7 @@ def compute_mac_status(states: dict, now: datetime | None = None) -> dict:
         status = "degraded"
         reason = "The agent is alive, but macOS permissions are incomplete."
     elif is_idle:
-        status = "online_idle"
+        status = "online"
         reason = "The agent is online and the Mac has been idle."
     else:
         status = "online"
@@ -620,6 +765,7 @@ def compute_mac_status(states: dict, now: datetime | None = None) -> dict:
         "mac_status": status,
         "mac_status_reason": reason,
         "mac_online": status != "offline",
+        "mac_idle": is_idle,
         "last_mac_heartbeat_age_seconds": heartbeat_age,
         "last_mac_snapshot_age_seconds": snapshot_age,
     }
@@ -646,31 +792,33 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session):
     set_state(db, "last_mac_ping", now.isoformat())
     set_state(db, "last_mac_idle", str(data.idle_time_seconds > 60 * 30).lower())
 
-    if prev_mac_ping_str and not get_state(db, "pending_checkin"):
+    if prev_mac_ping_str and not _checkin_is_active(db, now):
         try:
-            prev_ping = datetime.fromisoformat(prev_mac_ping_str)
+            prev_ping = _parse_iso_dt(prev_mac_ping_str)
+            if not prev_ping:
+                raise ValueError("invalid previous ping timestamp")
             offline_seconds = (now - prev_ping).total_seconds()
             last_checkin_str = get_state(db, "last_user_checkin")
             checkin_stale = True
             if last_checkin_str:
                 try:
-                    last_ci = datetime.fromisoformat(last_checkin_str)
-                    checkin_stale = (now - last_ci).total_seconds() > 1800
+                    last_ci = _parse_iso_dt(last_checkin_str)
+                    checkin_stale = (now - last_ci).total_seconds() > 1800 if last_ci else True
                 except Exception:
                     pass
             if offline_seconds > 900 and checkin_stale:
                 location = get_state(db, "current_location")
-                if location:
+                if location and not _is_checkin_ignored_location(location):
                     guess = _guess_activity(location, "", now, db)
                     if guess and "what are you up to" not in guess.lower():
                         msg = f"Back at {location} — {guess.rstrip('.')}?"
                     else:
                         msg = f"Back at {location} — what are you working on?"
+                    _set_pending_checkin(db, msg, now, _location_context_key(location), "")
                 else:
-                    msg = "Welcome back! What have you been up to?"
-                set_state(db, "pending_checkin", msg)
-                set_state(db, "checkin_guess", "")
-                log.info("Mac return check-in: %s", msg)
+                    msg = "Welcome back. What are you working on next?"
+                    _set_pending_checkin(db, msg, now, "resume", "")
+                log.info("Mac return check-in generated")
         except Exception:
             pass
 
@@ -680,7 +828,7 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session):
         return
 
     last_check_str = get_state(db, "last_vagueness_check")
-    last_check = datetime.fromisoformat(last_check_str) if last_check_str else datetime.min
+    last_check = _parse_iso_dt(last_check_str) or datetime.min.replace(tzinfo=timezone.utc)
 
     classification_interval = _safe_int(
         get_state(db, "classification_interval_seconds", DEFAULTS["classification_interval_seconds"]),
@@ -733,9 +881,8 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session):
     else:
         last_summary = datetime.min.replace(tzinfo=timezone.utc)
     summaries_enabled = get_state(db, "hourly_summaries_enabled", DEFAULTS["hourly_summaries_enabled"]) == "true"
-    if summaries_enabled and (now - last_summary).total_seconds() > 1800 and can_use_llm(db, now):
+    if summaries_enabled and (now - last_summary).total_seconds() > 1800:
         set_state(db, "last_hourly_summary", now.isoformat())
-        register_llm_call(db, now)
         await _generate_and_store_hourly_summary(db, now)
 
 
@@ -836,3 +983,31 @@ async def process_ios_zone_event(data: iOSZoneEvent, db: Session):
         _close_current_location_visit(db, now, explicit_location=zone_label)
     if zone_type == "home":
         set_state(db, "study_mode", "inactive")
+
+
+def get_context_preferences(db: Session) -> dict:
+    ensure_default_settings(db)
+    return {
+        "current_intent": get_state(db, "context_current_intent", DEFAULTS["context_current_intent"]),
+        "sleep_start_hour": _safe_int(get_state(db, "sleep_start_hour", DEFAULTS["sleep_start_hour"]), 1),
+        "sleep_end_hour": _safe_int(get_state(db, "sleep_end_hour", DEFAULTS["sleep_end_hour"]), 9),
+        "special_mode": get_state(db, "context_special_mode", DEFAULTS["context_special_mode"]) or "normal",
+    }
+
+
+def update_context_preferences(db: Session, payload: dict) -> dict:
+    ensure_default_settings(db)
+    if "current_intent" in payload:
+        set_state(db, "context_current_intent", str(payload.get("current_intent") or "").strip()[:240])
+    if "sleep_start_hour" in payload:
+        hour = max(0, min(23, int(payload.get("sleep_start_hour"))))
+        set_state(db, "sleep_start_hour", str(hour))
+    if "sleep_end_hour" in payload:
+        hour = max(0, min(23, int(payload.get("sleep_end_hour"))))
+        set_state(db, "sleep_end_hour", str(hour))
+    if "special_mode" in payload:
+        special_mode = str(payload.get("special_mode") or "normal").strip().lower()
+        if special_mode not in {"normal", "travel", "exam", "rest"}:
+            raise ValueError("special_mode must be one of: normal, travel, exam, rest")
+        set_state(db, "context_special_mode", special_mode)
+    return get_context_preferences(db)

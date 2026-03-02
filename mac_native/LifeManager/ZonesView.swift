@@ -2,12 +2,31 @@ import SwiftUI
 
 struct ZonesView: View {
     @EnvironmentObject private var model: NativeAppModel
+    @Environment(\.openURL) private var openURL
     @State private var showingAddZone = false
     @State private var pendingDeleteZone: ZoneRecord?
     @State private var showDeleteConfirmation = false
 
     var body: some View {
         List {
+            Section {
+                HStack {
+                    Text("Required automations")
+                    Spacer()
+                    Text(requiredStatus)
+                        .foregroundStyle(requiredReady ? .green : .orange)
+                }
+                if let backend = model.iosSetupPack?.backend_url, let url = URL(string: backend + "/setup/ios") {
+                    Button("Open Web iPhone Setup") {
+                        openURL(url)
+                    }
+                }
+            } header: {
+                Text("iPhone Automation Status")
+            } footer: {
+                Text("Zone setup is web-first. This app manages zones only.")
+            }
+
             if !model.zones.isEmpty {
                 Section {
                     ForEach(model.zones, id: \.self) { zone in
@@ -58,6 +77,19 @@ struct ZonesView: View {
         } message: { zone in
             Text("Are you sure you want to delete \"\(zone.name)\"?")
         }
+    }
+
+    private var requiredReady: Bool {
+        let required = model.iosSetupStatus?.required ?? []
+        guard !required.isEmpty else { return false }
+        return required.allSatisfy { $0.configured == true }
+    }
+
+    private var requiredStatus: String {
+        let required = model.iosSetupStatus?.required ?? []
+        if required.isEmpty { return "Not configured" }
+        let configured = required.filter { $0.configured == true }.count
+        return "\(configured)/\(required.count)"
     }
 }
 

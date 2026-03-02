@@ -65,8 +65,11 @@ const iosSetupStatusEl = document.getElementById('ios-setup-status');
 const iosSetupDetailEl = document.getElementById('ios-setup-detail');
 const nextStepStatusEl = document.getElementById('next-step-status');
 const nextStepDetailEl = document.getElementById('next-step-detail');
+const statActiveNote = document.getElementById('stat-active-note');
+const statProductiveNote = document.getElementById('stat-productive-note');
 let latestStates = null;
 let uiTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+let lastAnalyticsRefreshMs = 0;
 
 function parseServerTimestamp(value) {
     const raw = String(value || '').trim();
@@ -228,7 +231,7 @@ function updateUI(logs, states) {
         }
         macDetail.style.color = '#9CA3AF';
     } else if (macState === 'degraded') {
-        macStatus.textContent = 'Needs Access';
+        macStatus.textContent = 'Needs Attention';
         macStatus.style.color = '#D97706';
         macDetail.textContent = states.mac_status_reason || 'Grant Accessibility and browser permissions';
         macDetail.style.color = '#6B7280';
@@ -237,15 +240,11 @@ function updateUI(logs, states) {
         macStatus.style.color = '#D97706';
         macDetail.textContent = states.mac_status_reason || 'Tracking is paused';
         macDetail.style.color = '#6B7280';
-    } else if (macState === 'online_idle') {
-        macStatus.textContent = 'Online, idle';
-        macStatus.style.color = '#111827';
-        macDetail.textContent = latestMacApp || states.mac_status_reason || 'Agent connected';
-        macDetail.style.color = '#6B7280';
     } else {
         macStatus.textContent = 'Online';
-        macStatus.style.color = '#111827';
-        macDetail.textContent = latestMacApp || states.mac_status_reason || 'Agent connected';
+        macStatus.style.color = '#16A34A';
+        const idleHint = states.mac_idle ? 'Idle right now' : '';
+        macDetail.textContent = latestMacApp || idleHint || states.mac_status_reason || 'Agent connected';
         macDetail.style.color = '#6B7280';
     }
 
@@ -264,11 +263,11 @@ function updateUI(logs, states) {
         iosDetail.style.color = '#9CA3AF';
     }
 
-    // Focus Mode
-    const isStudy = states.study_mode === 'active';
-    focusStatus.textContent = isStudy ? 'Study Mode' : 'Off';
-    focusStatus.style.color = isStudy ? '#D97706' : '#6B7280';
-    focusDetail.textContent = isStudy ? 'Distraction alerts on' : 'Normal';
+    // Sleep context
+    const sleepLikely = String(states.likely_asleep || 'false') === 'true';
+    focusStatus.textContent = sleepLikely ? 'Likely Asleep' : 'Likely Awake';
+    focusStatus.style.color = sleepLikely ? '#0F766E' : '#374151';
+    focusDetail.textContent = states.likely_asleep_reason || states.sleep_status_note || 'Waiting for iPhone events.';
 
     // AI Reading
     const cat = states.current_activity_category || 'unknown';
@@ -312,6 +311,8 @@ function updateUI(logs, states) {
         tr.onclick = () => openSummaryModal(entry.id);
         logsBody.appendChild(tr);
     });
+
+    refreshAnalyticsIfStale();
 }
 
 // ── Analytics ──
@@ -321,7 +322,14 @@ async function fetchAnalytics() {
         const data = await res.json();
         renderAnalytics(data);
         renderStats(data);
+        lastAnalyticsRefreshMs = Date.now();
     } catch { }
+}
+
+function refreshAnalyticsIfStale(maxAgeMs = 30000) {
+    const now = Date.now();
+    if (now - lastAnalyticsRefreshMs < maxAgeMs) return;
+    fetchAnalytics();
 }
 
 function renderStats(data) {
@@ -329,8 +337,16 @@ function renderStats(data) {
     const m = data.total_active_minutes % 60;
     document.getElementById('stat-active').textContent = `${h}h ${m}m`;
     document.getElementById('stat-productive').textContent = `${data.productive_pct}%`;
-    document.getElementById('stat-steps').textContent = data.steps_today.toLocaleString();
-    document.getElementById('stat-llm').textContent = `${data.llm_used}/${data.llm_cap}`;
+    document.getElementById('stat-llm').textContent = `${data.llm_used} / ${data.llm_cap}`;
+    if (statActiveNote) {
+        const freshness = data.data_freshness_seconds != null ? `${Math.floor(data.data_freshness_seconds / 60)}m ago` : 'n/a';
+        statActiveNote.textContent = `Last telemetry: ${freshness}`;
+    }
+    if (statProductiveNote) {
+        statProductiveNote.textContent = data.total_active_minutes > 0
+            ? `${Math.round(data.productive_minutes)} productive mins`
+            : 'Waiting for active minutes…';
+    }
 }
 
 function renderAnalytics(data) {
@@ -503,8 +519,8 @@ async function fetchHourlySummaries() {
         }
 
         const completedCards = data.map(s => {
-            const source = s.hour_start_local || s.hour_start_utc || s.hour_start;
-            const date = parseServerTimestamp(source);
+            const timeSource = s.hour_start_local || s.hour_start_utc || s.hour_start;
+            const date = parseServerTimestamp(timeSource);
             if (!date) return '';
             const endDate = new Date(date.getTime() + 3600000);
             const dateStr = date.toLocaleDateString([], { month: 'short', day: 'numeric', timeZone: uiTimezone });
@@ -527,10 +543,16 @@ async function fetchHourlySummaries() {
 
             const score = s.productivity_score != null ? s.productivity_score.toFixed(1) : '\u2014';
             const scoreColor = s.productivity_score >= 7 ? '#22C55E' : s.productivity_score >= 4 ? '#F59E0B' : '#EF4444';
+            const summarySource = (s.source || 'llm').toLowerCase();
+            const sourceLabel = summarySource === 'deterministic' ? 'Deterministic' : 'LLM';
+            const confidence = typeof s.confidence === 'number' ? `${Math.round(s.confidence * 100)}%` : '';
             return `<div class="summary-card">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
                     <span class="summary-time">${esc(dateStr)}, ${esc(timeStr)} — ${esc(endTimeStr)}</span>
-                    <span style="background:${scoreColor}1a;color:${scoreColor};padding:4px 8px;border-radius:4px;font-weight:600;font-size:12px;border:1px solid ${scoreColor}33;">${esc(score)}/10</span>
+                    <div style="display:flex;align-items:center;gap:6px;">
+                        <span style="background:${summarySource === 'deterministic' ? '#E5E7EB' : '#DBEAFE'};color:${summarySource === 'deterministic' ? '#374151' : '#1D4ED8'};padding:3px 6px;border-radius:4px;font-weight:600;font-size:11px;border:1px solid ${summarySource === 'deterministic' ? '#D1D5DB' : '#BFDBFE'};">${esc(sourceLabel)}${confidence ? ` ${esc(confidence)}` : ''}</span>
+                        <span style="background:${scoreColor}1a;color:${scoreColor};padding:4px 8px;border-radius:4px;font-weight:600;font-size:12px;border:1px solid ${scoreColor}33;">${esc(score)}/10</span>
+                    </div>
                 </div>
                 <p style="margin-bottom:8px;">${esc(s.summary_text)}</p>
                 <div style="font-size:12px;color:#6B7280;display:flex;gap:6px;flex-wrap:wrap;">
@@ -596,9 +618,18 @@ async function renderCalendar() {
                 const logs = dayMap[day.key]?.[hour] || [];
                 const categories = logs.map(l => inferCategory(l.app_name || '', l.window_title || '')).filter(c => c !== 'unknown');
                 const topCat = categories.length ? categories[0] : null;
-                const color = topCat && CAT_COLORS[topCat] ? CAT_COLORS[topCat] : 'rgba(255,255,255,0.05)';
-                const actualColor = topCat && CAT_COLORS[topCat] ? `var(${topCat === 'studying' ? '--cat-studying' : topCat === 'working' ? '--cat-working' : topCat === 'creative' ? '--cat-creative' : topCat === 'entertainment' ? '--cat-entertainment' : topCat === 'social_media' ? '--cat-social-media' : topCat === 'gaming' ? '--cat-gaming' : topCat === 'break' ? '--cat-break' : '--cat-idle'})` : 'rgba(255,255,255,0.05)';
-                html += `<div style="min-height:30px;background:${actualColor}30;border:1px solid ${actualColor}40;border-radius:4px;cursor:pointer;" title="${topCat || 'inactive'}"></div>`;
+                const calendarColors = {
+                    studying: '#2563EB',
+                    working: '#059669',
+                    creative: '#7C3AED',
+                    entertainment: '#DC2626',
+                    social_media: '#EA580C',
+                    gaming: '#D97706',
+                    break: '#6B7280',
+                    idle: '#D1D5DB',
+                };
+                const actualColor = topCat ? (calendarColors[topCat] || '#D1D5DB') : '#D1D5DB';
+                html += `<div style="min-height:30px;background:${actualColor}26;border:1px solid ${actualColor}66;border-radius:4px;cursor:pointer;" title="${topCat || 'inactive'}"></div>`;
             });
         }
         html += '</div>';
@@ -1242,13 +1273,18 @@ const checkinMessage = document.getElementById('checkin-message');
 const checkinConfirm = document.getElementById('checkin-confirm');
 const checkinCorrection = document.getElementById('checkin-correction');
 const checkinSend = document.getElementById('checkin-send');
+const checkinSnooze = document.getElementById('checkin-snooze');
+const checkinDismiss = document.getElementById('checkin-dismiss');
 
 async function fetchCheckin() {
     try {
         const res = await fetch(`${API}/api/checkin`);
         const data = await res.json();
         if (data.checkin) {
-            checkinMessage.textContent = data.checkin;
+            const ageHint = data.age_seconds != null && data.age_seconds > 0
+                ? ` (${Math.floor(data.age_seconds / 60)}m old)`
+                : '';
+            checkinMessage.textContent = `${data.checkin}${ageHint}`;
             checkinBanner.classList.remove('hidden');
             if (data.checkin !== lastCheckinNotification) {
                 lastCheckinNotification = data.checkin;
@@ -1290,6 +1326,26 @@ checkinSend.addEventListener('click', async () => {
 checkinCorrection.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') checkinSend.click();
 });
+
+if (checkinSnooze) {
+    checkinSnooze.addEventListener('click', async () => {
+        checkinBanner.classList.add('hidden');
+        lastCheckinNotification = '';
+        await fetch(`${API}/api/checkin/snooze`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ minutes: 30 }),
+        }).catch(() => { });
+    });
+}
+
+if (checkinDismiss) {
+    checkinDismiss.addEventListener('click', async () => {
+        checkinBanner.classList.add('hidden');
+        lastCheckinNotification = '';
+        await fetch(`${API}/api/checkin/dismiss`, { method: 'POST' }).catch(() => { });
+    });
+}
 
 // ── iOS Shortcuts Setup Check ──
 async function checkIosSetupStatus() {

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct OverviewView: View {
     @EnvironmentObject private var model: NativeAppModel
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         ScrollView {
@@ -54,6 +55,17 @@ struct OverviewView: View {
                 Divider()
                 InfoRow(label: "Detail", value: model.state.mac_status_reason ?? "Waiting for agent")
                 InfoRow(label: "Uptime", value: formatUptime(model.health?.uptime_seconds ?? 0))
+                if let backend = model.iosSetupPack?.backend_url, let url = URL(string: backend + "/setup/ios") {
+                    HStack {
+                        Text("iPhone Setup")
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button(iosSetupLabel) {
+                            openURL(url)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
             }
         }
 
@@ -117,5 +129,12 @@ struct OverviewView: View {
                 }
             }
         }
+    }
+
+    private var iosSetupLabel: String {
+        let required = model.iosSetupStatus?.required ?? []
+        if required.isEmpty { return "Set up" }
+        let configured = required.filter { $0.configured == true }.count
+        return configured == required.count ? "Ready" : "\(configured)/\(required.count)"
     }
 }
