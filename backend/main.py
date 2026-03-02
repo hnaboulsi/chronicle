@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import os
 import base64
@@ -1989,6 +1990,16 @@ async def analytics_today(db: Session = Depends(get_db)):
     # Compute time per category using log intervals
     states = agent_logic.get_all_states(db)
     polling_secs = max(60, int(states.get("polling_interval_seconds", "60")))
+
+    # AI-generated app→category cache (updated hourly by _refresh_app_category_cache)
+    app_cache: dict[str, str] = {}
+    try:
+        raw = states.get("app_category_cache", "")
+        if raw:
+            app_cache = json.loads(raw)
+    except Exception:
+        pass
+
     category_minutes = {}
     total_active_minutes = 0
     idle_count = 0
@@ -1999,24 +2010,29 @@ async def analytics_today(db: Session = Depends(get_db)):
             idle_count += 1
             category_minutes["idle"] = category_minutes.get("idle", 0) + interval_min
             continue
-        # Classify each log entry using heuristics (no LLM to save budget)
-        text_data = f"{(entry.app_name or '').lower()} {(entry.window_title or '').lower()}"
-        cat = "break"
-        for needles, result in [
-            (["instagram", "twitter", "x.com", "tiktok", "snapchat", "discord"], "social_media"),
-            (["youtube", "netflix", "reddit", "spotify", "hulu"], "entertainment"),
-            (["steam", "epic", "game"], "gaming"),
-            (["canvas", "gradescope", "homework", "lecture", "course", "quiz", "anki",
-              "textbook", "study", "chegg", "coursera", "udemy", "khan", "edx", "mit"], "studying"),
-            (["figma", "photoshop", "premiere", "final cut", "sketch", "illustrator", "design", "canva"], "creative"),
-            (["vscode", "visual studio", "pycharm", "cursor", "intellij", "xcode", "android studio",
-              "terminal", "iterm", "github", "gitlab", "linear", "jira", "notion", "confluence",
-              "slack", "zoom", "vero", "lifemanager", "postman", "datagrip", "tableplus",
-              "zed", "emacs", "vim"], "working"),
-        ]:
-            if any(n in text_data for n in needles):
-                cat = result
-                break
+        app_name = (entry.app_name or "").strip()
+        # 1. Check AI cache first (personalized, updates hourly)
+        if app_name in app_cache:
+            cat = app_cache[app_name]
+        else:
+            # 2. Fall back to keyword heuristics
+            text_data = f"{app_name.lower()} {(entry.window_title or '').lower()}"
+            cat = "break"
+            for needles, result in [
+                (["instagram", "twitter", "x.com", "tiktok", "snapchat", "discord"], "social_media"),
+                (["youtube", "netflix", "reddit", "spotify", "hulu"], "entertainment"),
+                (["steam", "epic", "game"], "gaming"),
+                (["canvas", "gradescope", "homework", "lecture", "course", "quiz", "anki",
+                  "textbook", "study", "chegg", "coursera", "udemy", "khan", "edx", "mit"], "studying"),
+                (["figma", "photoshop", "premiere", "final cut", "sketch", "illustrator", "design", "canva"], "creative"),
+                (["vscode", "visual studio", "pycharm", "cursor", "intellij", "xcode", "android studio",
+                  "terminal", "iterm", "github", "gitlab", "linear", "jira", "notion", "confluence",
+                  "slack", "zoom", "vero", "lifemanager", "postman", "datagrip", "tableplus",
+                  "zed", "emacs", "vim"], "working"),
+            ]:
+                if any(n in text_data for n in needles):
+                    cat = result
+                    break
         category_minutes[cat] = category_minutes.get(cat, 0) + interval_min
 
     productive_cats = {"studying", "working", "creative"}

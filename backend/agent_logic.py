@@ -806,6 +806,72 @@ async def process_mac_heartbeat(data: MacHeartbeat, db: Session):
         set_state(db, "tracking_enabled", str(bool(data.tracking_enabled)).lower())
 
 
+async def _refresh_app_category_cache(db: Session, now: datetime):
+    """Ask LLM to classify today's unique apps. Runs at most once per hour."""
+    last_refresh = _parse_iso_dt(get_state(db, "last_category_cache_refresh"))
+    if last_refresh and (now - last_refresh).total_seconds() < 3600:
+        return
+    if not can_use_llm(db, now):
+        return
+
+    today_start, today_end = user_day_bounds_utc(db, now)
+    logs = (
+        db.query(ActivityLog)
+        .filter(
+            ActivityLog.device == "mac",
+            ActivityLog.is_idle == False,
+            ActivityLog.timestamp >= today_start,
+            ActivityLog.timestamp < today_end,
+        )
+        .all()
+    )
+
+    # Collect unique app names with one representative window title each
+    app_titles: dict[str, str] = {}
+    for entry in logs:
+        app = (entry.app_name or "").strip()[:50]
+        title = (entry.window_title or "").strip()[:80]
+        if app and app not in app_titles:
+            app_titles[app] = title
+
+    if not app_titles:
+        return
+
+    app_list = "\n".join(
+        f"- {app}: {title}" for app, title in list(app_titles.items())[:30]
+    )
+    prompt = (
+        "Classify these Mac apps for a personal productivity tracker.\n"
+        "Valid categories: studying, working, creative, entertainment, social_media, gaming, break\n\n"
+        "- studying: Canvas, Gradescope, homework, research papers, lecture materials\n"
+        "- working: code editors, terminal, IDEs, GitHub, project management, Slack, Zoom\n"
+        "- creative: Figma, Photoshop, video/audio editing, design tools\n"
+        "- entertainment: YouTube (casual), Netflix, Spotify, Reddit browsing\n"
+        "- social_media: Instagram, Twitter/X, TikTok, Snapchat\n"
+        "- gaming: games, Steam, game launchers\n"
+        "- break: Finder, System Preferences, casual/unknown browsing\n\n"
+        "Notes: 'Vero'/'LifeManager' = working. 'Code'/'Visual Studio Code' = working.\n\n"
+        f"Apps:\n{app_list}\n\n"
+        'Respond ONLY with JSON: {"AppName": "category", ...}'
+    )
+
+    try:
+        register_llm_call(db, now)
+        result_text = await llm_client.ask_llm(prompt)
+        start = result_text.find('{')
+        end = result_text.rfind('}') + 1
+        if start >= 0 and end > start:
+            parsed = json.loads(result_text[start:end])
+            valid_cats = {"studying", "working", "creative", "entertainment", "social_media", "gaming", "break"}
+            clean = {k: v for k, v in parsed.items() if isinstance(v, str) and v in valid_cats}
+            if clean:
+                set_state(db, "app_category_cache", json.dumps(clean))
+                set_state(db, "last_category_cache_refresh", now.isoformat())
+                log.info("App category cache updated: %d entries", len(clean))
+    except Exception as exc:
+        log.warning("App category cache refresh failed: %s", exc)
+
+
 async def process_mac_telemetry(data: MacTelemetry, db: Session):
     now = datetime.now(timezone.utc)
     ensure_default_settings(db)
@@ -901,6 +967,9 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session):
         else:
             set_state(db, "callout_category", "")
             set_state(db, "callout_summary", "")
+
+        # Refresh AI-driven app category cache (at most once per hour)
+        await _refresh_app_category_cache(db, now)
 
     last_summary_str = get_state(db, "last_hourly_summary")
     if last_summary_str:
