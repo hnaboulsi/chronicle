@@ -1110,6 +1110,69 @@ async def refresh_app_categories(db: Session = Depends(get_db)):
     return {"status": "refreshed"}
 
 
+@app.post("/api/recap-feedback")
+async def recap_feedback(payload: Dict[str, Any], db: Session = Depends(get_db)):
+    """User gives feedback on an hourly recap. LLM verifies and updates if user is right."""
+    hour_start = payload.get("hour_start", "")
+    feedback = payload.get("feedback", "")
+    original_summary = payload.get("original_summary", "")
+
+    if not hour_start or not feedback:
+        return {"status": "error", "message": "Missing hour_start or feedback"}
+
+    summary = db.query(HourlySummary).filter(HourlySummary.hour_start == hour_start).first()
+    if not summary:
+        return {"status": "error", "message": "Summary not found"}
+
+    # Get activity logs for context
+    hour_end = datetime.fromisoformat(hour_start) + timedelta(hours=1)
+    logs = agent_logic.get_mac_logs_for_hour(db, since=hour_start, until=hour_end.isoformat())
+
+    # Ask LLM to verify feedback
+    verification_prompt = (
+        f"The user gave feedback on this activity recap:\n\n"
+        f"Original recap: {original_summary}\n"
+        f"User's feedback: {feedback}\n\n"
+        f"Based on the feedback, is the user correct that the recap missed something or got it wrong?\n"
+        f"Respond with ONLY JSON: {{\n"
+        f'  "user_is_correct": true/false,\n'
+        f'  "reasoning": "brief explanation",\n'
+        f'  "corrected_summary": "improved summary if user was right, otherwise null",\n'
+        f'  "adjusted_score": 6.5\n'
+        f"}}"
+    )
+
+    try:
+        result_text = await llm_client.ask_llm(verification_prompt)
+        start = result_text.find('{')
+        end = result_text.rfind('}') + 1
+        if start >= 0 and end > start:
+            result = json.loads(result_text[start:end])
+
+            if result.get("user_is_correct") and result.get("corrected_summary"):
+                # User was right — update the summary
+                summary.summary_text = result["corrected_summary"]
+                if "adjusted_score" in result:
+                    summary.productivity_score = result["adjusted_score"]
+                summary.summary_source = "llm_verified"
+                db.commit()
+                return {
+                    "status": "updated",
+                    "message": "Recap updated with your correction",
+                    "new_summary": result["corrected_summary"],
+                    "new_score": result.get("adjusted_score")
+                }
+            else:
+                # User was wrong or feedback wasn't specific enough
+                return {
+                    "status": "verified_incorrect",
+                    "message": result.get("reasoning", "LLM verified the original recap was accurate"),
+                    "original_is_correct": True
+                }
+    except Exception as e:
+        return {"status": "error", "message": f"LLM verification failed: {str(e)}"}
+
+
 @app.post("/api/prompt-reply")
 def handle_prompt_reply(payload: Dict[str, Any], db: Session = Depends(get_db)):
     reply = payload.get("reply", "")

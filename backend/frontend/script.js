@@ -624,6 +624,7 @@ async function fetchHourlySummaries() {
             const summarySource = (s.source || 'llm').toLowerCase();
             const sourceLabel = summarySource === 'deterministic' ? 'Deterministic' : 'LLM';
             const confidence = typeof s.confidence === 'number' ? `${Math.round(s.confidence * 100)}%` : '';
+            const hourStartISO = (s.hour_start_utc || s.hour_start || '').replace(/Z$/, '');
             return `<div class="summary-card">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
                     <span class="summary-time">${esc(dateStr)}, ${esc(timeStr)} — ${esc(endTimeStr)}</span>
@@ -633,14 +634,80 @@ async function fetchHourlySummaries() {
                     </div>
                 </div>
                 <p style="margin-bottom:8px;">${esc(s.summary_text)}</p>
-                <div style="font-size:12px;color:#6B7280;display:flex;gap:6px;flex-wrap:wrap;">
+                <div style="font-size:12px;color:#6B7280;display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
                     ${topApps ? `<span style="padding:2px 8px;background:#1e2130;border:1px solid #2a2d3a;border-radius:4px;color:#94a3b8;">${esc(topApps)}</span>` : ''}
+                </div>
+                <div style="border-top:1px solid #2a2d3a;padding-top:8px;">
+                    <input type="text" placeholder="Tell the LLM if it got something wrong..."
+                           class="recap-feedback-input"
+                           data-hour-start="${esc(hourStartISO)}"
+                           data-original-summary="${esc(s.summary_text)}"
+                           style="width:100%;padding:6px;background:#0f1117;border:1px solid #2a2d3a;border-radius:4px;color:#f1f5f9;font-size:12px;margin-bottom:6px;">
+                    <button class="recap-feedback-btn" data-hour-start="${esc(hourStartISO)}" style="width:100%;padding:6px;background:#1d4ed8;border:1px solid #1d4ed8;border-radius:4px;color:#60a5fa;font-size:11px;font-weight:600;cursor:pointer;hover:background:#1e3a5f;">Send Feedback</button>
                 </div>
             </div>`;
         }).join('');
 
         list.innerHTML = liveCard + completedCards;
+        attachRecapFeedbackListeners();
     } catch { }
+}
+
+// ── Attach feedback event listeners to recap cards ──
+function attachRecapFeedbackListeners() {
+    document.querySelectorAll('.recap-feedback-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            const hourStart = btn.getAttribute('data-hour-start');
+            const input = btn.parentElement.querySelector('.recap-feedback-input');
+            const feedback = (input?.value || '').trim();
+            const originalSummary = input?.getAttribute('data-original-summary') || '';
+
+            if (!feedback) {
+                alert('Please type your feedback');
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = 'Sending...';
+
+            try {
+                const res = await fetch(`${API}/api/recap-feedback`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        hour_start: hourStart,
+                        feedback: feedback,
+                        original_summary: originalSummary
+                    })
+                });
+                const data = await res.json();
+
+                if (data.status === 'updated') {
+                    alert('✓ Recap updated! Your correction was accurate.');
+                    input.value = '';
+                    await fetchHourlySummaries();  // Refresh recaps
+                } else if (data.status === 'verified_incorrect') {
+                    alert('LLM verified: The original recap was correct. (' + data.message + ')');
+                } else {
+                    alert('Error: ' + (data.message || 'Unknown error'));
+                }
+            } catch (err) {
+                alert('Failed to send feedback: ' + err.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Send Feedback';
+            }
+        });
+    });
+
+    document.querySelectorAll('.recap-feedback-input').forEach(input => {
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                input.parentElement.querySelector('.recap-feedback-btn').click();
+            }
+        });
+    });
 }
 
 // ── Calendar View (Weekly activity grid) ──
