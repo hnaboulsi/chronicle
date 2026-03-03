@@ -24,7 +24,7 @@ struct VeroApp: App {
                 } else {
                     LiteMainView()
                         .environmentObject(model)
-                        .frame(width: 520)
+                        .frame(minWidth: 520, idealWidth: 520, maxWidth: .infinity, minHeight: 400, idealHeight: 500, maxHeight: .infinity)
                         .background(Color.panelBg)
                         .ignoresSafeArea()
                         .task {
@@ -45,7 +45,7 @@ struct VeroApp: App {
             }
         }
         .windowStyle(.hiddenTitleBar)
-        .windowResizability(.contentSize)
+        .windowResizability(.contentMinSize)
     }
 }
 
@@ -60,6 +60,7 @@ struct LiteMainView: View {
                 .environmentObject(model)
             PermissionsView()
                 .environmentObject(model)
+            Spacer()
         }
         .background(Color.appBg)
     }
@@ -94,8 +95,10 @@ private struct LiteHeaderBar: View {
                 .frame(width: 8, height: 8)
                 .shadow(color: isConnected ? Color.statusGreen.opacity(0.5) : Color.clear, radius: 3)
         }
-        .padding(.horizontal, 20)
+        .padding(.leading, 70) // Space for macOS traffic lights
+        .padding(.trailing, 20)
         .frame(height: 56)
+        .padding(.top, 24) // Top safe area for hiddenTitleBar
         .background(Color.panelBg)
         .overlay(alignment: .bottom) {
             Color.borderSubtle.frame(height: 1)

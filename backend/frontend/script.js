@@ -563,6 +563,8 @@ async function loadSettings() {
             });
         }
         if (s.user_timezone) sel.value = s.user_timezone;
+
+        fetchZones();
     } catch { }
 }
 
@@ -583,6 +585,53 @@ document.getElementById('settings-save-btn').onclick = async () => {
         closeSettings();
     } catch { }
 };
+
+async function fetchZones() {
+    const list = document.getElementById('zones-list');
+    if (!list) return;
+    try {
+        const res = await fetch(`${API}/api/zones`);
+        const data = await res.json();
+        const zones = data.zones || [];
+        if (!zones.length) {
+            list.innerHTML = '<p class="text-muted">No zones defined.</p>';
+            return;
+        }
+        list.innerHTML = zones.map(z => `
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:10px; background:var(--bg-elevated); border:1px solid var(--border); border-radius:var(--radius-input); margin-bottom:8px;">
+                <div>
+                    <div style="font-weight:600; font-size:13px; color:var(--text-primary)">${esc(z.name)}</div>
+                    <div style="font-size:11px; color:var(--text-muted)">Radius: ${z.radius_meters}m • Type: ${z.zone_type}</div>
+                </div>
+                <button class="icon-btn" onclick="deleteZone(${z.id})" style="color:var(--accent-red)">×</button>
+            </div>
+        `).join('');
+    } catch { }
+}
+
+async function addZone() {
+    const name = prompt("Zone Name (e.g. Work, Gym):");
+    if (!name) return;
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    const radius = prompt("Radius in meters (default 75):") || "75";
+    try {
+        await fetch(`${API}/api/zones`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, slug, radius_meters: parseInt(radius), zone_type: 'custom' })
+        });
+        fetchZones();
+    } catch (e) { alert("Failed to add zone"); }
+}
+
+window.deleteZone = async function (id) {
+    if (!confirm("Delete this zone?")) return;
+    try {
+        await fetch(`${API}/api/zones/${id}`, { method: 'DELETE' });
+        fetchZones();
+    } catch (e) { }
+}
+
 
 // ── Tracking Toggle UI ──
 let isTrackingEnabled = true;
@@ -685,7 +734,7 @@ async function fetchChatHistory() {
             return;
         }
         list.innerHTML = messages.map((turn) => {
-            const time = formatTime(turn.time) || (turn.time ? new Date(turn.time).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '');
+            const time = formatTime(turn.time) || (turn.time ? new Date(turn.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
             return `
             <div class="chat-turn">
                 ${time ? `<div class="chat-turn-time">${esc(time)}</div>` : ''}
@@ -786,12 +835,20 @@ async function updateServicePanel() {
         macOk ? 'Agent writing events' : 'Mac agent offline');
 
     // iPhone Setup — use recent iOS activity as the signal
-    const iosRecent = latestStates && (latestStates.ios_recent_event || latestStates.ios_recent_ping);
+    const iosRecent = (() => {
+        if (!latestStates) return false;
+        const lastPing = parseServerTimestamp(latestStates.last_ios_ping) || 0;
+        const lastEvent = parseServerTimestamp(latestStates.last_ios_event) || 0;
+        const maxAge = 24 * 60 * 60 * 1000; // 24 hours
+        const now = Date.now();
+        return (now - lastPing < maxAge) || (now - lastEvent < maxAge);
+    })();
     setCol('ios-dot', 'ios-setup-status', 'ios-setup-detail',
         iosRecent ? 'green' : 'checking',
         iosRecent ? 'Active' : 'Not seen recently',
         iosRecent ? 'iPhone reporting' : 'Open Shortcuts on iPhone');
 }
+
 
 // ── Init ──
 connectSSE();

@@ -203,7 +203,7 @@
             </div>
         </div>
 
-        <!-- Breakdown -->
+        <!-- Breakdown (Hidden for now)
         <section class="analytics-section glass-panel">
             <div class="feed-header">
                 <h2>Today's Breakdown</h2>
@@ -212,6 +212,7 @@
                 <p class="text-muted">Collecting data...</p>
             </div>
         </section>
+        -->
 
         <!-- Live Activity -->
         <section class="activity-feed glass-panel">
@@ -334,7 +335,9 @@
                     </label>
                 </div>
                 <div style="margin-top: 12px;">
-                    <label class="setting-label" style="display: block; margin-bottom: 8px;">Polling Interval</label>
+                    <label class="setting-label" style="display: block; margin-bottom: 8px;">Polling Interval <span
+                            class="kpi-help"
+                            data-tip="How frequently the Mac agent syncs data with the server. Lower means more real-time, higher saves CPU/battery.">?</span></label>
                     <select id="setting-polling" class="recap-feedback-input" style="margin-top: 0;">
                         <option value="60">1 minute (Detailed)</option>
                         <option value="300">5 minutes</option>

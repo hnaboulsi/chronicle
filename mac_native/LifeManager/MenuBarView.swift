@@ -90,7 +90,10 @@ struct MenuBarView: View {
 
                 Divider()
 
-                Button(role: .destructive, action: { NSApplication.shared.terminate(nil) }) {
+                Button(role: .destructive, action: {
+                    NSApplication.shared.terminate(nil)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { exit(0) }
+                }) {
                     HStack {
                         Image(systemName: "xmark.circle")
                         Text("Quit Vero")
