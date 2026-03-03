@@ -796,8 +796,17 @@ async function sendChat() {
     const msg = input.value.trim();
     if (!msg) return;
     input.value = '';
-    const btn = document.getElementById('chat-send');
     btn.textContent = '...';
+
+    // Optimistically scroll to bottom before network request so user sees their own empty space being prepared
+    const list = document.getElementById('chat-history-list');
+    if (list) {
+        requestAnimationFrame(() => {
+            list.scrollTop = list.scrollHeight;
+            setTimeout(() => list.scrollTop = list.scrollHeight, 50);
+        });
+    }
+
     try {
         const res = await fetch(`${API}/api/chat`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },

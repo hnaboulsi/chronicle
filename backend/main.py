@@ -2154,13 +2154,26 @@ async def analytics_today(db: Session = Depends(get_db)):
                     cat = result
                     break
             if cat == "break":
+                # 3. Check if the window title matches any user-defined global context rules
+                global_context = states.get("global_chat_context", "").lower()
+                global_rules = [r.strip() for r in global_context.split('|') if r.strip() and len(r.strip()) > 3]
+                if any(rule in text_data for rule in global_rules):
+                    cat = "working"
+            if cat == "break":
                 unclassified_apps[app_name] = unclassified_apps.get(app_name, 0) + 1
         category_minutes[cat] = category_minutes.get(cat, 0) + interval_min
 
     if unclassified_apps:
         log.debug("Unclassified apps (defaulted to break): %s", unclassified_apps)
 
+    global_context = states.get("global_chat_context", "").lower()
+    global_rules = [r.strip() for r in global_context.split('|') if r.strip()]
+
     productive_cats = {"studying", "working", "creative"}
+    
+    # Re-evaluate all "break" minutes if they match a global user rule (like a specific project name)
+    # The analytics calculates per loop, but since we didn't inject global rules into the loop above,
+    # we need to fix the actual loop itself!
     productive_minutes = sum(category_minutes.get(c, 0) for c in productive_cats)
     productive_pct = round((productive_minutes / total_active_minutes * 100) if total_active_minutes > 0 else 0)
 
