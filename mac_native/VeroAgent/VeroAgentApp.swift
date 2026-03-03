@@ -26,5 +26,8 @@ final class AgentAppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         runtime.stop()
         statusItemController.stop()
+        // Quitting the agent means quitting Vero entirely — close the dashboard too.
+        let apps = NSRunningApplication.runningApplications(withBundleIdentifier: AppConstants.mainBundleIdentifier)
+        apps.forEach { $0.terminate() }
     }
 }

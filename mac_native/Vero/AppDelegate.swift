@@ -61,13 +61,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ aNotification: Notification) {
-        let agentBundleID = "com.naboulsi.vero.agent"
-        let applications = NSRunningApplication.runningApplications(withBundleIdentifier: agentBundleID)
-        applications.forEach { $0.terminate() }
+        // Do NOT terminate the agent when the dashboard quits.
+        // The agent is the persistent process; the dashboard is just a window.
+        // Quitting the agent (via its own menu) is what terminates everything.
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        return false // Just close window, keep both apps alive
+        return false // Closing the window keeps the agent running in the background
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
