@@ -345,103 +345,151 @@ h1 {
     padding: 20px;
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 0;
     min-height: 80px;
 }
+.chat-history-list::-webkit-scrollbar { width: 3px; }
+.chat-history-list::-webkit-scrollbar-track { background: var(--bg-elevated); }
+.chat-history-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
 
-.chat-bubble {
-    padding: 12px 16px;
-    border-radius: 14px;
-    max-width: 85%;
-    font-size: 13px;
-    line-height: 1.6;
-    word-wrap: break-word;
-}
-
-.chat-bubble.user {
-    align-self: flex-end;
-    background: var(--accent-blue);
-    color: white;
-    border-bottom-right-radius: 4px;
-    box-shadow: 0 2px 6px rgba(77, 158, 255, 0.2);
-}
-
-.chat-bubble.agent {
-    align-self: flex-start;
-    background: var(--bg-elevated);
-    border: 1px solid var(--border-strong);
-    color: var(--text-primary);
-    border-bottom-left-radius: 4px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-}
-
-/* Chat Turn (New message bubbles design) */
 .chat-turn {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    padding: 6px 0;
+    gap: 4px;
+    margin-bottom: 14px;
+    align-items: stretch;
 }
 
 .chat-turn-time {
     font-size: 10px;
+    font-family: ui-monospace, 'SF Mono', monospace;
     color: var(--text-muted);
     text-align: center;
-    margin: 4px 0;
+    opacity: 0.5;
+    margin: 8px 0 4px;
 }
 
 .chat-message {
     display: flex;
     flex-direction: column;
-    gap: 3px;
-    border-radius: 8px;
+    gap: 0;
     padding: 8px 12px;
-    font-size: 12px;
-    max-width: 85%;
+    font-size: 13px;
     word-wrap: break-word;
+    text-align: left;
 }
 
 .chat-message-user {
     align-self: flex-end;
-    background: #1d4ed8;
-    color: #e0e7ff;
-    border: 1px solid #3b82f6;
+    max-width: 72%;
+    background: rgba(77, 158, 255, 0.10);
+    border: 1px solid rgba(77, 158, 255, 0.18);
+    border-radius: 10px 10px 3px 10px;
+    color: var(--text-primary);
 }
 
 .chat-message-reply {
     align-self: flex-start;
-    background: #374151;
-    color: #e5e7eb;
-    border: 1px solid #4b5563;
+    max-width: 85%;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 3px 10px 10px 10px;
+    color: var(--text-secondary);
 }
 
 .chat-message-label {
     font-size: 10px;
     font-weight: 600;
-    opacity: 0.8;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.04em;
+    margin-bottom: 2px;
 }
+.chat-message-user .chat-message-label { display: none; }
+.chat-message-reply .chat-message-label { color: var(--accent-purple, #9d7fff); }
 
-.chat-message-text {
-    line-height: 1.4;
-}
+.chat-message-text { line-height: 1.55; }
 
 /* Light mode chat styles */
-[data-theme="light"] .chat-turn-time {
-    color: #9ca3af;
-}
+[data-theme="light"] .chat-turn-time { color: #9ca3af; }
 
 [data-theme="light"] .chat-message-user {
-    background: #dbeafe;
-    color: #1e3a8a;
-    border-color: #93c5fd;
+    background: rgba(59, 130, 246, 0.10);
+    border-color: rgba(59, 130, 246, 0.20);
+    color: #1e293b;
 }
 
 [data-theme="light"] .chat-message-reply {
-    background: #e5e7eb;
-    color: #111827;
-    border-color: #d1d5db;
+    background: #f1f5f9;
+    border-color: #e2e8f0;
+    color: #374151;
+}
+
+/* Service & Repair Panel */
+.status-panel-header { padding: 12px 16px 8px; }
+.status-panel-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+}
+.status-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    border-top: 1px solid var(--border);
+}
+.status-col {
+    padding: 16px;
+    border-right: 1px solid var(--border);
+}
+.status-col:last-child { border-right: none; }
+.status-col-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    font-weight: 600;
+    display: block;
+    margin-bottom: 8px;
+}
+.status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+.status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent-amber);
+    flex-shrink: 0;
+}
+.status-dot.green { background: var(--accent-green, #3dffa0); }
+.status-dot.red   { background: #f87171; }
+.status-dot.checking { animation: pulseOpacity 1.4s ease-in-out infinite; }
+.status-text {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+.status-text.checking { color: var(--text-muted); animation: pulseOpacity 1.4s ease-in-out infinite; }
+.status-text-action { color: var(--accent-amber, #ffb340); }
+.status-action-icon {
+    color: var(--accent-amber, #ffb340);
+    font-weight: 700;
+    font-size: 14px;
+}
+.status-desc {
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.5;
+    display: block;
+}
+@keyframes pulseOpacity {
+    0%   { opacity: 0.4; }
+    50%  { opacity: 0.85; }
+    100% { opacity: 0.4; }
 }
 
 /* State Cards */

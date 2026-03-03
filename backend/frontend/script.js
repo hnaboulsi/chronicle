@@ -353,6 +353,7 @@ function updateUI(logs, states) {
     }
 
     refreshAnalyticsIfStale();
+    updateServicePanel();
 }
 
 // ── Analytics ──
@@ -736,12 +737,58 @@ if (refreshBtn) {
     };
 }
 
+// ── Service Panel ──
+async function updateServicePanel() {
+    function setCol(dotId, statusId, detailId, state, statusText, detailText) {
+        const dot = document.getElementById(dotId);
+        const statusEl = document.getElementById(statusId);
+        const detailEl = document.getElementById(detailId);
+        if (!dot || !statusEl) return;
+        dot.className = 'status-dot ' + state;
+        statusEl.className = 'status-text' + (state === 'checking' ? ' checking' : '');
+        statusEl.textContent = statusText;
+        if (detailEl) detailEl.textContent = detailText;
+    }
+
+    // Service Health — reuse latestStates (already fetched by SSE/polling)
+    if (latestStates) {
+        setCol('service-dot', 'service-status', 'service-detail',
+            'green', 'Healthy', 'Backend connected');
+    } else {
+        setCol('service-dot', 'service-status', 'service-detail',
+            'red', 'Offline', 'Cannot reach backend');
+    }
+
+    // Calendar Sync — green when mac agent is online
+    const macOk = latestStates && latestStates.mac_status === 'online';
+    setCol('calendar-dot', 'calendar-status', 'calendar-detail',
+        macOk ? 'green' : 'checking',
+        macOk ? 'Active' : 'Waiting',
+        macOk ? 'Agent writing events' : 'Mac agent offline');
+
+    // iPhone Setup — check if zones are configured
+    try {
+        const res = await fetch(`${API}/api/state`);
+        const data = await res.json();
+        const hasZones = data && data.zones && Object.keys(data.zones).length > 0;
+        setCol('ios-dot', 'ios-setup-status', 'ios-setup-detail',
+            hasZones ? 'green' : 'checking',
+            hasZones ? 'Configured' : 'Not set up',
+            hasZones ? 'Geofences active' : 'Add zones in settings');
+    } catch {
+        setCol('ios-dot', 'ios-setup-status', 'ios-setup-detail',
+            'red', 'Error', 'Could not check zones');
+    }
+}
+
 // ── Init ──
 connectSSE();
 fetchData();
 fetchAnalytics();
 fetchHourlySummaries();
 fetchChatHistory();
+updateServicePanel();
 initTheme();
 checkOnboarding();
 setInterval(fetchData, 60000);
+setInterval(updateServicePanel, 30000);

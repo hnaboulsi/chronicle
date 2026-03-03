@@ -24,7 +24,10 @@ struct VeroApp: App {
                 } else {
                     LiteMainView()
                         .environmentObject(model)
-                        .frame(width: 500, height: 600)
+                        .frame(width: 520)
+                        .frame(maxHeight: .infinity)
+                        .background(Color.panelBg)
+                        .ignoresSafeArea()
                         .task {
                             await model.startup()
                         }
@@ -37,6 +40,10 @@ struct VeroApp: App {
                     requiresSetup = true
                 }
             }
+            .onOpenURL { _ in
+                NSApplication.shared.windows.forEach { $0.makeKeyAndOrderFront(nil) }
+                NSApplication.shared.activate(ignoringOtherApps: true)
+            }
         }
         .windowStyle(.hiddenTitleBar)
     }
@@ -47,60 +54,84 @@ struct LiteMainView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header
-            VStack(spacing: Spacing.sm) {
-                HStack(spacing: Spacing.sm) {
-                    Image(systemName: "waveform.path.ecg")
-                        .font(.system(size: 24, weight: .semibold))
-                        .foregroundStyle(.indigo)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Vero")
-                            .font(.headline)
-                        Text("Agent Dashboard")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Circle()
-                        .fill(model.helperLastError.isEmpty ? Color.green : Color.red)
-                        .frame(width: 10, height: 10)
-                }
-                .padding(Spacing.lg)
-
-                Divider()
-
-                // Open Dashboard Button
-                Button(action: { model.openWebDashboard() }) {
-                    HStack(spacing: Spacing.sm) {
-                        Image(systemName: "globe")
-                        Text("Open Web Dashboard")
-                        Spacer()
-                        Image(systemName: "arrow.up.right")
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(Spacing.md)
-                    .background(Color.indigo.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
-                }
-                .buttonStyle(.plain)
-                .padding(Spacing.lg)
-
-                Divider()
-            }
-            .background(Color(.controlBackgroundColor))
-
-            // Permissions View
+            LiteHeaderBar()
+                .environmentObject(model)
+            LiteDashboardButton()
+                .environmentObject(model)
             PermissionsView()
                 .environmentObject(model)
+        }
+        .background(Color.appBg)
+    }
+}
+
+// MARK: - Header Bar
+
+private struct LiteHeaderBar: View {
+    @EnvironmentObject private var model: NativeAppModel
+
+    private var isConnected: Bool { model.helperLastError.isEmpty }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "waveform.path.ecg")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(Color.brandAccent)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Vero")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Color.textPrimary)
+                Text("Agent Dashboard")
+                    .font(.system(size: 12, weight: .regular))
+                    .foregroundStyle(Color.textMuted)
+            }
 
             Spacer()
 
-            // Status Message
-            if !model.statusMessage.isEmpty {
-                Text(model.statusMessage)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(Spacing.md)
+            Circle()
+                .fill(isConnected ? Color.statusGreen : Color.statusRed)
+                .frame(width: 8, height: 8)
+                .shadow(color: isConnected ? Color.statusGreen.opacity(0.5) : Color.clear, radius: 3)
+        }
+        .padding(.horizontal, 20)
+        .frame(height: 56)
+        .background(Color.panelBg)
+        .overlay(alignment: .bottom) {
+            Color.borderSubtle.frame(height: 1)
+        }
+    }
+}
+
+// MARK: - Dashboard Button Row
+
+private struct LiteDashboardButton: View {
+    @EnvironmentObject private var model: NativeAppModel
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: { model.openWebDashboard() }) {
+            HStack(spacing: 12) {
+                Image(systemName: "globe")
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundStyle(Color.textSecondary)
+                Text("Open Web Dashboard")
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(Color.textPrimary)
+                Spacer()
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 12, weight: .regular))
+                    .foregroundStyle(Color.textMuted)
             }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 13)
+            .background(isHovering ? Color.surfaceHover : Color.surface)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { h in withAnimation(.easeInOut(duration: 0.1)) { isHovering = h } }
+        .overlay(alignment: .bottom) {
+            Color.borderSubtle.frame(height: 1)
         }
     }
 }

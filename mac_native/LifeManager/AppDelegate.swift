@@ -31,6 +31,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Launch Constraint Violation when launchd tries to relaunch the old binary.
         // repairHelper() refreshes the SMAppService registration to the new binary.
         HelperController.shared.repairHelper()
+
+        // Kick off the agent immediately — don't wait for next login/launchd cycle.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            let agentURL = Bundle.main.bundleURL
+                .appendingPathComponent("Contents/Library/LoginItems/LifeManagerAgent.app")
+            guard FileManager.default.fileExists(atPath: agentURL.path) else { return }
+            NSWorkspace.shared.openApplication(
+                at: agentURL,
+                configuration: NSWorkspace.OpenConfiguration()
+            )
+        }
+
+        // Match window background to the app's dark theme so no gray shows through.
+        DispatchQueue.main.async {
+            NSApplication.shared.windows.forEach {
+                $0.backgroundColor = NSColor(red: 0.078, green: 0.078, blue: 0.094, alpha: 1)
+                $0.titlebarAppearsTransparent = true
+            }
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

@@ -271,30 +271,41 @@
 
         <!-- Setup & Health -->
         <section class="glass-panel" id="control-center-repair">
-            <div class="feed-header">
-                <h2>Service & Repair</h2>
+            <div class="status-panel-header">
+                <span class="status-panel-label">SETUP &amp; REPAIR</span>
             </div>
-            <div
-                style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; padding: 16px;">
-                <div>
-                    <p style="font-size: 10px; color: var(--text-muted); text-transform: uppercase;">Service Health</p>
-                    <p id="service-status" style="font-weight: 500;">Checking...</p>
-                    <p id="service-detail" class="sub-text">Connecting to backend</p>
+            <div class="status-grid">
+                <div class="status-col">
+                    <span class="status-col-label">SERVICE HEALTH</span>
+                    <div class="status-indicator">
+                        <span class="status-dot checking" id="service-dot"></span>
+                        <span class="status-text checking" id="service-status">Checking...</span>
+                    </div>
+                    <span class="status-desc" id="service-detail">Connecting to backend</span>
                 </div>
-                <div>
-                    <p style="font-size: 10px; color: var(--text-muted); text-transform: uppercase;">Calendar Sync</p>
-                    <p id="calendar-status" style="font-weight: 500;">Checking...</p>
-                    <p id="calendar-detail" class="sub-text">Syncing session events</p>
+                <div class="status-col">
+                    <span class="status-col-label">CALENDAR SYNC</span>
+                    <div class="status-indicator">
+                        <span class="status-dot checking" id="calendar-dot"></span>
+                        <span class="status-text checking" id="calendar-status">Checking...</span>
+                    </div>
+                    <span class="status-desc" id="calendar-detail">Syncing session events</span>
                 </div>
-                <div>
-                    <p style="font-size: 10px; color: var(--text-muted); text-transform: uppercase;">iPhone Setup</p>
-                    <p id="ios-setup-status" style="font-weight: 500;">Checking...</p>
-                    <p id="ios-setup-detail" class="sub-text">Geofence automations</p>
+                <div class="status-col">
+                    <span class="status-col-label">IPHONE SETUP</span>
+                    <div class="status-indicator">
+                        <span class="status-dot checking" id="ios-dot"></span>
+                        <span class="status-text checking" id="ios-setup-status">Checking...</span>
+                    </div>
+                    <span class="status-desc" id="ios-setup-detail">Geofence automations</span>
                 </div>
-                <div>
-                    <p style="font-size: 10px; color: var(--text-muted); text-transform: uppercase;">Recommended</p>
-                    <p id="next-step-status" style="font-weight: 500;">Open Mac App</p>
-                    <p id="next-step-detail" class="sub-text">Ensure agent is running</p>
+                <div class="status-col status-col-action">
+                    <span class="status-col-label">NEXT STEP</span>
+                    <div class="status-indicator">
+                        <span class="status-action-icon">→</span>
+                        <span class="status-text status-text-action" id="next-step-status">Open Mac App</span>
+                    </div>
+                    <span class="status-desc" id="next-step-detail">Ensure agent is running</span>
                 </div>
             </div>
         </section>

@@ -11,7 +11,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private var openAppItem = NSMenuItem(title: "Open Vero", action: #selector(openApp), keyEquivalent: "")
     private var openDashboardItem = NSMenuItem(title: "Open Web Dashboard", action: #selector(openDashboard), keyEquivalent: "")
     private var toggleTrackingItem = NSMenuItem(title: "", action: #selector(toggleTracking), keyEquivalent: "")
-    private var quitItem = NSMenuItem(title: "Quit Helper", action: #selector(quitHelper), keyEquivalent: "")
+    private var quitItem = NSMenuItem(title: "Quit Vero Agent", action: #selector(quitHelper), keyEquivalent: "")
 
     func start() {
         if let button = statusItem.button {
