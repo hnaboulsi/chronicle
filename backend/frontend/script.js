@@ -438,7 +438,7 @@ async function fetchHourlySummaries() {
         list.innerHTML = data.map(s => {
             const date = parseServerTimestamp(s.hour_start_local || s.hour_start);
             const endDate = date ? new Date(date.getTime() + 60 * 60 * 1000) : null;
-const timeStr = (date && endDate)
+            const timeStr = (date && endDate)
                 ? `${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true })} — ${endDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true })}`
                 : 'Previous Hour';
             const score = s.productivity_score != null ? s.productivity_score.toFixed(1) : '—';
@@ -467,10 +467,27 @@ const timeStr = (date && endDate)
 
 function attachFeedbackListeners() {
     document.querySelectorAll('.recap-delete-btn').forEach(btn => {
-        btn.onclick = async () => {
+        btn.onclick = async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
             const id = btn.dataset.summaryId;
-            await fetch(`${API}/api/hourly-summaries/${id}`, { method: 'DELETE' });
-            fetchHourlySummaries();
+            btn.disabled = true;
+            btn.textContent = '...';
+            try {
+                await fetch(`${API}/api/hourly-summaries/${id}`, { method: 'DELETE' });
+                // Optimistically remove from DOM
+                const card = btn.closest('.summary-card');
+                if (card) card.remove();
+
+                // If the list is now empty, render empty state
+                const list = document.getElementById('summaries-list');
+                if (list && list.children.length === 0) {
+                    list.innerHTML = '<p class="text-muted">No summaries yet.</p>';
+                }
+            } catch (err) {
+                btn.disabled = false;
+                btn.textContent = '×';
+            }
         };
     });
     document.querySelectorAll('.recap-feedback-btn').forEach(btn => {
@@ -564,7 +581,7 @@ async function loadSettings() {
         }
         if (s.user_timezone) sel.value = s.user_timezone;
 
-// Load zones
+        // Load zones
         await fetchZones();
     } catch { }
 }
@@ -816,6 +833,11 @@ async function fetchChatHistory() {
             </div>
             `;
         }).join('');
+
+        // Auto-scroll to the bottom of the chat view
+        requestAnimationFrame(() => {
+            list.scrollTop = list.scrollHeight;
+        });
     } catch {
         list.innerHTML = '<p class="empty-state">Could not load chat history.</p>';
     }

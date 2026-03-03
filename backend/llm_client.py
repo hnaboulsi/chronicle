@@ -220,7 +220,7 @@ async def generate_activity_summary_structured(entry, context_logs: list) -> dic
     }
 
 
-async def classify_activity_context(recent_activities: list, user_self_report: str = "", recent_history: list = None) -> dict:
+async def classify_activity_context(recent_activities: list, user_self_report: str = "", recent_history: list = None, global_context: str = "") -> dict:
     if not recent_activities:
         return {"category": "unknown", "summary": ""}
 
@@ -245,10 +245,13 @@ async def classify_activity_context(recent_activities: list, user_self_report: s
         if history_lines:
             history_section = "\nRecent browser history (last 15 min):\n" + "\n".join(history_lines) + "\n"
 
+    global_section = f'\nUser long-term context/projects:\n{global_context}\n' if global_context else ""
+
     prompt = (
         "You are analyzing a user's recent Mac activity to understand what they are working on right now.\n\n"
         f"Activity log (oldest to newest):\n{activity_text}\n"
         f"{self_report_section}"
+        f"{global_section}"
         f"{history_section}\n"
         "Instructions:\n"
         "- Look at the pattern across entries, not just the last one.\n"
@@ -266,7 +269,7 @@ async def classify_activity_context(recent_activities: list, user_self_report: s
     }
 
 
-async def generate_hourly_summary(logs: list, hour_start: str, app_cache: dict = None) -> dict:
+async def generate_hourly_summary(logs: list, hour_start: str, app_cache: dict = None, global_context: str = "") -> dict:
     if not logs:
         return {"summary": "No activity recorded this hour.", "productivity_score": None}
 
@@ -279,20 +282,37 @@ async def generate_hourly_summary(logs: list, hour_start: str, app_cache: dict =
         lines.append(f"- {app}{annotation}: {title[:80]}")
     activity_text = "\n".join(lines)
 
+    global_section = f"User long-term context/projects: {global_context}\n\n" if global_context else ""
+    
     prompt = (
         f"You are a productivity analyst. Here is what the user did on their Mac during {hour_start}:\n\n"
         f"{activity_text}\n\n"
         "CONTEXT: App names in parentheses show the category (working/studying/creative/entertainment/etc). "
         "'Cursor' is an AI code editor for coding. 'Antigravity' is a productivity app. "
-        "'Vero' and 'LifeManager' are personal productivity tracking apps (NOT social media).\n\n"
+        "'Vero' and 'LifeManager' are personal productivity tracking apps (NOT social media).\n"
+        f"{global_section}"
         "Write a 2-3 sentence summary of what they worked on, how focused they were, and whether time was well spent. "
         "Then give a productivity score 0-10.\n\n"
         'Respond ONLY with valid JSON: {"summary": "...", "productivity_score": 7.5}'
     )
 
-    result = _parse_json_response(await ask_llm(prompt, model_kind="default"))
+    result_text = await ask_llm(prompt, model_kind="default")
+    result = _parse_json_response(result_text)
+    
+    summary = result.get("summary", "")
+    if not summary:
+        # Fallback if the LLM output plaintext instead of JSON
+        summary = result_text.strip()
+        if summary.startswith("```"):
+            summary = summary.replace("```json", "").replace("```", "").strip()
+        if len(summary) > 500:
+            summary = summary[:500] + "..."
+            
+    if not summary:
+        summary = "Could not generate summary."
+
     return {
-        "summary": result.get("summary", "") or "Could not generate summary.",
+        "summary": summary,
         "productivity_score": result.get("productivity_score"),
     }
 

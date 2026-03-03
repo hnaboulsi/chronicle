@@ -38,6 +38,7 @@ targets:
         PRODUCT_NAME: Vero
         PRODUCT_BUNDLE_IDENTIFIER: com.naboulsi.vero
         INFOPLIST_FILE: Vero/Info.plist
+        OTHER_CODE_SIGN_FLAGS: "- --identifier $(PRODUCT_BUNDLE_IDENTIFIER)"
     scheme:
       gatherCoverageData: false
   VeroAgent:
@@ -54,5 +55,6 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.naboulsi.vero.agent
         INFOPLIST_FILE: VeroAgent/Info.plist
         SKIP_INSTALL: YES
+        OTHER_CODE_SIGN_FLAGS: "- --identifier $(PRODUCT_BUNDLE_IDENTIFIER)"
     scheme:
       gatherCoverageData: false

@@ -507,8 +507,9 @@ async def _generate_and_store_hourly_summary(db: Session, now: datetime, force_c
     if can_use_llm(db, now):
         try:
             app_cache = json.loads(get_state(db, "app_category_cache") or "{}")
+            global_context = get_state(db, "global_chat_context", "")
             register_llm_call(db, now)
-            llm_result = await llm_client.generate_hourly_summary(logs, hour_label, app_cache)
+            llm_result = await llm_client.generate_hourly_summary(logs, hour_label, app_cache, global_context=global_context)
             if llm_result and llm_result.get("summary"):
                 result = llm_result
                 source = "llm"
@@ -860,6 +861,9 @@ async def _refresh_app_category_cache(db: Session, now: datetime):
     app_list = "\n".join(
         f"- {app}: {title}" for app, title in list(app_titles.items())[:30]
     )
+    global_context = get_state(db, "global_chat_context", "")
+    context_str = f"User's permanent context notes:\n{global_context}\n\n" if global_context else ""
+
     prompt = (
         "Classify these Mac apps for a personal productivity tracker.\n"
         "Valid categories: studying, working, creative, entertainment, social_media, gaming, break\n\n"
@@ -870,7 +874,8 @@ async def _refresh_app_category_cache(db: Session, now: datetime):
         "- social_media: Instagram, Twitter/X, TikTok, Snapchat\n"
         "- gaming: games, Steam, game launchers\n"
         "- break: Finder, System Preferences, casual/unknown browsing\n\n"
-        "Notes: 'Vero'/'LifeManager'/'Code'/'Visual Studio Code'/'Cursor'/'Antigravity' = working. 'Cursor' is an AI code editor. 'Antigravity' is a productivity app.\n\n"
+        "Notes: 'Vero'/'LifeManager'/'Code'/'Visual Studio Code'/'Cursor'/'Antigravity' = working. 'Cursor' is an AI code editor. 'Antigravity' is a productivity app.\n"
+        f"{context_str}"
         f"Apps:\n{app_list}\n\n"
         'Respond ONLY with JSON: {"AppName": "category", ...}'
     )
@@ -954,12 +959,12 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session):
         recent = get_recent_mac_logs(db, limit=20)
         user_self_report = get_state(db, "user_self_report")
         history = getattr(data, "recent_history", None)
-        low_signal = len(set((r.get("app_name"), r.get("window_title")) for r in recent[-5:])) <= 2
+        global_context = get_state(db, "global_chat_context", "")
         if low_signal and get_state(db, "llm_mode", DEFAULTS["llm_mode"]) == "ultra_save":
             result = heuristic_classify_activity(recent, idle_time_seconds=data.idle_time_seconds, recent_history=history)
         elif can_use_llm(db, now):
             register_llm_call(db, now)
-            result = await llm_client.classify_activity_context(recent, user_self_report, recent_history=history)
+            result = await llm_client.classify_activity_context(recent, user_self_report, recent_history=history, global_context=global_context)
         else:
             result = heuristic_classify_activity(recent, idle_time_seconds=data.idle_time_seconds, recent_history=history)
             result["summary"] = "AI budget reached; using local classification"

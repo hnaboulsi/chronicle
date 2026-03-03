@@ -1289,7 +1289,7 @@ async def chat_message(payload: Dict[str, Any], db: Session = Depends(get_db)):
         if turn.get("user") or turn.get("reply")
     )
 
-    # Use LLM to generate a smart response if budget allows
+    # Use LLM to generate a smart response and extract context if budget allows
     if agent_logic.can_use_llm(db, now):
         agent_logic.register_llm_call(db, now)
         import llm_client
@@ -1298,13 +1298,30 @@ async def chat_message(payload: Dict[str, Any], db: Session = Depends(get_db)):
             f'"{message}"\n\n'
             f"Current context: {context_str}\n\n"
             f"Recent chat context:\n{prior_context or '- No recent conversation.'}\n\n"
-            "Respond in 1-2 short sentences. Be direct, helpful, and specific. "
-            "Acknowledge what they said, confirm what the system will track next, and if useful suggest the next likely state "
-            "(for example study, class, workout, commute, or break). Do not sound generic."
+            "Respond ONLY with a JSON object containing two keys:\n"
+            "1. 'reply': 1-2 short sentences. Be direct, helpful, and specific. Acknowledge what they said, confirm tracking next, and suggest likely state.\n"
+            "2. 'extracted_context': If the user mentions working on a specific project, class, intent or rule (e.g. 'ChipChop is an unpaid internship' or 'I am studying for CS161'), extract this fact as a short phrase to remember permanently. Otherwise, set this to null.\n"
         )
-        reply = await llm_client.ask_gemini(prompt)
-        if not reply:
-            reply = "Got it. I'll track that and update your context."
+        result_text = await llm_client.ask_gemini(prompt)
+        reply = "Got it. I'll track that and update your context."
+        
+        start = result_text.find('{')
+        end = result_text.rfind('}') + 1
+        if start >= 0 and end > start:
+            try:
+                import json
+                parsed = json.loads(result_text[start:end])
+                reply = parsed.get("reply", reply)
+                extracted = parsed.get("extracted_context")
+                if extracted:
+                    existing_global = agent_logic.get_state(db, "global_chat_context", "")
+                    facts = [f.strip() for f in existing_global.split('|') if f.strip()]
+                    facts.append(extracted.strip())
+                    if len(facts) > 4:
+                        facts = facts[-4:]
+                    agent_logic.set_state(db, "global_chat_context", " | ".join(facts))
+            except Exception:
+                pass
     else:
         reply = "Got it. I noted that and will use it in your activity tracking."
 
