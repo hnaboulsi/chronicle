@@ -30,7 +30,7 @@ struct PermissionsView: View {
                 icon: "hand.raised",
                 iconColor: .statusAmber,
                 name: "Accessibility",
-                description: "Required to read window and tab titles. Approve both Vero and the Vero Agent when prompted.",
+                description: "Required to read window and tab titles for activity tracking.",
                 status: model.permissionSnapshot.accessibility,
                 action: { model.requestAccessibilityPermission() }
             )
@@ -76,7 +76,7 @@ struct PermissionsView: View {
                 icon: "globe",
                 iconColor: .statusGreen,
                 name: "Chrome Tab Titles",
-                description: "Allows the background agent to read your browser tab titles to track what you're working on.",
+                description: "Allows Vero to read your browser tab titles to track what you're working on.",
                 status: model.permissionSnapshot.appleEvents,
                 action: { model.requestAppleEventsPermission() }
             )

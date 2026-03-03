@@ -291,7 +291,10 @@ def heuristic_classify_activity(recent_activities: list, idle_time_seconds: int 
         (["steam", "epic", "game"], ("gaming", "Playing a game")),
         (["canvas", "gradescope", "homework", "lecture", "course", "quiz"], ("studying", "Working on school tasks")),
         (["figma", "photoshop", "premiere", "final cut", "design"], ("creative", "Doing creative work")),
-        (["vscode", "pycharm", "cursor", "terminal", "github", "slack", "notion",
+        (["vscode", "visual studio", "pycharm", "cursor", "intellij", "xcode", "android studio",
+          "terminal", "iterm", "github", "gitlab", "linear", "jira", "notion", "confluence",
+          "slack", "zoom", "vero", "lifemanager", "postman", "datagrip", "tableplus",
+          "zed", "emacs", "vim", "arc",
           "claude", "claude.ai", "anthropic", "gemini.google", "aistudio.google",
           "chatgpt", "openai", "copilot", "windsurf"], ("working", "Doing focused computer work")),
     ]
