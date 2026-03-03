@@ -402,18 +402,18 @@ function renderAnalytics(data) {
         return;
     }
 
-    let totalSec = 0;
-    for (const d of Object.values(data)) totalSec += d;
-    if (totalSec === 0) return;
+    let totalMins = 0;
+    for (const d of Object.values(data)) totalMins += d;
+    if (totalMins === 0) return;
 
     const sorted = entries.sort((a, b) => b[1] - a[1]);
     let trackHtml = '<div class="stacked-bar-track">';
     let labelsHtml = '<div class="stacked-bar-labels">';
 
-    sorted.forEach(([rawCat, duration]) => {
+    sorted.forEach(([rawCat, durationMins]) => {
         const cat = rawCat.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z-]/g, '');
-        const pct = (duration / totalSec) * 100;
-        const time = duration >= 3600 ? `${Math.floor(duration / 3600)}h ${Math.floor((duration % 3600) / 60)}m` : `${Math.floor(duration / 60)}m`;
+        const pct = (durationMins / totalMins) * 100;
+        const time = durationMins >= 60 ? `${Math.floor(durationMins / 60)}h ${Math.floor(durationMins % 60)}m` : `${Math.floor(durationMins)}m`;
 
         trackHtml += `<div class="stacked-bar-fill" style="width: ${pct}%; background: var(--cat-${cat}, var(--text-muted));" title="${rawCat}: ${time}"></div>`;
         labelsHtml += `<div class="chart-label-item"><div class="chart-label-color" style="background: var(--cat-${cat}, var(--text-muted));"></div><span>${rawCat} (${time})</span></div>`;
@@ -708,11 +708,6 @@ async function sendChat() {
             body: JSON.stringify({ message: msg })
         });
         if (res.ok) {
-            const data = await res.json();
-            const reply = document.getElementById('chat-reply');
-            document.getElementById('chat-reply-text').textContent = data.reply;
-            reply.classList.remove('hidden');
-            setTimeout(() => reply.classList.add('hidden'), 8000);
             fetchChatHistory();
         }
     } catch { }
@@ -833,6 +828,17 @@ async function updateServicePanel() {
         macOk ? 'green' : 'checking',
         macOk ? 'Active' : 'Waiting',
         macOk ? 'Agent writing events' : 'Mac agent offline');
+
+    // Update Footer Prompt
+    if (nextStepStatusEl && nextStepDetailEl) {
+        if (macOk) {
+            nextStepStatusEl.textContent = 'Mac App Active';
+            nextStepDetailEl.textContent = 'Agent is connected';
+        } else {
+            nextStepStatusEl.textContent = 'Open Mac App';
+            nextStepDetailEl.textContent = 'Ensure agent is running';
+        }
+    }
 
     // iPhone Setup — use recent iOS activity as the signal
     const iosRecent = (() => {

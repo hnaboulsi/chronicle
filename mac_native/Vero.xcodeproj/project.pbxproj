@@ -1,0 +1,518 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		145DC6088185B0D24A83342D /* AppConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49FEE2107DD410AE4FE58CC8 /* AppConstants.swift */; };
+		1C5D599B201477BAA0C6140D /* CalendarSyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AAB8FFF28650AB078AF7C1E /* CalendarSyncEngine.swift */; };
+		24C551211A68A9D0AF57D580 /* SharedModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 106725C7812C7997C9FE1666 /* SharedModels.swift */; };
+		29F5E9CCAC1BBB978E3CA684 /* NativeAppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DC5EF4B510BE2A9DA5101F1 /* NativeAppModel.swift */; };
+		2F9699B5F4807EEABD7EEBC8 /* AppConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49FEE2107DD410AE4FE58CC8 /* AppConstants.swift */; };
+		36BFE60207AD4816AF857232 /* AppGroupStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CFC64694C9AFDAD8634FA2B /* AppGroupStore.swift */; };
+		3A9F3E69B195929BBB6875B7 /* AgentNotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19DDAA4BD557C3625CC79DB9 /* AgentNotificationManager.swift */; };
+		3FAB630C7F2872F458C666E5 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 79FEDD7620B479066227DF0C /* Assets.xcassets */; };
+		4CACBD509578C4B19974BB20 /* CalendarSyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AAB8FFF28650AB078AF7C1E /* CalendarSyncEngine.swift */; };
+		4E8AAC7737B936EA9F202723 /* StatusItemController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B6759BBABB2722C137DFADD /* StatusItemController.swift */; };
+		5BC57ADEB9D6EF5AF2CC8760 /* AgentRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14EB4CC9DD658728FB74CD5D /* AgentRuntime.swift */; };
+		6869A0114BA4122066C94D7C /* LegacyConfigImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA456C6FC9102045E2D34AD8 /* LegacyConfigImporter.swift */; };
+		6A48F78B273B00F30D6AA3CD /* HelperController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A57F750F2452D21ABA164C46 /* HelperController.swift */; };
+		734445FF17373AE20C12AF3B /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65F3BBA4EAA066DE39DEE7B7 /* AppDelegate.swift */; };
+		91C0B597FC2A7E15AE5E0105 /* VeroAgentApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FEB7D0E9586257539462C14 /* VeroAgentApp.swift */; };
+		A8F4AE127AECF534CCD425F5 /* AppGroupStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CFC64694C9AFDAD8634FA2B /* AppGroupStore.swift */; };
+		B3195F2CA1CE76CF6AC962A5 /* PermissionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B70C05CBE90413EBD5BAE0BE /* PermissionsView.swift */; };
+		B4DBF36B77FF15ABC3EDC2D3 /* VeroAgent.app in Embed Dependencies */ = {isa = PBXBuildFile; fileRef = 8EFE81050160A18455B1A1C6 /* VeroAgent.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		B680497FF3018C0561577D02 /* LegacyConfigImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA456C6FC9102045E2D34AD8 /* LegacyConfigImporter.swift */; };
+		B814FCA25DB583F59FBD9F64 /* AgentPopoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 553E1A55B3C39F3D3ABEA714 /* AgentPopoverView.swift */; };
+		B8917D36178EC5A07A641463 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51C029D8BD5817ED941F54E9 /* Theme.swift */; };
+		B917F9848143392A07B53CCB /* SetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBDAAF287E2C2431FC5CA435 /* SetupView.swift */; };
+		C4A85C451B1957A9AAE44811 /* AgentNotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19DDAA4BD557C3625CC79DB9 /* AgentNotificationManager.swift */; };
+		CDCCD175A4373018C31C42D1 /* SharedModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 106725C7812C7997C9FE1666 /* SharedModels.swift */; };
+		CE03B79ED02E734022855B67 /* BackendClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BAD5611AAF80728F3F7C0F8 /* BackendClient.swift */; };
+		D0D16DF7658416D83130FDC3 /* BackendClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BAD5611AAF80728F3F7C0F8 /* BackendClient.swift */; };
+		ECA72FB204BC1AB497F77EEA /* PermissionSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67D96562E981403F5DC4BB74 /* PermissionSnapshot.swift */; };
+		EE3FD0E4F34A81A43F5E9C53 /* VeroApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D68478A724BE3ACFA255A4A7 /* VeroApp.swift */; };
+		EE4B7E2D01A0E8251B5CCD58 /* PermissionSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67D96562E981403F5DC4BB74 /* PermissionSnapshot.swift */; };
+		FB342BF9DA37694487A409B3 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51C029D8BD5817ED941F54E9 /* Theme.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		1FA30EE74523AF0176C5BC50 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D40B73259BAA250A7E00617A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 30D71F7C36C0973DE28ED2B5;
+			remoteInfo = VeroAgent;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		CFB4F5E2EC666FBFC322FBC2 /* Embed Dependencies */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = Contents/Library/LoginItems;
+			dstSubfolderSpec = 1;
+			files = (
+				B4DBF36B77FF15ABC3EDC2D3 /* VeroAgent.app in Embed Dependencies */,
+			);
+			name = "Embed Dependencies";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		106725C7812C7997C9FE1666 /* SharedModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedModels.swift; sourceTree = "<group>"; };
+		14EB4CC9DD658728FB74CD5D /* AgentRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRuntime.swift; sourceTree = "<group>"; };
+		19DDAA4BD557C3625CC79DB9 /* AgentNotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNotificationManager.swift; sourceTree = "<group>"; };
+		3BAD5611AAF80728F3F7C0F8 /* BackendClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendClient.swift; sourceTree = "<group>"; };
+		3DC5EF4B510BE2A9DA5101F1 /* NativeAppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAppModel.swift; sourceTree = "<group>"; };
+		43EBA6A56BEE7CACFBC2D263 /* Vero.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Vero.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		49FEE2107DD410AE4FE58CC8 /* AppConstants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConstants.swift; sourceTree = "<group>"; };
+		4AAB8FFF28650AB078AF7C1E /* CalendarSyncEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarSyncEngine.swift; sourceTree = "<group>"; };
+		4CFC64694C9AFDAD8634FA2B /* AppGroupStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppGroupStore.swift; sourceTree = "<group>"; };
+		51C029D8BD5817ED941F54E9 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		553E1A55B3C39F3D3ABEA714 /* AgentPopoverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPopoverView.swift; sourceTree = "<group>"; };
+		65F3BBA4EAA066DE39DEE7B7 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		67D96562E981403F5DC4BB74 /* PermissionSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionSnapshot.swift; sourceTree = "<group>"; };
+		79FEDD7620B479066227DF0C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		7FEB7D0E9586257539462C14 /* VeroAgentApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VeroAgentApp.swift; sourceTree = "<group>"; };
+		8EFE81050160A18455B1A1C6 /* VeroAgent.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VeroAgent.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		9B6759BBABB2722C137DFADD /* StatusItemController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusItemController.swift; sourceTree = "<group>"; };
+		A57F750F2452D21ABA164C46 /* HelperController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperController.swift; sourceTree = "<group>"; };
+		B70C05CBE90413EBD5BAE0BE /* PermissionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsView.swift; sourceTree = "<group>"; };
+		CA456C6FC9102045E2D34AD8 /* LegacyConfigImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyConfigImporter.swift; sourceTree = "<group>"; };
+		D68478A724BE3ACFA255A4A7 /* VeroApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VeroApp.swift; sourceTree = "<group>"; };
+		DBDAAF287E2C2431FC5CA435 /* SetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		02083322284B36844090F36C /* Vero */ = {
+			isa = PBXGroup;
+			children = (
+				65F3BBA4EAA066DE39DEE7B7 /* AppDelegate.swift */,
+				79FEDD7620B479066227DF0C /* Assets.xcassets */,
+				A57F750F2452D21ABA164C46 /* HelperController.swift */,
+				3DC5EF4B510BE2A9DA5101F1 /* NativeAppModel.swift */,
+				B70C05CBE90413EBD5BAE0BE /* PermissionsView.swift */,
+				DBDAAF287E2C2431FC5CA435 /* SetupView.swift */,
+				D68478A724BE3ACFA255A4A7 /* VeroApp.swift */,
+			);
+			path = Vero;
+			sourceTree = "<group>";
+		};
+		07D6CBB7B71109326A08DA76 = {
+			isa = PBXGroup;
+			children = (
+				4EFC296B508E4CA5AF6B7E42 /* Shared */,
+				02083322284B36844090F36C /* Vero */,
+				D7920E5F4CAFDD0E0C09C9B8 /* VeroAgent */,
+				F151E043DE00A4A41C0B38D0 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		4EFC296B508E4CA5AF6B7E42 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				19DDAA4BD557C3625CC79DB9 /* AgentNotificationManager.swift */,
+				49FEE2107DD410AE4FE58CC8 /* AppConstants.swift */,
+				4CFC64694C9AFDAD8634FA2B /* AppGroupStore.swift */,
+				3BAD5611AAF80728F3F7C0F8 /* BackendClient.swift */,
+				4AAB8FFF28650AB078AF7C1E /* CalendarSyncEngine.swift */,
+				CA456C6FC9102045E2D34AD8 /* LegacyConfigImporter.swift */,
+				67D96562E981403F5DC4BB74 /* PermissionSnapshot.swift */,
+				106725C7812C7997C9FE1666 /* SharedModels.swift */,
+				51C029D8BD5817ED941F54E9 /* Theme.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		D7920E5F4CAFDD0E0C09C9B8 /* VeroAgent */ = {
+			isa = PBXGroup;
+			children = (
+				553E1A55B3C39F3D3ABEA714 /* AgentPopoverView.swift */,
+				14EB4CC9DD658728FB74CD5D /* AgentRuntime.swift */,
+				9B6759BBABB2722C137DFADD /* StatusItemController.swift */,
+				7FEB7D0E9586257539462C14 /* VeroAgentApp.swift */,
+			);
+			path = VeroAgent;
+			sourceTree = "<group>";
+		};
+		F151E043DE00A4A41C0B38D0 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				43EBA6A56BEE7CACFBC2D263 /* Vero.app */,
+				8EFE81050160A18455B1A1C6 /* VeroAgent.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		30D71F7C36C0973DE28ED2B5 /* VeroAgent */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B5255859D4281C915BE424A7 /* Build configuration list for PBXNativeTarget "VeroAgent" */;
+			buildPhases = (
+				892053C464D21CB11D301948 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = VeroAgent;
+			packageProductDependencies = (
+			);
+			productName = VeroAgent;
+			productReference = 8EFE81050160A18455B1A1C6 /* VeroAgent.app */;
+			productType = "com.apple.product-type.application";
+		};
+		A24658483B7A9B2EF67D4FE2 /* Vero */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0A65204848E135E7AB0885B3 /* Build configuration list for PBXNativeTarget "Vero" */;
+			buildPhases = (
+				CF409D01ACB8A75264D1D4D8 /* Sources */,
+				0FD3CD7BC9504519118E8B11 /* Resources */,
+				CFB4F5E2EC666FBFC322FBC2 /* Embed Dependencies */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				64318DA1C6FA2BA385CF7613 /* PBXTargetDependency */,
+			);
+			name = Vero;
+			packageProductDependencies = (
+			);
+			productName = Vero;
+			productReference = 43EBA6A56BEE7CACFBC2D263 /* Vero.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		D40B73259BAA250A7E00617A /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					30D71F7C36C0973DE28ED2B5 = {
+						ProvisioningStyle = Manual;
+					};
+					A24658483B7A9B2EF67D4FE2 = {
+						ProvisioningStyle = Manual;
+					};
+				};
+			};
+			buildConfigurationList = 802284F0B1A5E0A685F39BC3 /* Build configuration list for PBXProject "Vero" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 07D6CBB7B71109326A08DA76;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A24658483B7A9B2EF67D4FE2 /* Vero */,
+				30D71F7C36C0973DE28ED2B5 /* VeroAgent */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		0FD3CD7BC9504519118E8B11 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3FAB630C7F2872F458C666E5 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		892053C464D21CB11D301948 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3A9F3E69B195929BBB6875B7 /* AgentNotificationManager.swift in Sources */,
+				B814FCA25DB583F59FBD9F64 /* AgentPopoverView.swift in Sources */,
+				5BC57ADEB9D6EF5AF2CC8760 /* AgentRuntime.swift in Sources */,
+				2F9699B5F4807EEABD7EEBC8 /* AppConstants.swift in Sources */,
+				36BFE60207AD4816AF857232 /* AppGroupStore.swift in Sources */,
+				D0D16DF7658416D83130FDC3 /* BackendClient.swift in Sources */,
+				1C5D599B201477BAA0C6140D /* CalendarSyncEngine.swift in Sources */,
+				6869A0114BA4122066C94D7C /* LegacyConfigImporter.swift in Sources */,
+				ECA72FB204BC1AB497F77EEA /* PermissionSnapshot.swift in Sources */,
+				CDCCD175A4373018C31C42D1 /* SharedModels.swift in Sources */,
+				4E8AAC7737B936EA9F202723 /* StatusItemController.swift in Sources */,
+				FB342BF9DA37694487A409B3 /* Theme.swift in Sources */,
+				91C0B597FC2A7E15AE5E0105 /* VeroAgentApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CF409D01ACB8A75264D1D4D8 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C4A85C451B1957A9AAE44811 /* AgentNotificationManager.swift in Sources */,
+				145DC6088185B0D24A83342D /* AppConstants.swift in Sources */,
+				734445FF17373AE20C12AF3B /* AppDelegate.swift in Sources */,
+				A8F4AE127AECF534CCD425F5 /* AppGroupStore.swift in Sources */,
+				CE03B79ED02E734022855B67 /* BackendClient.swift in Sources */,
+				4CACBD509578C4B19974BB20 /* CalendarSyncEngine.swift in Sources */,
+				6A48F78B273B00F30D6AA3CD /* HelperController.swift in Sources */,
+				B680497FF3018C0561577D02 /* LegacyConfigImporter.swift in Sources */,
+				29F5E9CCAC1BBB978E3CA684 /* NativeAppModel.swift in Sources */,
+				EE4B7E2D01A0E8251B5CCD58 /* PermissionSnapshot.swift in Sources */,
+				B3195F2CA1CE76CF6AC962A5 /* PermissionsView.swift in Sources */,
+				B917F9848143392A07B53CCB /* SetupView.swift in Sources */,
+				24C551211A68A9D0AF57D580 /* SharedModels.swift in Sources */,
+				B8917D36178EC5A07A641463 /* Theme.swift in Sources */,
+				EE3FD0E4F34A81A43F5E9C53 /* VeroApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		64318DA1C6FA2BA385CF7613 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 30D71F7C36C0973DE28ED2B5 /* VeroAgent */;
+			targetProxy = 1FA30EE74523AF0176C5BC50 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		1462D292F48EBDD3EE4117FC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				INFOPLIST_FILE = Vero/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.naboulsi.vero;
+				PRODUCT_NAME = Vero;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		315C7CC03817ED28657DC8DA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				INFOPLIST_FILE = VeroAgent/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.naboulsi.vero.agent;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = Release;
+		};
+		57FC50C93E28A6ED292967AB /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.9;
+			};
+			name = Debug;
+		};
+		70A07CA2CFD757C3E3C9B3A6 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.9;
+			};
+			name = Release;
+		};
+		DD1B106178D3B707DFC28649 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				INFOPLIST_FILE = Vero/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.naboulsi.vero;
+				PRODUCT_NAME = Vero;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		E2D185BF14FB7EBE29E33487 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				INFOPLIST_FILE = VeroAgent/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.naboulsi.vero.agent;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		0A65204848E135E7AB0885B3 /* Build configuration list for PBXNativeTarget "Vero" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1462D292F48EBDD3EE4117FC /* Debug */,
+				DD1B106178D3B707DFC28649 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		802284F0B1A5E0A685F39BC3 /* Build configuration list for PBXProject "Vero" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				57FC50C93E28A6ED292967AB /* Debug */,
+				70A07CA2CFD757C3E3C9B3A6 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		B5255859D4281C915BE424A7 /* Build configuration list for PBXNativeTarget "VeroAgent" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E2D185BF14FB7EBE29E33487 /* Debug */,
+				315C7CC03817ED28657DC8DA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = D40B73259BAA250A7E00617A /* Project object */;
+}

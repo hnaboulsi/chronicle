@@ -39,7 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let alreadyRunning = NSRunningApplication.runningApplications(withBundleIdentifier: agentBundleID).count > 0
             guard !alreadyRunning else { return }
             let agentURL = Bundle.main.bundleURL
-                .appendingPathComponent("Contents/Library/LoginItems/LifeManagerAgent.app")
+                .appendingPathComponent("Contents/Library/LoginItems/VeroAgent.app")
             guard FileManager.default.fileExists(atPath: agentURL.path) else { return }
             NSWorkspace.shared.openApplication(
                 at: agentURL,

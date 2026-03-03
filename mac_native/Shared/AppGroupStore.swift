@@ -1,6 +1,7 @@
 import Foundation
+import Combine
 
-final class AppGroupStore {
+final class AppGroupStore: ObservableObject {
     static let shared = AppGroupStore()
 
     private let defaults = UserDefaults(suiteName: AppConstants.appGroupIdentifier)

@@ -25,7 +25,7 @@ final class NativeAppModel: ObservableObject {
 
         // Capture initial permissions
         permissionSnapshot = await PermissionSnapshot.capture()
-        updateAgentState()
+        await updateAgentState()
 
         // Poll agent state every 5 seconds
         refreshTimer = Timer.publish(every: 5, on: .main, in: .common)

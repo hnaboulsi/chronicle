@@ -1,4 +1,4 @@
-name: LifeManager
+name: Vero
 options:
   minimumXcodeGenVersion: 2.44.0
   deploymentTarget:
@@ -13,11 +13,11 @@ settings:
     CODE_SIGNING_REQUIRED: NO
     CODE_SIGNING_ALLOWED: NO
 targets:
-  LifeManager:
+  Vero:
     type: application
     platform: macOS
     sources:
-      - path: LifeManager
+      - path: Vero
         excludes:
           - AgentRuntime.swift
           - Info.plist
@@ -26,7 +26,7 @@ targets:
           - "*.entitlements"
       - path: Shared
     dependencies:
-      - target: LifeManagerAgent
+      - target: VeroAgent
         embed: true
         link: false
         copy:
@@ -37,14 +37,14 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         PRODUCT_NAME: Vero
         PRODUCT_BUNDLE_IDENTIFIER: com.naboulsi.vero
-        INFOPLIST_FILE: LifeManager/Info.plist
+        INFOPLIST_FILE: Vero/Info.plist
     scheme:
       gatherCoverageData: false
-  LifeManagerAgent:
+  VeroAgent:
     type: application
     platform: macOS
     sources:
-      - path: LifeManagerAgent
+      - path: VeroAgent
         excludes:
           - Info.plist
           - "*.entitlements"
@@ -52,7 +52,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.naboulsi.vero.agent
-        INFOPLIST_FILE: LifeManagerAgent/Info.plist
+        INFOPLIST_FILE: VeroAgent/Info.plist
         SKIP_INSTALL: YES
     scheme:
       gatherCoverageData: false

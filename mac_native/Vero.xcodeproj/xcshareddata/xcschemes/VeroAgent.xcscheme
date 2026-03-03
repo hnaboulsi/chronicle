@@ -15,10 +15,10 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "29E43C2DE2B66C30F07D4513"
-               BuildableName = "LifeManagerAgent.app"
-               BlueprintName = "LifeManagerAgent"
-               ReferencedContainer = "container:LifeManager.xcodeproj">
+               BlueprintIdentifier = "30D71F7C36C0973DE28ED2B5"
+               BuildableName = "VeroAgent.app"
+               BlueprintName = "VeroAgent"
+               ReferencedContainer = "container:Vero.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -32,10 +32,10 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "29E43C2DE2B66C30F07D4513"
-            BuildableName = "LifeManagerAgent.app"
-            BlueprintName = "LifeManagerAgent"
-            ReferencedContainer = "container:LifeManager.xcodeproj">
+            BlueprintIdentifier = "30D71F7C36C0973DE28ED2B5"
+            BuildableName = "VeroAgent.app"
+            BlueprintName = "VeroAgent"
+            ReferencedContainer = "container:Vero.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
       <Testables>
@@ -57,10 +57,10 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "29E43C2DE2B66C30F07D4513"
-            BuildableName = "LifeManagerAgent.app"
-            BlueprintName = "LifeManagerAgent"
-            ReferencedContainer = "container:LifeManager.xcodeproj">
+            BlueprintIdentifier = "30D71F7C36C0973DE28ED2B5"
+            BuildableName = "VeroAgent.app"
+            BlueprintName = "VeroAgent"
+            ReferencedContainer = "container:Vero.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
       <CommandLineArguments>
@@ -76,10 +76,10 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "29E43C2DE2B66C30F07D4513"
-            BuildableName = "LifeManagerAgent.app"
-            BlueprintName = "LifeManagerAgent"
-            ReferencedContainer = "container:LifeManager.xcodeproj">
+            BlueprintIdentifier = "30D71F7C36C0973DE28ED2B5"
+            BuildableName = "VeroAgent.app"
+            BlueprintName = "VeroAgent"
+            ReferencedContainer = "container:Vero.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
       <CommandLineArguments>

@@ -7,7 +7,8 @@ echo "Building Vero..."
 xcodegen generate --quiet
 
 xcodebuild \
-  -scheme LifeManager \
+  -project Vero.xcodeproj \
+  -scheme Vero \
   -configuration Debug \
   -derivedDataPath /tmp/vero-build \
   build \
@@ -20,19 +21,14 @@ if [ ! -d "$APP" ]; then
   exit 1
 fi
 
-# Re-sign the app to fix signature issues
-echo "Re-signing app..."
-codesign --remove-signature "$APP" 2>/dev/null || true
-codesign -s - "$APP" --force --deep 2>&1 | grep -v "code has no resources" || true
+# Relying on Xcode's built-in ad-hoc signing to preserve Accessibility permissions across rebuilds.
 
 echo "Installing to /Applications..."
 rm -rf "/Applications/LifeManager.app"
 rm -rf "/Applications/Vero.app"
 cp -R "$APP" "/Applications/Vero.app"
 
-# Re-sign the installed app as well
-codesign --remove-signature "/Applications/Vero.app" 2>/dev/null || true
-codesign -s - "/Applications/Vero.app" --force --deep 2>&1 | grep -v "code has no resources" || true
+# Skipped re-signing installed app to preserve Accessibility.
 
 echo "Launching Vero..."
 # Kill existing instance if running

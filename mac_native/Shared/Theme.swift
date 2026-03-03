@@ -27,6 +27,21 @@ extension Color {
     static let purpleTint = Color.purple.opacity(0.08)
     static let indigoTint = Color.indigo.opacity(0.08)
     static let cardBackground = Color(NSColor.controlBackgroundColor)
+
+    static let appBg = Color(NSColor.windowBackgroundColor)
+    static let panelBg = Color(NSColor.windowBackgroundColor)
+    static let surface = Color(NSColor.controlBackgroundColor)
+    static let surfaceHover = Color.secondary.opacity(0.1)
+    static let borderSubtle = Color.gray.opacity(0.2)
+    static let borderMedium = Color.gray.opacity(0.4)
+    static let textPrimary = Color.primary
+    static let textSecondary = Color.secondary
+    static let textMuted = Color.secondary.opacity(0.7)
+    
+    static let statusGreen = Color.green
+    static let statusRed = Color.red
+    static let statusAmber = Color.orange
+    static let brandAccent = Color.indigo
 }
 
 // MARK: - StatusBadge
