@@ -53,15 +53,13 @@ struct LiteMainView: View {
     @EnvironmentObject private var model: NativeAppModel
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(spacing: 0) {
-                LiteHeaderBar()
-                    .environmentObject(model)
-                LiteDashboardButton()
-                    .environmentObject(model)
-                PermissionsView()
-                    .environmentObject(model)
-            }
+        VStack(spacing: 0) {
+            LiteHeaderBar()
+                .environmentObject(model)
+            LiteDashboardButton()
+                .environmentObject(model)
+            PermissionsView()
+                .environmentObject(model)
         }
         .background(Color.appBg)
     }

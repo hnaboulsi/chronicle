@@ -394,7 +394,7 @@ h1 {
     display: flex;
     flex-direction: column;
     gap: 0;
-    min-height: 80px;
+    min-height: 120px;
 }
 .chat-history-list::-webkit-scrollbar { width: 3px; }
 .chat-history-list::-webkit-scrollbar-track { background: var(--bg-elevated); }
@@ -820,6 +820,20 @@ td:first-child {
     color: var(--text-primary);
     background: var(--bg-hover);
 }
+
+.recap-delete-btn {
+    float: right;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 16px;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0 4px;
+    opacity: 0.5;
+    transition: opacity 0.1s;
+}
+.recap-delete-btn:hover { opacity: 1; color: var(--accent-red, #f87171); }
 
 /* Settings Drawer */
 .settings-backdrop {

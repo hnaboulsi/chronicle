@@ -33,7 +33,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HelperController.shared.repairHelper()
 
         // Kick off the agent immediately — don't wait for next login/launchd cycle.
+        // Guard against launching a duplicate if SMAppService already started the agent.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            let agentBundleID = "com.naboulsi.vero.agent"
+            let alreadyRunning = NSRunningApplication.runningApplications(withBundleIdentifier: agentBundleID).count > 0
+            guard !alreadyRunning else { return }
             let agentURL = Bundle.main.bundleURL
                 .appendingPathComponent("Contents/Library/LoginItems/LifeManagerAgent.app")
             guard FileManager.default.fileExists(atPath: agentURL.path) else { return }

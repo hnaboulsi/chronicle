@@ -22,6 +22,7 @@ from database import engine, Base, get_db, SessionLocal
 import models
 from models import ActivityLog, CalendarEventJob, HourlySummary, MacHeartbeat, MacTelemetry, iOSZoneEvent, iOSTelemetry
 import agent_logic
+import llm_client
 
 # Logging
 logging.basicConfig(
@@ -1080,6 +1081,16 @@ def get_hourly_summaries(limit: int = 5, db: Session = Depends(get_db)):
         }
         for s in summaries
     ]
+
+
+@app.delete("/api/hourly-summaries/{summary_id}")
+def delete_hourly_summary(summary_id: int, db: Session = Depends(get_db)):
+    summary = db.query(HourlySummary).filter(HourlySummary.id == summary_id).first()
+    if not summary:
+        raise HTTPException(status_code=404, detail="Not found")
+    db.delete(summary)
+    db.commit()
+    return {"status": "deleted"}
 
 
 async def _run_hourly_summary_bg(now: datetime):

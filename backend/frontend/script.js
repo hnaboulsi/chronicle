@@ -437,7 +437,11 @@ async function fetchHourlySummaries() {
 
         list.innerHTML = data.map(s => {
             const date = parseServerTimestamp(s.hour_start_local || s.hour_start);
-            const timeStr = date ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }) : 'Previous Hour';
+            const endDate = date ? new Date(date.getTime() + 60 * 60 * 1000) : null;
+            const fmt = { hour: '2-digit', minute: '2-digit', hour12: true };
+            const timeStr = date
+                ? `${date.toLocaleTimeString([], fmt)} – ${endDate.toLocaleTimeString([], fmt)}`
+                : 'Previous Hour';
             const score = s.productivity_score != null ? s.productivity_score.toFixed(1) : '—';
             const scoreColor = s.productivity_score >= 7 ? 'var(--accent-green)' : s.productivity_score >= 4 ? 'var(--accent-amber)' : 'var(--accent-red)';
             const hourStartISO = (s.hour_start_utc || s.hour_start || '').replace(/Z$/, '');
@@ -445,11 +449,14 @@ async function fetchHourlySummaries() {
             return `<div class="summary-card">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
                     <span class="summary-time">${timeStr}</span>
-                    <span style="color:${scoreColor};font-weight:600;font-size:12px;">${score}/10</span>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <span style="color:${scoreColor};font-weight:600;font-size:12px;">${score}/10</span>
+                        <button class="recap-delete-btn" data-summary-id="${s.id}" title="Delete recap">×</button>
+                    </div>
                 </div>
                 <p style="font-size: 13px; line-height:1.5;">${esc(s.summary_text)}</p>
                 <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:12px;">
-                    <input type="text" placeholder="Something wrong? Correction..." class="recap-feedback-input" 
+                    <input type="text" placeholder="Something wrong? Correction..." class="recap-feedback-input"
                            data-hour-start="${escAttr(hourStartISO)}" data-original="${escAttr(s.summary_text)}" style="margin-top:0;">
                     <button class="recap-feedback-btn" data-hour-start="${escAttr(hourStartISO)}">Send Correction</button>
                 </div>
@@ -460,6 +467,13 @@ async function fetchHourlySummaries() {
 }
 
 function attachFeedbackListeners() {
+    document.querySelectorAll('.recap-delete-btn').forEach(btn => {
+        btn.onclick = async () => {
+            const id = btn.dataset.summaryId;
+            await fetch(`${API}/api/hourly-summaries/${id}`, { method: 'DELETE' });
+            fetchHourlySummaries();
+        };
+    });
     document.querySelectorAll('.recap-feedback-btn').forEach(btn => {
         btn.onclick = async () => {
             const hourStart = btn.dataset.hourStart;
@@ -771,19 +785,12 @@ async function updateServicePanel() {
         macOk ? 'Active' : 'Waiting',
         macOk ? 'Agent writing events' : 'Mac agent offline');
 
-    // iPhone Setup — check if zones are configured
-    try {
-        const res = await fetch(`${API}/api/zones`);
-        const data = await res.json();
-        const hasZones = Array.isArray(data) && data.length > 0;
-        setCol('ios-dot', 'ios-setup-status', 'ios-setup-detail',
-            hasZones ? 'green' : 'checking',
-            hasZones ? 'Configured' : 'Not set up',
-            hasZones ? 'Geofences active' : 'Add zones in settings');
-    } catch {
-        setCol('ios-dot', 'ios-setup-status', 'ios-setup-detail',
-            'red', 'Error', 'Could not check zones');
-    }
+    // iPhone Setup — use recent iOS activity as the signal
+    const iosRecent = latestStates && (latestStates.ios_recent_event || latestStates.ios_recent_ping);
+    setCol('ios-dot', 'ios-setup-status', 'ios-setup-detail',
+        iosRecent ? 'green' : 'checking',
+        iosRecent ? 'Active' : 'Not seen recently',
+        iosRecent ? 'iPhone reporting' : 'Open Shortcuts on iPhone');
 }
 
 // ── Init ──
