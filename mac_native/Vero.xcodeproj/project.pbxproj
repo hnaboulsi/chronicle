@@ -8,60 +8,24 @@
 
 /* Begin PBXBuildFile section */
 		145DC6088185B0D24A83342D /* AppConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49FEE2107DD410AE4FE58CC8 /* AppConstants.swift */; };
-		1C5D599B201477BAA0C6140D /* CalendarSyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AAB8FFF28650AB078AF7C1E /* CalendarSyncEngine.swift */; };
 		24C551211A68A9D0AF57D580 /* SharedModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 106725C7812C7997C9FE1666 /* SharedModels.swift */; };
 		29F5E9CCAC1BBB978E3CA684 /* NativeAppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DC5EF4B510BE2A9DA5101F1 /* NativeAppModel.swift */; };
-		2F9699B5F4807EEABD7EEBC8 /* AppConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49FEE2107DD410AE4FE58CC8 /* AppConstants.swift */; };
-		36BFE60207AD4816AF857232 /* AppGroupStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CFC64694C9AFDAD8634FA2B /* AppGroupStore.swift */; };
-		3A9F3E69B195929BBB6875B7 /* AgentNotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19DDAA4BD557C3625CC79DB9 /* AgentNotificationManager.swift */; };
 		3FAB630C7F2872F458C666E5 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 79FEDD7620B479066227DF0C /* Assets.xcassets */; };
 		4CACBD509578C4B19974BB20 /* CalendarSyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AAB8FFF28650AB078AF7C1E /* CalendarSyncEngine.swift */; };
-		4E8AAC7737B936EA9F202723 /* StatusItemController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B6759BBABB2722C137DFADD /* StatusItemController.swift */; };
-		5BC57ADEB9D6EF5AF2CC8760 /* AgentRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14EB4CC9DD658728FB74CD5D /* AgentRuntime.swift */; };
-		6869A0114BA4122066C94D7C /* LegacyConfigImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA456C6FC9102045E2D34AD8 /* LegacyConfigImporter.swift */; };
-		6A48F78B273B00F30D6AA3CD /* HelperController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A57F750F2452D21ABA164C46 /* HelperController.swift */; };
 		734445FF17373AE20C12AF3B /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65F3BBA4EAA066DE39DEE7B7 /* AppDelegate.swift */; };
-		91C0B597FC2A7E15AE5E0105 /* VeroAgentApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FEB7D0E9586257539462C14 /* VeroAgentApp.swift */; };
 		A8F4AE127AECF534CCD425F5 /* AppGroupStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CFC64694C9AFDAD8634FA2B /* AppGroupStore.swift */; };
+		AB2DA577B59A36E7635248DA /* AgentPopoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 553E1A55B3C39F3D3ABEA714 /* AgentPopoverView.swift */; };
 		B3195F2CA1CE76CF6AC962A5 /* PermissionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B70C05CBE90413EBD5BAE0BE /* PermissionsView.swift */; };
-		B4DBF36B77FF15ABC3EDC2D3 /* VeroAgent.app in Embed Dependencies */ = {isa = PBXBuildFile; fileRef = 8EFE81050160A18455B1A1C6 /* VeroAgent.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		B680497FF3018C0561577D02 /* LegacyConfigImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA456C6FC9102045E2D34AD8 /* LegacyConfigImporter.swift */; };
-		B814FCA25DB583F59FBD9F64 /* AgentPopoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 553E1A55B3C39F3D3ABEA714 /* AgentPopoverView.swift */; };
 		B8917D36178EC5A07A641463 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51C029D8BD5817ED941F54E9 /* Theme.swift */; };
 		B917F9848143392A07B53CCB /* SetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBDAAF287E2C2431FC5CA435 /* SetupView.swift */; };
 		C4A85C451B1957A9AAE44811 /* AgentNotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19DDAA4BD557C3625CC79DB9 /* AgentNotificationManager.swift */; };
-		CDCCD175A4373018C31C42D1 /* SharedModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 106725C7812C7997C9FE1666 /* SharedModels.swift */; };
 		CE03B79ED02E734022855B67 /* BackendClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BAD5611AAF80728F3F7C0F8 /* BackendClient.swift */; };
-		D0D16DF7658416D83130FDC3 /* BackendClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BAD5611AAF80728F3F7C0F8 /* BackendClient.swift */; };
-		ECA72FB204BC1AB497F77EEA /* PermissionSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67D96562E981403F5DC4BB74 /* PermissionSnapshot.swift */; };
+		D6999182D0BFABCD06335DD5 /* AgentRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14EB4CC9DD658728FB74CD5D /* AgentRuntime.swift */; };
+		E8E00F6C3CF395A3B2ACA5C1 /* StatusItemController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B6759BBABB2722C137DFADD /* StatusItemController.swift */; };
 		EE3FD0E4F34A81A43F5E9C53 /* VeroApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D68478A724BE3ACFA255A4A7 /* VeroApp.swift */; };
 		EE4B7E2D01A0E8251B5CCD58 /* PermissionSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67D96562E981403F5DC4BB74 /* PermissionSnapshot.swift */; };
-		FB342BF9DA37694487A409B3 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51C029D8BD5817ED941F54E9 /* Theme.swift */; };
 /* End PBXBuildFile section */
-
-/* Begin PBXContainerItemProxy section */
-		1FA30EE74523AF0176C5BC50 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = D40B73259BAA250A7E00617A /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 30D71F7C36C0973DE28ED2B5;
-			remoteInfo = VeroAgent;
-		};
-/* End PBXContainerItemProxy section */
-
-/* Begin PBXCopyFilesBuildPhase section */
-		CFB4F5E2EC666FBFC322FBC2 /* Embed Dependencies */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = Contents/Library/LoginItems;
-			dstSubfolderSpec = 1;
-			files = (
-				B4DBF36B77FF15ABC3EDC2D3 /* VeroAgent.app in Embed Dependencies */,
-			);
-			name = "Embed Dependencies";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		106725C7812C7997C9FE1666 /* SharedModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedModels.swift; sourceTree = "<group>"; };
@@ -78,10 +42,7 @@
 		65F3BBA4EAA066DE39DEE7B7 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		67D96562E981403F5DC4BB74 /* PermissionSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionSnapshot.swift; sourceTree = "<group>"; };
 		79FEDD7620B479066227DF0C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		7FEB7D0E9586257539462C14 /* VeroAgentApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VeroAgentApp.swift; sourceTree = "<group>"; };
-		8EFE81050160A18455B1A1C6 /* VeroAgent.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VeroAgent.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		9B6759BBABB2722C137DFADD /* StatusItemController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusItemController.swift; sourceTree = "<group>"; };
-		A57F750F2452D21ABA164C46 /* HelperController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperController.swift; sourceTree = "<group>"; };
 		B70C05CBE90413EBD5BAE0BE /* PermissionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsView.swift; sourceTree = "<group>"; };
 		CA456C6FC9102045E2D34AD8 /* LegacyConfigImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyConfigImporter.swift; sourceTree = "<group>"; };
 		D68478A724BE3ACFA255A4A7 /* VeroApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VeroApp.swift; sourceTree = "<group>"; };
@@ -94,7 +55,6 @@
 			children = (
 				65F3BBA4EAA066DE39DEE7B7 /* AppDelegate.swift */,
 				79FEDD7620B479066227DF0C /* Assets.xcassets */,
-				A57F750F2452D21ABA164C46 /* HelperController.swift */,
 				3DC5EF4B510BE2A9DA5101F1 /* NativeAppModel.swift */,
 				B70C05CBE90413EBD5BAE0BE /* PermissionsView.swift */,
 				DBDAAF287E2C2431FC5CA435 /* SetupView.swift */,
@@ -135,7 +95,6 @@
 				553E1A55B3C39F3D3ABEA714 /* AgentPopoverView.swift */,
 				14EB4CC9DD658728FB74CD5D /* AgentRuntime.swift */,
 				9B6759BBABB2722C137DFADD /* StatusItemController.swift */,
-				7FEB7D0E9586257539462C14 /* VeroAgentApp.swift */,
 			);
 			path = VeroAgent;
 			sourceTree = "<group>";
@@ -144,7 +103,6 @@
 			isa = PBXGroup;
 			children = (
 				43EBA6A56BEE7CACFBC2D263 /* Vero.app */,
-				8EFE81050160A18455B1A1C6 /* VeroAgent.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -152,35 +110,16 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		30D71F7C36C0973DE28ED2B5 /* VeroAgent */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = B5255859D4281C915BE424A7 /* Build configuration list for PBXNativeTarget "VeroAgent" */;
-			buildPhases = (
-				892053C464D21CB11D301948 /* Sources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = VeroAgent;
-			packageProductDependencies = (
-			);
-			productName = VeroAgent;
-			productReference = 8EFE81050160A18455B1A1C6 /* VeroAgent.app */;
-			productType = "com.apple.product-type.application";
-		};
 		A24658483B7A9B2EF67D4FE2 /* Vero */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 0A65204848E135E7AB0885B3 /* Build configuration list for PBXNativeTarget "Vero" */;
 			buildPhases = (
 				CF409D01ACB8A75264D1D4D8 /* Sources */,
 				0FD3CD7BC9504519118E8B11 /* Resources */,
-				CFB4F5E2EC666FBFC322FBC2 /* Embed Dependencies */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				64318DA1C6FA2BA385CF7613 /* PBXTargetDependency */,
 			);
 			name = Vero;
 			packageProductDependencies = (
@@ -198,9 +137,6 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
-					30D71F7C36C0973DE28ED2B5 = {
-						ProvisioningStyle = Manual;
-					};
 					A24658483B7A9B2EF67D4FE2 = {
 						ProvisioningStyle = Manual;
 					};
@@ -221,7 +157,6 @@
 			projectRoot = "";
 			targets = (
 				A24658483B7A9B2EF67D4FE2 /* Vero */,
-				30D71F7C36C0973DE28ED2B5 /* VeroAgent */,
 			);
 		};
 /* End PBXProject section */
@@ -238,57 +173,31 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		892053C464D21CB11D301948 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				3A9F3E69B195929BBB6875B7 /* AgentNotificationManager.swift in Sources */,
-				B814FCA25DB583F59FBD9F64 /* AgentPopoverView.swift in Sources */,
-				5BC57ADEB9D6EF5AF2CC8760 /* AgentRuntime.swift in Sources */,
-				2F9699B5F4807EEABD7EEBC8 /* AppConstants.swift in Sources */,
-				36BFE60207AD4816AF857232 /* AppGroupStore.swift in Sources */,
-				D0D16DF7658416D83130FDC3 /* BackendClient.swift in Sources */,
-				1C5D599B201477BAA0C6140D /* CalendarSyncEngine.swift in Sources */,
-				6869A0114BA4122066C94D7C /* LegacyConfigImporter.swift in Sources */,
-				ECA72FB204BC1AB497F77EEA /* PermissionSnapshot.swift in Sources */,
-				CDCCD175A4373018C31C42D1 /* SharedModels.swift in Sources */,
-				4E8AAC7737B936EA9F202723 /* StatusItemController.swift in Sources */,
-				FB342BF9DA37694487A409B3 /* Theme.swift in Sources */,
-				91C0B597FC2A7E15AE5E0105 /* VeroAgentApp.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		CF409D01ACB8A75264D1D4D8 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 				C4A85C451B1957A9AAE44811 /* AgentNotificationManager.swift in Sources */,
+				AB2DA577B59A36E7635248DA /* AgentPopoverView.swift in Sources */,
+				D6999182D0BFABCD06335DD5 /* AgentRuntime.swift in Sources */,
 				145DC6088185B0D24A83342D /* AppConstants.swift in Sources */,
 				734445FF17373AE20C12AF3B /* AppDelegate.swift in Sources */,
 				A8F4AE127AECF534CCD425F5 /* AppGroupStore.swift in Sources */,
 				CE03B79ED02E734022855B67 /* BackendClient.swift in Sources */,
 				4CACBD509578C4B19974BB20 /* CalendarSyncEngine.swift in Sources */,
-				6A48F78B273B00F30D6AA3CD /* HelperController.swift in Sources */,
 				B680497FF3018C0561577D02 /* LegacyConfigImporter.swift in Sources */,
 				29F5E9CCAC1BBB978E3CA684 /* NativeAppModel.swift in Sources */,
 				EE4B7E2D01A0E8251B5CCD58 /* PermissionSnapshot.swift in Sources */,
 				B3195F2CA1CE76CF6AC962A5 /* PermissionsView.swift in Sources */,
 				B917F9848143392A07B53CCB /* SetupView.swift in Sources */,
 				24C551211A68A9D0AF57D580 /* SharedModels.swift in Sources */,
+				E8E00F6C3CF395A3B2ACA5C1 /* StatusItemController.swift in Sources */,
 				B8917D36178EC5A07A641463 /* Theme.swift in Sources */,
 				EE3FD0E4F34A81A43F5E9C53 /* VeroApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
-
-/* Begin PBXTargetDependency section */
-		64318DA1C6FA2BA385CF7613 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 30D71F7C36C0973DE28ED2B5 /* VeroAgent */;
-			targetProxy = 1FA30EE74523AF0176C5BC50 /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		1462D292F48EBDD3EE4117FC /* Debug */ = {
@@ -307,23 +216,6 @@
 				SDKROOT = macosx;
 			};
 			name = Debug;
-		};
-		315C7CC03817ED28657DC8DA /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				COMBINE_HIDPI_IMAGES = YES;
-				INFOPLIST_FILE = VeroAgent/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-				);
-				OTHER_CODE_SIGN_FLAGS = "- --identifier $(PRODUCT_BUNDLE_IDENTIFIER)";
-				PRODUCT_BUNDLE_IDENTIFIER = com.naboulsi.vero.agent;
-				SDKROOT = macosx;
-				SKIP_INSTALL = YES;
-			};
-			name = Release;
 		};
 		57FC50C93E28A6ED292967AB /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -469,23 +361,6 @@
 			};
 			name = Release;
 		};
-		E2D185BF14FB7EBE29E33487 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				COMBINE_HIDPI_IMAGES = YES;
-				INFOPLIST_FILE = VeroAgent/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-				);
-				OTHER_CODE_SIGN_FLAGS = "- --identifier $(PRODUCT_BUNDLE_IDENTIFIER)";
-				PRODUCT_BUNDLE_IDENTIFIER = com.naboulsi.vero.agent;
-				SDKROOT = macosx;
-				SKIP_INSTALL = YES;
-			};
-			name = Debug;
-		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -503,15 +378,6 @@
 			buildConfigurations = (
 				57FC50C93E28A6ED292967AB /* Debug */,
 				70A07CA2CFD757C3E3C9B3A6 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Debug;
-		};
-		B5255859D4281C915BE424A7 /* Build configuration list for PBXNativeTarget "VeroAgent" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				E2D185BF14FB7EBE29E33487 /* Debug */,
-				315C7CC03817ED28657DC8DA /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

@@ -1,20 +1,25 @@
 import AppKit
+import ServiceManagement
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private let runtime = AgentRuntime()
+    private let statusItemController = StatusItemController()
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // No Dock icon — Vero lives entirely in the menu bar.
+        NSApp.setActivationPolicy(.accessory)
+
         let store = AppGroupStore.shared
         store.clearInvalidConfiguration()
 
         let result = LegacyConfigImporter.importIfNeeded()
-
-        // Kill any running legacy Python processes
         if result.legacyPythonRunning {
             LegacyConfigImporter.killLegacyPythonAgent()
             store.helperLastError = "Legacy Python menu bar agent was detected and stopped. Remove the old login item from System Settings > General > Login Items."
 
             if !store.legacyPythonWarningShown {
                 store.legacyPythonWarningShown = true
-
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     let alert = NSAlert()
                     alert.messageText = "Legacy Python Agent Stopped"
@@ -26,32 +31,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // Always repair (unregister + re-register) the login item on startup.
-        // After each fresh build the ad-hoc code signature changes, causing a
-        // Launch Constraint Violation when launchd tries to relaunch the old binary.
-        // repairHelper() refreshes the SMAppService registration to the new binary.
-        let agentBundleID = "com.naboulsi.vero.agent"
-        let alreadyRunning = NSRunningApplication.runningApplications(withBundleIdentifier: agentBundleID).count > 0
-        
-        if !alreadyRunning {
-            HelperController.shared.repairHelper()
+        // Start the menu bar icon and telemetry loops.
+        statusItemController.start()
+        runtime.start()
+
+        // Register as a login item so Vero auto-starts on login.
+        if #available(macOS 13.0, *) {
+            try? SMAppService.mainApp.register()
         }
 
-        // Kick off the agent immediately — don't wait for next login/launchd cycle.
-        // Guard against launching a duplicate if SMAppService already started the agent.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            let stillRunning = NSRunningApplication.runningApplications(withBundleIdentifier: agentBundleID).count > 0
-            guard !stillRunning else { return }
-            let agentURL = Bundle.main.bundleURL
-                .appendingPathComponent("Contents/Library/LoginItems/VeroAgent.app")
-            guard FileManager.default.fileExists(atPath: agentURL.path) else { return }
-            NSWorkspace.shared.openApplication(
-                at: agentURL,
-                configuration: NSWorkspace.OpenConfiguration()
-            )
-        }
-
-        // Match window background to the app's dark theme so no gray shows through.
+        // Match window background to the app's dark theme.
         DispatchQueue.main.async {
             NSApplication.shared.windows.forEach {
                 $0.backgroundColor = NSColor(red: 0.078, green: 0.078, blue: 0.094, alpha: 1)
@@ -61,13 +50,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ aNotification: Notification) {
-        // Do NOT terminate the agent when the dashboard quits.
-        // The agent is the persistent process; the dashboard is just a window.
-        // Quitting the agent (via its own menu) is what terminates everything.
+        runtime.stop()
+        statusItemController.stop()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        return false // Closing the window keeps the agent running in the background
+        // Closing the window leaves Vero running in the menu bar.
+        return false
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

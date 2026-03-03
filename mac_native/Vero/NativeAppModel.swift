@@ -40,27 +40,28 @@ final class NativeAppModel: ObservableObject {
     private func updateAgentState() async {
         permissionSnapshot = await PermissionSnapshot.capture()
         helperDesiredState = store.helperDesiredState
-        helperActualStatus = HelperController.shared.actualStatus
+        helperActualStatus = store.trackingEnabled ? "running" : "paused"
         helperLastSeenAt = store.helperLastSeenAt
         helperLastError = store.helperLastError
     }
 
     func enableHelper() {
-        HelperController.shared.ensureHelperEnabled()
+        store.helperDesiredState = "enabled"
+        store.trackingEnabled = true
         helperDesiredState = store.helperDesiredState
-        statusMessage = "Background agent enabled."
+        statusMessage = "Tracking enabled."
     }
 
     func disableHelper() {
-        HelperController.shared.disableHelper()
+        store.helperDesiredState = "disabled"
+        store.trackingEnabled = false
         helperDesiredState = store.helperDesiredState
-        statusMessage = "Background agent disabled."
+        statusMessage = "Tracking paused."
     }
 
     func repairHelper() {
-        HelperController.shared.repairHelper()
-        helperDesiredState = store.helperDesiredState
-        statusMessage = "Background agent re-registered."
+        // No-op in the single-process architecture — nothing to re-register.
+        statusMessage = "Vero is running."
     }
 
     func openWebDashboard() {

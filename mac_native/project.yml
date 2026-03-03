@@ -19,42 +19,22 @@ targets:
     sources:
       - path: Vero
         excludes:
-          - AgentRuntime.swift
           - Info.plist
           - MenuBarManager.swift
           - MenuBarView.swift
           - "*.entitlements"
+      - path: VeroAgent
+        excludes:
+          - Info.plist
+          - VeroAgentApp.swift
+          - "*.entitlements"
       - path: Shared
-    dependencies:
-      - target: VeroAgent
-        embed: true
-        link: false
-        copy:
-          destination: wrapper
-          subpath: Contents/Library/LoginItems
     settings:
       base:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         PRODUCT_NAME: Vero
         PRODUCT_BUNDLE_IDENTIFIER: com.naboulsi.vero
         INFOPLIST_FILE: Vero/Info.plist
-        OTHER_CODE_SIGN_FLAGS: "- --identifier $(PRODUCT_BUNDLE_IDENTIFIER)"
-    scheme:
-      gatherCoverageData: false
-  VeroAgent:
-    type: application
-    platform: macOS
-    sources:
-      - path: VeroAgent
-        excludes:
-          - Info.plist
-          - "*.entitlements"
-      - path: Shared
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.naboulsi.vero.agent
-        INFOPLIST_FILE: VeroAgent/Info.plist
-        SKIP_INSTALL: YES
         OTHER_CODE_SIGN_FLAGS: "- --identifier $(PRODUCT_BUNDLE_IDENTIFIER)"
     scheme:
       gatherCoverageData: false
