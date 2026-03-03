@@ -264,7 +264,7 @@ async def classify_activity_context(recent_activities: list, user_self_report: s
 
     result = _parse_json_response(await ask_llm(prompt, model_kind="cheap"))
     return {
-        "category": result.get("category", "unknown"),
+        "category": str(result.get("category", "unknown")).lower(),
         "summary": result.get("summary", ""),
     }
 

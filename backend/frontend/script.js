@@ -357,6 +357,13 @@ function updateUI(logs, states) {
         });
     }
 
+    if (states && states.polling_interval_seconds) {
+        const mins = Math.floor(states.polling_interval_seconds / 60);
+        document.querySelectorAll('#interval-pills [data-val]').forEach(p => {
+            p.classList.toggle('active', parseInt(p.dataset.val) === mins);
+        });
+    }
+
     refreshAnalyticsIfStale();
     updateServicePanel();
 }
@@ -797,7 +804,7 @@ async function sendChat() {
             body: JSON.stringify({ message: msg })
         });
         if (res.ok) {
-            fetchChatHistory();
+            await fetchChatHistory();
         }
     } catch { }
     btn.textContent = 'Send';
@@ -837,6 +844,7 @@ async function fetchChatHistory() {
         // Auto-scroll to the bottom of the chat view
         requestAnimationFrame(() => {
             list.scrollTop = list.scrollHeight;
+            setTimeout(() => list.scrollTop = list.scrollHeight, 50);
         });
     } catch {
         list.innerHTML = '<p class="empty-state">Could not load chat history.</p>';

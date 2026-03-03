@@ -2148,7 +2148,7 @@ async def analytics_today(db: Session = Depends(get_db)):
                 (["vscode", "visual studio", "pycharm", "cursor", "intellij", "xcode", "android studio",
                   "terminal", "iterm", "github", "gitlab", "linear", "jira", "notion", "confluence",
                   "slack", "zoom", "vero", "lifemanager", "postman", "datagrip", "tableplus",
-                  "zed", "emacs", "vim"], "working"),
+                  "zed", "emacs", "vim", "code"], "working"),
             ]:
                 if any(n in text_data for n in needles):
                     cat = result

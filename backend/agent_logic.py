@@ -888,7 +888,7 @@ async def _refresh_app_category_cache(db: Session, now: datetime):
         if start >= 0 and end > start:
             parsed = json.loads(result_text[start:end])
             valid_cats = {"studying", "working", "creative", "entertainment", "social_media", "gaming", "break"}
-            clean = {k: v for k, v in parsed.items() if isinstance(v, str) and v in valid_cats}
+            clean = {k: v.lower() for k, v in parsed.items() if isinstance(v, str) and v.lower() in valid_cats}
             if clean:
                 set_state(db, "app_category_cache", json.dumps(clean))
                 set_state(db, "last_category_cache_refresh", now.isoformat())

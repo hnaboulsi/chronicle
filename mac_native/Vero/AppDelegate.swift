@@ -30,14 +30,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // After each fresh build the ad-hoc code signature changes, causing a
         // Launch Constraint Violation when launchd tries to relaunch the old binary.
         // repairHelper() refreshes the SMAppService registration to the new binary.
-        HelperController.shared.repairHelper()
+        let agentBundleID = "com.naboulsi.vero.agent"
+        let alreadyRunning = NSRunningApplication.runningApplications(withBundleIdentifier: agentBundleID).count > 0
+        
+        if !alreadyRunning {
+            HelperController.shared.repairHelper()
+        }
 
         // Kick off the agent immediately — don't wait for next login/launchd cycle.
         // Guard against launching a duplicate if SMAppService already started the agent.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            let agentBundleID = "com.naboulsi.vero.agent"
-            let alreadyRunning = NSRunningApplication.runningApplications(withBundleIdentifier: agentBundleID).count > 0
-            guard !alreadyRunning else { return }
+            let stillRunning = NSRunningApplication.runningApplications(withBundleIdentifier: agentBundleID).count > 0
+            guard !stillRunning else { return }
             let agentURL = Bundle.main.bundleURL
                 .appendingPathComponent("Contents/Library/LoginItems/VeroAgent.app")
             guard FileManager.default.fileExists(atPath: agentURL.path) else { return }
@@ -56,8 +60,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func applicationWillTerminate(_ aNotification: Notification) {
+        let agentBundleID = "com.naboulsi.vero.agent"
+        let applications = NSRunningApplication.runningApplications(withBundleIdentifier: agentBundleID)
+        applications.forEach { $0.terminate() }
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        return true
+        return false // Just close window, keep both apps alive
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
