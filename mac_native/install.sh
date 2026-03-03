@@ -31,8 +31,11 @@ cp -R "$APP" "/Applications/Vero.app"
 # Skipped re-signing installed app to preserve Accessibility.
 
 echo "Launching Vero..."
-# Kill existing instance if running
+# Kill existing instances — including stale VeroAgent from the old two-process architecture.
 pkill -x Vero 2>/dev/null || true
+pkill -x VeroAgent 2>/dev/null || true
+# Remove stale VeroAgent build artifact so macOS BTM can't auto-launch it.
+rm -rf /tmp/vero-build/Build/Products/Debug/VeroAgent.app 2>/dev/null || true
 sleep 0.5
 open "/Applications/Vero.app"
 

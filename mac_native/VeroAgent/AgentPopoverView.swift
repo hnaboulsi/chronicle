@@ -18,7 +18,7 @@ struct AgentPopoverView: View {
                     Text("Vero")
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(.primary)
-                    Text("Agent Background Task")
+                    Text("Activity Tracking")
                         .font(.system(size: 12, weight: .regular))
                         .foregroundStyle(.secondary)
                 }
@@ -125,7 +125,7 @@ struct AgentPopoverView: View {
                 Button(action: {
                     NSApplication.shared.terminate(nil)
                 }) {
-                    Text("Quit Background Agent")
+                    Text("Quit Vero")
                         .font(.system(size: 13))
                         .foregroundStyle(.red)
                         .frame(maxWidth: .infinity, alignment: .center)

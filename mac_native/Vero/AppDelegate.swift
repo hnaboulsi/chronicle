@@ -35,6 +35,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItemController.start()
         runtime.start()
 
+        // Unregister the old VeroAgent login item (stale from the two-process era).
+        // This clears the BTM entry so macOS stops trying to launch the removed helper.
+        if #available(macOS 13.0, *) {
+            let staleAgent = SMAppService.loginItem(identifier: AppConstants.agentBundleIdentifier)
+            try? staleAgent.unregister()
+        }
+
         // Register as a login item so Vero auto-starts on login.
         if #available(macOS 13.0, *) {
             try? SMAppService.mainApp.register()
