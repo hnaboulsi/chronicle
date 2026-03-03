@@ -298,13 +298,18 @@ function updateUI(logs, states) {
         iosDetail.textContent = states.ios_recent_ping ? 'Tracking' : 'No pings received';
     }
 
-    // Sleep context
+    // Sleep context — Mac activity overrides phone-based sleep inference
     if (focusStatus) {
-        const sleepLikely = String(states.likely_asleep || 'false') === 'true';
+        const macActive = states.mac_status === 'online';
+        const sleepLikely = !macActive && String(states.likely_asleep || 'false') === 'true';
         if (states.current_intent) {
             focusStatus.textContent = `Awake · ${states.current_intent}`;
             focusStatus.className = 'status-value color-green';
             focusDetail.textContent = 'Intent overrides sleep inference.';
+        } else if (macActive) {
+            focusStatus.textContent = 'Likely Awake';
+            focusStatus.className = 'status-value color-primary';
+            focusDetail.textContent = 'Mac is active.';
         } else {
             focusStatus.textContent = sleepLikely ? 'Likely Asleep' : 'Likely Awake';
             focusStatus.className = sleepLikely ? 'status-value color-muted' : 'status-value color-primary';
@@ -422,7 +427,7 @@ async function fetchHourlySummaries() {
     const list = document.getElementById('summaries-list');
     if (!list) return;
     try {
-        const res = await fetch(`${API}/api/hourly-summaries?limit=8`);
+        const res = await fetch(`${API}/api/hourly-summaries?limit=6`);
         const data = await res.json();
 
         if (!data.length) {
@@ -768,9 +773,9 @@ async function updateServicePanel() {
 
     // iPhone Setup — check if zones are configured
     try {
-        const res = await fetch(`${API}/api/state`);
+        const res = await fetch(`${API}/api/zones`);
         const data = await res.json();
-        const hasZones = data && data.zones && Object.keys(data.zones).length > 0;
+        const hasZones = Array.isArray(data) && data.length > 0;
         setCol('ios-dot', 'ios-setup-status', 'ios-setup-detail',
             hasZones ? 'green' : 'checking',
             hasZones ? 'Configured' : 'Not set up',

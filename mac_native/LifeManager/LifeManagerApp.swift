@@ -25,7 +25,6 @@ struct VeroApp: App {
                     LiteMainView()
                         .environmentObject(model)
                         .frame(width: 520)
-                        .frame(maxHeight: .infinity)
                         .background(Color.panelBg)
                         .ignoresSafeArea()
                         .task {
@@ -46,6 +45,7 @@ struct VeroApp: App {
             }
         }
         .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentSize)
     }
 }
 
@@ -53,13 +53,15 @@ struct LiteMainView: View {
     @EnvironmentObject private var model: NativeAppModel
 
     var body: some View {
-        VStack(spacing: 0) {
-            LiteHeaderBar()
-                .environmentObject(model)
-            LiteDashboardButton()
-                .environmentObject(model)
-            PermissionsView()
-                .environmentObject(model)
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(spacing: 0) {
+                LiteHeaderBar()
+                    .environmentObject(model)
+                LiteDashboardButton()
+                    .environmentObject(model)
+                PermissionsView()
+                    .environmentObject(model)
+            }
         }
         .background(Color.appBg)
     }

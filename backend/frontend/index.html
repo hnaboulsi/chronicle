@@ -111,34 +111,31 @@
             </div>
         </div>
 
-        <!-- Quick Actions & Chat -->
-        <div class="quick-action-container glass-panel" style="padding: 16px;">
-            <div class="quick-action-pills">
-                <button class="pill-action" onclick="setChatContext('Eating')">Eating</button>
-                <button class="pill-action" onclick="setChatContext('Studying')">Studying</button>
-                <button class="pill-action" onclick="setChatContext('Working')">Working</button>
-                <button class="pill-action" onclick="setChatContext('In a break')">Taking a break</button>
-                <button class="pill-action" onclick="setChatContext('Going to sleep')">Going to sleep</button>
-                <button class="pill-action" onclick="setChatContext('Working out')">Working out</button>
-            </div>
-            <div style="display: flex; gap: 8px; margin-top: 12px;">
-                <input type="text" id="chat-input" class="recap-feedback-input"
-                    style="flex: 1; margin-top: 0; padding: 10px 14px;" placeholder="Tell me what you're doing...">
-                <button id="chat-send" class="btn-primary" style="padding: 0 16px;">Send</button>
-            </div>
-            <div id="chat-reply" class="hidden"
-                style="margin-top: 12px; padding: 10px; background: var(--bg-elevated); border-radius: var(--radius-input); font-size: 13px;">
-                <span id="chat-reply-text"></span>
-            </div>
-        </div>
-
-        <!-- Recent Chat -->
-        <section class="glass-panel">
+        <!-- Recent Chat (with integrated composer) -->
+        <section class="glass-panel chat-panel">
             <div class="feed-header">
                 <h2>Recent Chat</h2>
             </div>
             <div id="chat-history-list" class="chat-history-list">
                 <p class="text-muted">No chat yet.</p>
+            </div>
+            <div id="chat-reply" class="hidden chat-inline-reply">
+                <span id="chat-reply-text"></span>
+            </div>
+            <div class="chat-composer">
+                <div class="chat-pills">
+                    <button class="pill-action" onclick="setChatContext('Eating')">Eating</button>
+                    <button class="pill-action" onclick="setChatContext('Studying')">Studying</button>
+                    <button class="pill-action" onclick="setChatContext('Working')">Working</button>
+                    <button class="pill-action" onclick="setChatContext('In a break')">Taking a break</button>
+                    <button class="pill-action" onclick="setChatContext('Going to sleep')">Going to sleep</button>
+                    <button class="pill-action" onclick="setChatContext('Working out')">Working out</button>
+                </div>
+                <div class="chat-input-row">
+                    <input type="text" id="chat-input" class="chat-text-input"
+                        placeholder="Tell me what you're doing...">
+                    <button id="chat-send" class="chat-send-btn">Send</button>
+                </div>
             </div>
         </section>
 
@@ -221,8 +218,8 @@
             <div class="feed-header">
                 <h2>Activity Timeline</h2>
             </div>
-            <div id="calendar-view" style="overflow-x: auto;">
-                <p class="text-muted">Loading...</p>
+            <div id="calendar-view">
+                <p class="text-muted" style="font-size: 12px; padding: 4px 0;">Timeline view coming soon.</p>
             </div>
         </section>
 
@@ -264,7 +261,7 @@
                 <h2>Hourly Recaps</h2>
                 <button id="trigger-recap-btn" onclick="triggerHourlyRecap()" class="toggle-btn">Generate Now</button>
             </div>
-            <div id="summaries-list">
+            <div id="summaries-list" class="summaries-viewport">
                 <p class="text-muted">No summaries yet.</p>
             </div>
         </section>

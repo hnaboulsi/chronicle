@@ -733,6 +733,25 @@ def _update_sleep_state(db: Session, now: datetime, activity_type: str, is_charg
         set_state(db, "sleep_status_note", f"Awake — intent set: {current_intent[:60]}")
         return
 
+    # If Mac sent telemetry within the last 10 minutes, user is definitely awake
+    last_mac_ping_str = get_state(db, "last_mac_ping")
+    if last_mac_ping_str:
+        try:
+            from dateutil.parser import parse as parse_dt
+            last_ping = parse_dt(last_mac_ping_str)
+            if last_ping.tzinfo is None:
+                last_ping = last_ping.replace(tzinfo=timezone.utc)
+            mac_age_seconds = (now.astimezone(timezone.utc) - last_ping.astimezone(timezone.utc)).total_seconds()
+            if mac_age_seconds < 600:
+                set_state(db, "likely_asleep", "false")
+                set_state(db, "user_asleep", "false")
+                set_state(db, "likely_asleep_confidence", "0.00")
+                set_state(db, "likely_asleep_reason", "Awake — Mac active")
+                set_state(db, "sleep_status_note", "Awake — Mac active")
+                return
+        except Exception:
+            pass
+
     confidence = 0.05
     reasons: list[str] = []
     if in_sleep_window:
