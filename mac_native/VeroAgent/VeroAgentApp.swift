@@ -26,9 +26,5 @@ final class AgentAppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         runtime.stop()
         statusItemController.stop()
-        
-        let mainBundleID = "com.naboulsi.vero"
-        let apps = NSRunningApplication.runningApplications(withBundleIdentifier: mainBundleID)
-        apps.forEach { $0.terminate() }
     }
 }

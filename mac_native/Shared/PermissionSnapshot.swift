@@ -44,7 +44,19 @@ struct PermissionSnapshot: Equatable {
             notifications = "unknown"
         }
 
-        let appleEvents = AppGroupStore.shared.browserTabsGranted ? "granted" : "pending"
+        // "browserTabsGranted" is set to true on success and false on error -1743 (denied).
+        // It starts as false (default), so we distinguish "never asked" vs "denied" by
+        // checking whether we've attempted and failed vs never tried.
+        let browserTabsGranted = AppGroupStore.shared.browserTabsGranted
+        let browserTabsAttempted = AppGroupStore.shared.browserTabsAttempted
+        let appleEvents: String
+        if browserTabsGranted {
+            appleEvents = "granted"
+        } else if browserTabsAttempted {
+            appleEvents = "missing"
+        } else {
+            appleEvents = "pending"
+        }
 
         return PermissionSnapshot(
             accessibility: accessibility,

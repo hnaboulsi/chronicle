@@ -97,6 +97,7 @@ final class NativeAppModel: ObservableObject {
             var error: NSDictionary?
             if let appleScript = NSAppleScript(source: script) {
                 let _ = appleScript.executeAndReturnError(&error)
+                AppGroupStore.shared.browserTabsAttempted = true
                 if error == nil {
                     AppGroupStore.shared.browserTabsGranted = true
                 }

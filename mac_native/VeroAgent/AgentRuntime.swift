@@ -229,6 +229,8 @@ final class AgentRuntime {
         var error: NSDictionary?
         guard let script = NSAppleScript(source: source) else { return nil }
         let output = script.executeAndReturnError(&error)
+        // Mark that we have attempted Apple Events at least once.
+        store.browserTabsAttempted = true
         if let err = error {
             let code = (err[NSAppleScript.errorNumber] as? Int) ?? 0
             // Error -1743: not authorized to send Apple events

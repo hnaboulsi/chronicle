@@ -5,8 +5,19 @@ final class AppGroupStore: ObservableObject {
     static let shared = AppGroupStore()
 
     private let defaults = UserDefaults(suiteName: AppConstants.appGroupIdentifier)
+    private var cancellable: Any?
 
-    private init() {}
+    private init() {
+        // Publish changes whenever any value in the shared suite changes,
+        // so SwiftUI views using @ObservedObject re-render automatically.
+        cancellable = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification,
+            object: defaults,
+            queue: .main
+        ) { [weak self] _ in
+            self?.objectWillChange.send()
+        }
+    }
 
     var backendURL: URL? {
         get {
@@ -125,6 +136,13 @@ final class AppGroupStore: ObservableObject {
     var browserTabsGranted: Bool {
         get { defaults?.bool(forKey: "browser_tabs_granted") ?? false }
         set { defaults?.set(newValue, forKey: "browser_tabs_granted") }
+    }
+
+    // Set to true the first time AppleScript runs (success or failure).
+    // Distinguishes "never asked" (false) from "asked but denied" (true + !browserTabsGranted).
+    var browserTabsAttempted: Bool {
+        get { defaults?.bool(forKey: "browser_tabs_attempted") ?? false }
+        set { defaults?.set(newValue, forKey: "browser_tabs_attempted") }
     }
 
     var clientID: String {
