@@ -497,6 +497,21 @@ async def _generate_and_store_hourly_summary(db: Session, now: datetime, force_c
 
     logs = get_mac_logs_for_hour(db, since=hour_start, until=hour_end)
     if not logs:
+        fallback_text = "No Mac activity recorded this hour."
+        if existing:
+            if existing.summary_text != fallback_text:
+                existing.summary_text = fallback_text
+                existing.productivity_score = None
+                existing.summary_source = "deterministic"
+                db.commit()
+        else:
+            db.add(HourlySummary(
+                hour_start=hour_start,
+                summary_text=fallback_text,
+                productivity_score=None,
+                summary_source="deterministic",
+            ))
+            db.commit()
         return
 
     if force_current:

@@ -271,14 +271,7 @@
                     </div>
                     <span class="status-desc" id="service-detail">Connecting to backend</span>
                 </div>
-                <div class="status-col">
-                    <span class="status-col-label">CALENDAR SYNC</span>
-                    <div class="status-indicator">
-                        <span class="status-dot checking" id="calendar-dot"></span>
-                        <span class="status-text checking" id="calendar-status">Checking...</span>
-                    </div>
-                    <span class="status-desc" id="calendar-detail">Syncing session events</span>
-                </div>
+
                 <div class="status-col">
                     <span class="status-col-label">IPHONE SETUP</span>
                     <div class="status-indicator">
@@ -368,10 +361,31 @@
 
             <div class="settings-section">
                 <h3>Geofence Zones</h3>
-                <p class="sub-text" style="margin-bottom: 12px;">Define your locations for iPhone tracking.</p>
+                <p class="sub-text" style="margin-bottom:12px;">Zones let your iPhone trigger location events automatically.</p>
                 <div id="zones-list"></div>
-                <button class="btn-secondary" style="width: 100%; margin-top: 12px;" onclick="addZone()">+ Add
-                    Zone</button>
+
+                <div id="add-zone-form" style="display:none; margin-top:12px; padding:12px; background:var(--bg-elevated); border:1px solid var(--border); border-radius:var(--radius-input);">
+                    <div style="margin-bottom:8px;">
+                        <label class="setting-label">Zone Name</label>
+                        <input type="text" id="new-zone-name" class="recap-feedback-input" placeholder="e.g. Home, Work, Campus" style="margin-top:4px; width:100%; box-sizing:border-box;">
+                    </div>
+                    <div style="margin-bottom:12px;">
+                        <label class="setting-label">Radius (meters)</label>
+                        <input type="number" id="new-zone-radius" class="recap-feedback-input" value="75" min="25" max="5000" style="margin-top:4px; width:100%; box-sizing:border-box;">
+                    </div>
+                    <div style="display:flex; gap:8px;">
+                        <button class="btn-primary" style="flex:1;" onclick="submitAddZone()">Add Zone</button>
+                        <button class="btn-secondary" onclick="cancelAddZone()">Cancel</button>
+                    </div>
+                </div>
+
+                <button id="show-add-zone-btn" class="btn-secondary" style="width:100%; margin-top:12px;" onclick="showAddZoneForm()">+ Add Zone</button>
+
+                <div id="zone-shortcuts-panel" style="display:none; margin-top:16px; padding:12px; background:var(--bg-elevated); border:1px solid var(--border); border-radius:var(--radius-input);">
+                    <p style="font-size:12px; font-weight:600; color:var(--text-primary); margin-bottom:8px;">📱 Set up iPhone Shortcuts</p>
+                    <p style="font-size:11px; color:var(--text-muted); margin-bottom:10px;">Download and add these two Shortcuts to your iPhone, then create Automations in the Shortcuts app triggered by <strong>Arrive</strong> and <strong>Leave</strong> at this location.</p>
+                    <div id="zone-shortcut-links"></div>
+                </div>
             </div>
 
             <div style="margin-top: 32px;">

@@ -587,42 +587,79 @@ async function fetchZones() {
         const data = await res.json();
         const zones = data.zones || [];
         if (!zones.length) {
-            list.innerHTML = '<p class="text-muted">No zones defined.</p>';
+            list.innerHTML = '<p class="text-muted" style="font-size:12px;">No zones yet.</p>';
             return;
         }
         list.innerHTML = zones.map(z => `
             <div style="display:flex; justify-content:space-between; align-items:center; padding:10px; background:var(--bg-elevated); border:1px solid var(--border); border-radius:var(--radius-input); margin-bottom:8px;">
                 <div>
                     <div style="font-weight:600; font-size:13px; color:var(--text-primary)">${esc(z.name)}</div>
-                    <div style="font-size:11px; color:var(--text-muted)">Radius: ${z.radius_meters}m • Type: ${z.zone_type}</div>
+                    <div style="font-size:11px; color:var(--text-muted)">Radius: ${z.radius_meters}m</div>
                 </div>
-                <button class="icon-btn" onclick="deleteZone(${z.id})" style="color:var(--accent-red)">×</button>
+                <div style="display:flex; gap:6px; align-items:center;">
+                    <button class="btn-secondary" style="font-size:11px; padding:4px 8px;" onclick="showShortcutsFor('${esc(z.slug)}','${esc(z.name)}')">📱 Setup</button>
+                    <button class="icon-btn" onclick="deleteZone(${z.id})" style="color:var(--accent-red)">×</button>
+                </div>
             </div>
         `).join('');
     } catch { }
 }
 
-async function addZone() {
-    const name = prompt("Zone Name (e.g. Work, Gym):");
-    if (!name) return;
-    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-    const radius = prompt("Radius in meters (default 75):") || "75";
-    try {
-        await fetch(`${API}/api/zones`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, slug, radius_meters: parseInt(radius), zone_type: 'custom' })
-        });
-        fetchZones();
-    } catch (e) { alert("Failed to add zone"); }
+function showAddZoneForm() {
+    document.getElementById('add-zone-form').style.display = 'block';
+    document.getElementById('show-add-zone-btn').style.display = 'none';
+    document.getElementById('new-zone-name').focus();
 }
 
-window.deleteZone = async function (id) {
+function cancelAddZone() {
+    document.getElementById('add-zone-form').style.display = 'none';
+    document.getElementById('show-add-zone-btn').style.display = 'block';
+    document.getElementById('new-zone-name').value = '';
+    document.getElementById('new-zone-radius').value = '75';
+}
+
+async function submitAddZone() {
+    const name = document.getElementById('new-zone-name').value.trim();
+    if (!name) return;
+    const radius = parseInt(document.getElementById('new-zone-radius').value) || 75;
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    try {
+        const res = await fetch(`${API}/api/zones`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, slug, radius_meters: radius, zone_type: 'custom' })
+        });
+        if (!res.ok) { alert('Failed to create zone.'); return; }
+        cancelAddZone();
+        await fetchZones();
+        showShortcutsFor(slug, name);
+    } catch { alert('Failed to create zone.'); }
+}
+
+function showShortcutsFor(slug, name) {
+    const panel = document.getElementById('zone-shortcuts-panel');
+    const links = document.getElementById('zone-shortcut-links');
+    links.innerHTML = `
+        <a href="${API}/setup/shortcut/download-zone?zone_slug=${encodeURIComponent(slug)}&transition=enter"
+           style="display:block; padding:8px 10px; margin-bottom:6px; background:var(--surface); border:1px solid var(--border); border-radius:6px; font-size:12px; color:var(--accent-blue); text-decoration:none;">
+           ↓ Download "Arrive at ${esc(name)}" Shortcut
+        </a>
+        <a href="${API}/setup/shortcut/download-zone?zone_slug=${encodeURIComponent(slug)}&transition=exit"
+           style="display:block; padding:8px 10px; background:var(--surface); border:1px solid var(--border); border-radius:6px; font-size:12px; color:var(--accent-blue); text-decoration:none;">
+           ↓ Download "Leave ${esc(name)}" Shortcut
+        </a>
+        <p style="font-size:10px; color:var(--text-muted); margin-top:8px;">Open these links on your iPhone. Each downloads a Shortcut — tap to install, then go to Shortcuts → Automation → New Automation → Arrive/Leave [location] → run this shortcut.</p>
+    `;
+    panel.style.display = 'block';
+}
+
+window.deleteZone = async function(id) {
     if (!confirm("Delete this zone?")) return;
     try {
         await fetch(`${API}/api/zones/${id}`, { method: 'DELETE' });
-        fetchZones();
-    } catch (e) { }
+        await fetchZones();
+        document.getElementById('zone-shortcuts-panel').style.display = 'none';
+    } catch { }
 }
 
 
@@ -830,14 +867,8 @@ async function updateServicePanel() {
             'red', 'Offline', 'Cannot reach backend');
     }
 
-    // Calendar Sync — green when mac agent is online
-    const macOk = latestStates && latestStates.mac_status === 'online';
-    setCol('calendar-dot', 'calendar-status', 'calendar-detail',
-        macOk ? 'green' : 'checking',
-        macOk ? 'Active' : 'Waiting',
-        macOk ? 'Agent writing events' : 'Mac agent offline');
-
     // Update Footer Prompt
+    const macOk = latestStates && latestStates.mac_status === 'online';
     if (nextStepStatusEl && nextStepDetailEl) {
         if (macOk) {
             nextStepStatusEl.textContent = 'Mac App Active';
