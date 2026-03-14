@@ -398,14 +398,6 @@ function renderStats(data) {
     const productiveText = `${data.productive_pct}%`;
     const llmText = `${data.llm_used}/${data.llm_cap}`;
 
-    // Header stats strip
-    const elActive = document.getElementById('stat-active');
-    const elProductive = document.getElementById('stat-productive');
-    const elLlm = document.getElementById('stat-llm');
-    if (elActive) elActive.textContent = activeText;
-    if (elProductive) elProductive.textContent = productiveText;
-    if (elLlm) elLlm.textContent = llmText;
-
     // Right-column detail stats
     const elActiveD = document.getElementById('stat-active-detail');
     const elProductiveD = document.getElementById('stat-productive-detail');

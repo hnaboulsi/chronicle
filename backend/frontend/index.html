@@ -60,13 +60,6 @@
                 <div class="pulse-ring" id="tracking-pulse"></div>
                 <h1>Vero <span class="badge" id="tracking-badge">Live</span></h1>
             </div>
-            <div class="header-stats" id="header-stats">
-                <span class="header-stat"><span id="stat-active" class="header-stat-value">0h 0m</span> Active</span>
-                <span class="header-divider">·</span>
-                <span class="header-stat"><span id="stat-productive" class="header-stat-value">0%</span> Productive</span>
-                <span class="header-divider">·</span>
-                <span class="header-stat"><span id="stat-llm" class="header-stat-value">0/30</span> AI</span>
-            </div>
             <div class="header-right">
                 <button id="toggle-tracking-btn" class="toggle-btn active" title="Toggle tracking">Tracking: ON</button>
                 <button id="theme-toggle-btn" class="icon-btn" title="Toggle theme" onclick="toggleTheme()">☀️</button>
@@ -118,10 +111,10 @@
             </div>
         </div>
 
-        <!-- 2-Column Dashboard Grid -->
+        <!-- 3-Column Dashboard Grid -->
         <div class="dashboard-grid">
 
-            <!-- LEFT COLUMN: Chat + Live Activity -->
+            <!-- LEFT COLUMN: Chat -->
             <div class="dashboard-left">
 
                 <!-- Recent Chat -->
@@ -152,6 +145,11 @@
                     </div>
                 </section>
 
+            </div><!-- /dashboard-left -->
+
+            <!-- MIDDLE COLUMN: Live Activity -->
+            <div class="dashboard-mid">
+
                 <!-- Live Activity — Timeline -->
                 <section class="activity-feed glass-panel">
                     <div class="feed-header">
@@ -174,7 +172,7 @@
                     </div>
                 </section>
 
-            </div><!-- /dashboard-left -->
+            </div><!-- /dashboard-mid -->
 
             <!-- RIGHT COLUMN: Stats + Device / Context -->
             <div class="dashboard-right">
