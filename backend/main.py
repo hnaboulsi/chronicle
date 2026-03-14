@@ -446,11 +446,13 @@ async def _hourly_summary_scheduler():
         try:
             await asyncio.sleep(300)  # Check every 5 minutes
             db = SessionLocal()
-            now = datetime.now(timezone.utc)
-            summaries_enabled = agent_logic.get_state(db, "hourly_summaries_enabled", "true") == "true"
-            if summaries_enabled:
-                await agent_logic._generate_and_store_hourly_summary(db, now)
-            db.close()
+            try:
+                now = datetime.now(timezone.utc)
+                summaries_enabled = agent_logic.get_state(db, "hourly_summaries_enabled", "true") == "true"
+                if summaries_enabled:
+                    await agent_logic._generate_and_store_hourly_summary(db, now)
+            finally:
+                db.close()
         except Exception as exc:
             log.error(f"Hourly summary scheduler error: {exc}")
 
@@ -1198,6 +1200,8 @@ async def recap_feedback(payload: Dict[str, Any], db: Session = Depends(get_db))
                     "message": result.get("reasoning", "LLM verified the original recap was accurate"),
                     "original_is_correct": True
                 }
+        else:
+            return {"status": "error", "message": "LLM returned unexpected format"}
     except Exception as e:
         return {"status": "error", "message": f"LLM verification failed: {str(e)}"}
 
