@@ -1,44 +1,130 @@
 import AppKit
-import SwiftUI
+import ApplicationServices
+import Foundation
 
 @MainActor
 final class StatusItemController: NSObject, NSMenuDelegate {
     private let store = AppGroupStore.shared
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-    private lazy var popover: NSPopover = {
-        let p = NSPopover()
-        p.contentSize = NSSize(width: 320, height: 350)
-        p.behavior = .transient
-        p.contentViewController = NSHostingController(rootView: AgentPopoverView())
-        return p
-    }()
+    private let menu = NSMenu()
 
-    func start() {
+    private let statusMenuItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+    private let errorMenuItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+    private lazy var toggleTrackingItem = NSMenuItem(title: "", action: #selector(toggleTracking), keyEquivalent: "")
+    private lazy var openDashboardItem = NSMenuItem(title: "Open Dashboard", action: #selector(openDashboard), keyEquivalent: "")
+    private lazy var settingsItem = NSMenuItem(title: "Connection Settings…", action: #selector(openSettings), keyEquivalent: ",")
+    private lazy var accessibilityItem = NSMenuItem(title: "Request Accessibility Access", action: #selector(requestAccessibilityAccess), keyEquivalent: "")
+    private lazy var calendarItem = NSMenuItem(title: "Request Calendar Access", action: #selector(requestCalendarAccess), keyEquivalent: "")
+    private lazy var systemSettingsItem = NSMenuItem(title: "Open Privacy Settings", action: #selector(openSystemSettings), keyEquivalent: "")
+    private lazy var quitItem = NSMenuItem(title: "Quit Vero", action: #selector(quitApp), keyEquivalent: "q")
+
+    private weak var appDelegate: AppDelegate?
+
+    func start(appDelegate: AppDelegate? = nil) {
+        self.appDelegate = appDelegate
+
         if let button = statusItem.button {
             let config = NSImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
             let image = NSImage(systemSymbolName: "waveform.path.ecg", accessibilityDescription: "Vero")
             image?.isTemplate = true
             button.image = image?.withSymbolConfiguration(config)
-            button.toolTip = "Vero"
-            button.action = #selector(togglePopover(_:))
-            button.target = self
         }
+
+        menu.delegate = self
+        rebuildMenu()
+        statusItem.menu = menu
+        refreshMenu()
     }
 
-    @objc private func togglePopover(_ sender: AnyObject?) {
-        if let button = statusItem.button {
-            if popover.isShown {
-                popover.performClose(sender)
-            } else {
-                popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            }
-        }
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        refreshMenu()
     }
 
     func stop() {
-        if popover.isShown {
-            popover.performClose(nil)
-        }
         NSStatusBar.system.removeStatusItem(statusItem)
+    }
+
+    private func rebuildMenu() {
+        [toggleTrackingItem, openDashboardItem, settingsItem, accessibilityItem, calendarItem, systemSettingsItem, quitItem]
+            .forEach { $0.target = self }
+        errorMenuItem.isEnabled = false
+        statusMenuItem.isEnabled = false
+
+        menu.removeAllItems()
+        menu.addItem(statusMenuItem)
+        menu.addItem(errorMenuItem)
+        menu.addItem(.separator())
+        menu.addItem(toggleTrackingItem)
+        menu.addItem(openDashboardItem)
+        menu.addItem(settingsItem)
+        menu.addItem(.separator())
+        menu.addItem(accessibilityItem)
+        menu.addItem(calendarItem)
+        menu.addItem(systemSettingsItem)
+        menu.addItem(.separator())
+        menu.addItem(quitItem)
+    }
+
+    private func refreshMenu() {
+        let isConfigured = store.isConfigured
+        let hasError = !store.helperLastError.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let trackingEnabled = store.trackingEnabled && store.helperDesiredState != "disabled"
+
+        let statusText: String
+        if !isConfigured {
+            statusText = "Status: Not connected"
+        } else if hasError {
+            statusText = "Status: Attention needed"
+        } else if trackingEnabled {
+            statusText = "Status: Tracking"
+        } else {
+            statusText = "Status: Paused"
+        }
+
+        statusMenuItem.title = statusText
+        errorMenuItem.title = hasError ? "Last error: \(store.helperLastError)" : ""
+        errorMenuItem.isHidden = !hasError
+
+        toggleTrackingItem.title = trackingEnabled ? "Pause Tracking" : "Resume Tracking"
+        toggleTrackingItem.isEnabled = isConfigured
+        openDashboardItem.isEnabled = isConfigured
+        settingsItem.title = isConfigured ? "Connection Settings…" : "Connect Backend…"
+        statusItem.button?.toolTip = "Vero"
+    }
+
+    @objc private func toggleTracking() {
+        store.trackingEnabled.toggle()
+        store.helperDesiredState = store.trackingEnabled ? "enabled" : "disabled"
+        refreshMenu()
+    }
+
+    @objc private func openDashboard() {
+        guard let baseURL = store.backendURL else { return }
+        NSWorkspace.shared.open(baseURL.appendingPathComponent("dashboard/index.html"))
+    }
+
+    @objc private func openSettings() {
+        appDelegate?.openSettingsWindow()
+    }
+
+    @objc private func requestAccessibilityAccess() {
+        AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as NSDictionary)
+    }
+
+    @objc private func requestCalendarAccess() {
+        Task {
+            await CalendarSyncEngine.shared.requestAccessIfNeeded()
+        }
+    }
+
+    @objc private func openSystemSettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else {
+            return
+        }
+        NSWorkspace.shared.open(url)
+    }
+
+    @objc private func quitApp() {
+        NSApplication.shared.terminate(nil)
     }
 }

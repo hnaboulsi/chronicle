@@ -429,7 +429,7 @@ function renderAnalytics(data) {
     container.innerHTML = trackHtml + '</div>' + labelsHtml + '</div>';
 }
 
-// ── Hourly Summaries & Feedback ──
+// ── Hourly Summaries ──
 async function fetchHourlySummaries() {
     const list = document.getElementById('summaries-list');
     if (!list) return;
@@ -450,7 +450,6 @@ async function fetchHourlySummaries() {
                 : 'Previous Hour';
             const score = s.productivity_score != null ? s.productivity_score.toFixed(1) : '—';
             const scoreColor = s.productivity_score >= 7 ? 'var(--accent-green)' : s.productivity_score >= 4 ? 'var(--accent-amber)' : 'var(--accent-red)';
-            const hourStartISO = (s.hour_start_utc || s.hour_start || '').replace(/Z$/, '');
 
             return `<div class="summary-card">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
@@ -461,18 +460,13 @@ async function fetchHourlySummaries() {
                     </div>
                 </div>
                 <p style="font-size: 13px; line-height:1.5;">${esc(s.summary_text)}</p>
-                <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:12px;">
-                    <input type="text" placeholder="Something wrong? Correction..." class="recap-feedback-input"
-                           data-hour-start="${escAttr(hourStartISO)}" data-original="${escAttr(s.summary_text)}" style="margin-top:0;">
-                    <button class="recap-feedback-btn" data-hour-start="${escAttr(hourStartISO)}">Send Correction</button>
-                </div>
             </div>`;
         }).join('');
-        attachFeedbackListeners();
+        attachSummaryListeners();
     } catch { }
 }
 
-function attachFeedbackListeners() {
+function attachSummaryListeners() {
     document.querySelectorAll('.recap-delete-btn').forEach(btn => {
         btn.onclick = async (e) => {
             e.preventDefault();
@@ -495,32 +489,6 @@ function attachFeedbackListeners() {
                 btn.disabled = false;
                 btn.textContent = '×';
             }
-        };
-    });
-    document.querySelectorAll('.recap-feedback-btn').forEach(btn => {
-        btn.onclick = async () => {
-            const hourStart = btn.dataset.hourStart;
-            const input = btn.parentElement.querySelector('.recap-feedback-input');
-            const feedback = input.value.trim();
-            if (!feedback) return;
-
-            btn.disabled = true;
-            btn.textContent = 'Sending...';
-            try {
-                const res = await fetch(`${API}/api/recap-feedback`, {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ hour_start: hourStart, feedback, original_summary: input.dataset.original })
-                });
-                const r = await res.json();
-                if (r.status === 'updated') {
-                    alert('Recap updated!');
-                    fetchHourlySummaries();
-                } else {
-                    alert(r.message || 'Saved feedback.');
-                }
-            } catch { }
-            btn.disabled = false;
-            btn.textContent = 'Send Correction';
         };
     });
 }

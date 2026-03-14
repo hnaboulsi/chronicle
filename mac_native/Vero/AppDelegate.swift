@@ -7,7 +7,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let statusItemController = StatusItemController()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // No Dock icon — Vero lives entirely in the menu bar.
         NSApp.setActivationPolicy(.accessory)
 
         let store = AppGroupStore.shared
@@ -32,7 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // Start the menu bar icon and telemetry loops.
-        statusItemController.start()
+        statusItemController.start(appDelegate: self)
         runtime.start()
 
         // Unregister the old VeroAgent login item (stale from the two-process era).
@@ -47,11 +46,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             try? SMAppService.mainApp.register()
         }
 
-        // Match window background to the app's dark theme.
-        DispatchQueue.main.async {
-            NSApplication.shared.windows.forEach {
-                $0.backgroundColor = NSColor(red: 0.078, green: 0.078, blue: 0.094, alpha: 1)
-                $0.titlebarAppearsTransparent = true
+        if !store.isConfigured {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                self.openSettingsWindow()
             }
         }
     }
@@ -61,17 +58,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItemController.stop()
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        // Closing the window leaves Vero running in the menu bar.
-        return false
-    }
-
-    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag {
-            for window in sender.windows {
-                window.makeKeyAndOrderFront(nil)
-            }
+    func openSettingsWindow() {
+        if NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil) {
+            NSApp.activate(ignoringOtherApps: true)
+            return
         }
-        return true
+        if NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil) {
+            NSApp.activate(ignoringOtherApps: true)
+        }
     }
 }

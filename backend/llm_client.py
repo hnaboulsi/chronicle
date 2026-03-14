@@ -41,6 +41,10 @@ def _provider_order() -> list[str]:
     return ["gemini", "openai"]
 
 
+def has_llm_provider() -> bool:
+    return bool(_gemini_client or os.getenv("OPENAI_API_KEY", "").strip())
+
+
 def _gemini_model(task: str) -> str:
     mapping = {
         "default": os.getenv("VERO_GEMINI_MODEL") or os.getenv("LIFE_MANAGER_GEMINI_MODEL", "gemini-2.5-flash"),
@@ -309,7 +313,10 @@ async def generate_hourly_summary(logs: list, hour_start: str, app_cache: dict =
             summary = summary[:500] + "..."
             
     if not summary:
-        summary = "Could not generate summary."
+        return {
+            "summary": "",
+            "productivity_score": result.get("productivity_score"),
+        }
 
     return {
         "summary": summary,

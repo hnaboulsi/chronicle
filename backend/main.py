@@ -2125,11 +2125,11 @@ async def analytics_today(db: Session = Depends(get_db)):
     unclassified_apps = {}
     for entry in logs:
         interval_min = polling_secs / 60
-        total_active_minutes += interval_min
         if entry.is_idle:
             idle_count += 1
             category_minutes["idle"] = category_minutes.get("idle", 0) + interval_min
             continue
+        total_active_minutes += interval_min
         app_name = (entry.app_name or "").strip()
         # 1. Check AI cache first (personalized, updates hourly)
         if app_name in app_cache:

@@ -8,6 +8,20 @@ final class CalendarSyncEngine {
 
     private init() {}
 
+    private enum SyncError: LocalizedError {
+        case calendarUnavailable
+        case invalidDate(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .calendarUnavailable:
+                return "Vero could not access or create the target calendar."
+            case let .invalidDate(value):
+                return "Invalid calendar timestamp: \(value)"
+            }
+        }
+    }
+
     func authorizationStatus() -> EKAuthorizationStatus {
         EKEventStore.authorizationStatus(for: .event)
     }
@@ -94,14 +108,49 @@ final class CalendarSyncEngine {
     }
 
     private func write(job: CalendarJob) throws {
-        guard let calendar = calendar() else { return }
+        guard let calendar = calendar() else {
+            throw SyncError.calendarUnavailable
+        }
         let event = EKEvent(eventStore: store)
         event.calendar = calendar
         event.title = job.title
         event.notes = job.notes
-        let formatter = ISO8601DateFormatter()
-        event.startDate = formatter.date(from: job.start_at) ?? Date()
-        event.endDate = formatter.date(from: job.end_at) ?? Date().addingTimeInterval(600)
+        event.startDate = try parseDate(job.start_at)
+        event.endDate = try parseDate(job.end_at)
+        if event.endDate <= event.startDate {
+            event.endDate = event.startDate.addingTimeInterval(600)
+        }
         try store.save(event, span: .thisEvent, commit: true)
+    }
+
+    private func parseDate(_ value: String) throws -> Date {
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = isoFormatter.date(from: value) {
+            return date
+        }
+
+        let fallbackISO = ISO8601DateFormatter()
+        if let date = fallbackISO.date(from: value) {
+            return date
+        }
+
+        let plainFormatter = DateFormatter()
+        plainFormatter.locale = Locale(identifier: "en_US_POSIX")
+        plainFormatter.timeZone = TimeZone(secondsFromGMT: 0)
+        plainFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+        if let date = plainFormatter.date(from: value) {
+            return date
+        }
+
+        let fractionalFormatter = DateFormatter()
+        fractionalFormatter.locale = Locale(identifier: "en_US_POSIX")
+        fractionalFormatter.timeZone = TimeZone(secondsFromGMT: 0)
+        fractionalFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSSSS"
+        if let date = fractionalFormatter.date(from: value) {
+            return date
+        }
+
+        throw SyncError.invalidDate(value)
     }
 }

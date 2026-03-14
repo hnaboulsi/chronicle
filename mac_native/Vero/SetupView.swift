@@ -5,131 +5,81 @@ struct SetupView: View {
     @State private var authTokenInput = ""
     @State private var isLoading = false
     @State private var errorMessage = ""
-    @State private var showError = false
+    @State private var statusMessage = ""
     let onConnected: () -> Void
 
     var body: some View {
-        ZStack {
-            // Gradient background
-            LinearGradient(
-                gradient: Gradient(colors: [
-                    Color.indigo.opacity(0.1),
-                    Color.blue.opacity(0.05)
-                ]),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+        Form {
+            Section("Connection") {
+                TextField("Backend URL", text: $backendURLInput)
+                    .autocorrectionDisabled()
 
-            VStack(spacing: 32) {
-                // Header
-                VStack(spacing: 12) {
-                    Image(systemName: "waveform.path.ecg")
-                        .font(.system(size: 48, weight: .semibold))
-                        .foregroundStyle(Color.indigo)
+                SecureField("Password or auth token", text: $authTokenInput)
 
-                    Text("Vero")
-                        .font(.system(size: 32, weight: .bold))
-                        .foregroundStyle(.primary)
-
-                    Text("Connect to your cloud backend")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-
-                // Form
-                VStack(spacing: 20) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Label("Backend URL", systemImage: "cloud.fill")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(Color.indigo)
-
-                        TextField("https://your-backend.example.com", text: $backendURLInput)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(.body, design: .monospaced))
-                            .autocorrectionDisabled()
-
-                        Text("Must be an HTTPS URL to your cloud backend")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                HStack {
+                    Button(isLoading ? "Connecting…" : "Save Connection") {
+                        connectToBackend()
                     }
+                    .disabled(isLoading || backendURLInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || authTokenInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
-                    VStack(alignment: .leading, spacing: 8) {
-                        Label("Authentication Token", systemImage: "key.fill")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(Color.indigo)
-
-                        SecureField("Paste your auth token", text: $authTokenInput)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(.body, design: .monospaced))
-
-                        Text("Your secure token for API access")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    if showError && !errorMessage.isEmpty {
-                        HStack(spacing: 8) {
-                            Image(systemName: "exclamationmark.circle.fill")
-                                .foregroundStyle(.red)
-                            Text(errorMessage)
-                                .font(.caption)
-                                .foregroundStyle(.red)
+                    if let dashboardURL = dashboardURL {
+                        Button("Open Dashboard") {
+                            NSWorkspace.shared.open(dashboardURL)
                         }
-                        .padding(.vertical, 10)
-                        .padding(.horizontal, 12)
-                        .background(Color.red.opacity(0.1))
-                        .cornerRadius(8)
                     }
                 }
-                .padding(20)
-                .background(Color.white.opacity(0.7))
-                .cornerRadius(12)
 
-                Spacer()
-
-                // Connect Button
-                Button(action: connectToBackend) {
-                    if isLoading {
-                        ProgressView()
-                            .tint(.white)
-                    } else {
-                        Label("Connect to Backend", systemImage: "network")
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .padding(12)
-                .background(Color.indigo)
-                .foregroundStyle(.white)
-                .cornerRadius(8)
-                .font(.subheadline.weight(.semibold))
-                .disabled(isLoading || backendURLInput.isEmpty || authTokenInput.isEmpty)
-                .opacity(isLoading || backendURLInput.isEmpty || authTokenInput.isEmpty ? 0.6 : 1.0)
+                Text("Use your deployed HTTPS backend URL and the same dashboard password the Mac app uses for Basic Auth.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            .padding(40)
-            .frame(maxWidth: 500)
+
+            Section("Status") {
+                LabeledContent("Connected", value: AppGroupStore.shared.isConfigured ? "Yes" : "No")
+                LabeledContent("Calendar", value: CalendarSyncEngine.shared.targetDescription())
+                Text(CalendarSyncEngine.shared.setupRecommendation())
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if !statusMessage.isEmpty {
+                Section {
+                    Text(statusMessage)
+                        .foregroundStyle(.green)
+                }
+            }
+
+            if !errorMessage.isEmpty {
+                Section {
+                    Text(errorMessage)
+                        .foregroundStyle(.red)
+                }
+            }
         }
-        .frame(minWidth: 600, minHeight: 700)
+        .formStyle(.grouped)
+        .padding(12)
         .onAppear(perform: preloadExistingConfiguration)
+    }
+
+    private var dashboardURL: URL? {
+        AppGroupStore.shared.backendURL?.appendingPathComponent("dashboard/index.html")
     }
 
     private func connectToBackend() {
         errorMessage = ""
-        showError = false
+        statusMessage = ""
         isLoading = true
 
         let trimmedURL = backendURLInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = AppGroupStore.validatedCloudBackendURL(from: trimmedURL) else {
-            errorMessage = "Invalid URL. Must be HTTPS (e.g., https://your-backend.example.com)"
-            showError = true
+            errorMessage = "Enter a valid HTTPS backend URL."
             isLoading = false
             return
         }
 
         let auth = authTokenInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        if auth.isEmpty {
-            errorMessage = "Authentication token is required"
-            showError = true
+        guard !auth.isEmpty else {
+            errorMessage = "Enter the dashboard password or auth token."
             isLoading = false
             return
         }
@@ -145,13 +95,13 @@ struct SetupView: View {
                     let store = AppGroupStore.shared
                     store.backendURL = url
                     store.authValue = auth
+                    statusMessage = "Connection saved."
                     isLoading = false
                     onConnected()
                 }
             } catch {
                 await MainActor.run {
                     errorMessage = "Failed to connect: \(error.localizedDescription)"
-                    showError = true
                     isLoading = false
                 }
             }
@@ -163,8 +113,7 @@ struct SetupView: View {
             return
         }
 
-        let store = AppGroupStore.shared
-        if let configuration = store.backendConfiguration {
+        if let configuration = AppGroupStore.shared.backendConfiguration {
             backendURLInput = configuration.baseURL.absoluteString
             authTokenInput = configuration.authValue
         }
@@ -173,4 +122,5 @@ struct SetupView: View {
 
 #Preview {
     SetupView(onConnected: {})
+        .frame(width: 480, height: 320)
 }

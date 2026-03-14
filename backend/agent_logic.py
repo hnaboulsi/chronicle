@@ -257,6 +257,8 @@ def llm_usage_snapshot(db: Session, now: datetime | None = None) -> dict:
 
 
 def can_use_llm(db: Session, now: datetime | None = None) -> bool:
+    if not llm_client.has_llm_provider():
+        return False
     snap = llm_usage_snapshot(db, now)
     return snap["daily_used"] < snap["daily_cap"]
 
@@ -963,6 +965,13 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session):
         user_self_report = get_state(db, "user_self_report")
         history = getattr(data, "recent_history", None)
         global_context = get_state(db, "global_chat_context", "")
+        low_signal = (
+            len(recent) < 3
+            or all(
+                not (entry.get("app_name") or "").strip() and not (entry.get("window_title") or "").strip()
+                for entry in recent
+            )
+        )
         if low_signal and get_state(db, "llm_mode", DEFAULTS["llm_mode"]) == "ultra_save":
             result = heuristic_classify_activity(recent, idle_time_seconds=data.idle_time_seconds, recent_history=history)
         elif can_use_llm(db, now):
@@ -970,7 +979,6 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session):
             result = await llm_client.classify_activity_context(recent, user_self_report, recent_history=history, global_context=global_context)
         else:
             result = heuristic_classify_activity(recent, idle_time_seconds=data.idle_time_seconds, recent_history=history)
-            result["summary"] = "AI budget reached; using local classification"
         new_category = result["category"]
         new_summary = result["summary"]
 
