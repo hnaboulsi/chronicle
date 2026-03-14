@@ -53,16 +53,12 @@ const focusStatus = document.getElementById('focus-status');
 const focusDetail = document.getElementById('focus-detail');
 const activityCategory = document.getElementById('activity-category');
 const activitySummary = document.getElementById('activity-summary');
-const logsBody = document.getElementById('logs-body');
+const timelineFeed = document.getElementById('timeline-feed');
 const refreshBtn = document.getElementById('refresh-btn');
 const clearLogsBtn = document.getElementById('clear-logs-btn');
 const themeToggleBtn = document.getElementById('theme-toggle-btn');
-const pollingSlider = document.getElementById('polling-slider');
-const pollingLabel = document.getElementById('polling-label');
 const serviceStatusEl = document.getElementById('service-status');
 const serviceDetailEl = document.getElementById('service-detail');
-const calendarStatusEl = document.getElementById('calendar-status');
-const calendarDetailEl = document.getElementById('calendar-detail');
 const iosSetupStatusEl = document.getElementById('ios-setup-status');
 const iosSetupDetailEl = document.getElementById('ios-setup-detail');
 const nextStepStatusEl = document.getElementById('next-step-status');
@@ -160,16 +156,13 @@ function initTheme() {
     applyTheme(savedTheme);
 }
 
-const SVG_SUN = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>`;
-const SVG_MOON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>`;
-
 function applyTheme(theme) {
     if (theme === 'light') {
         document.documentElement.setAttribute('data-theme', 'light');
-        if (themeToggleBtn) themeToggleBtn.innerHTML = SVG_MOON;
+        if (themeToggleBtn) themeToggleBtn.textContent = '🌙';
     } else {
         document.documentElement.removeAttribute('data-theme');
-        if (themeToggleBtn) themeToggleBtn.innerHTML = SVG_SUN;
+        if (themeToggleBtn) themeToggleBtn.textContent = '☀️';
     }
     localStorage.setItem(THEME_KEY, theme);
 }
@@ -259,12 +252,17 @@ function updateUI(logs, states) {
     const latestMac = logs.find(l => l.device === 'mac');
     const latestMacApp = latestMac && latestMac.app_name ? latestMac.app_name : '';
 
+    const macActions = document.getElementById('mac-actions');
     if (macOpenApp) {
         macOpenApp.href = states.mac_launch_url || 'vero://open';
         macOpenApp.classList.toggle('hidden', !(isMacBrowser && macState === 'offline'));
     }
     if (macSetupLink) {
         macSetupLink.classList.toggle('hidden', macState === 'online');
+    }
+    if (macActions) {
+        const showActions = (isMacBrowser && macState === 'offline') || macState !== 'online';
+        macActions.classList.toggle('hidden', !showActions);
     }
 
     if (macStatus) {
@@ -328,51 +326,39 @@ function updateUI(logs, states) {
         activityCategory.className = PRODUCTIVE.has(cat) ? 'status-value color-green' : DISTRACTED.has(cat) ? 'status-value color-red' : 'status-value color-primary';
     }
 
-    // Timeline
-    if (logsBody) {
-        if (!logs.length) {
-            logsBody.innerHTML = '<p class="text-muted" style="padding:12px 16px;">No activity yet.</p>';
+    // Timeline Feed
+    if (timelineFeed) {
+        if (!logs || !logs.length) {
+            timelineFeed.innerHTML = '<p class="text-muted" style="padding: 16px 0;">No activity yet.</p>';
         } else {
-            logsBody.innerHTML = '';
-            logs.forEach((entry) => {
-                const item = document.createElement('div');
-                item.className = 'timeline-item';
-
-                const time = formatTime(entry.timestamp);
-                const device = entry.device === 'mac' ? 'Mac' : 'iPhone';
-                const activity = entry.device === 'mac'
-                    ? (entry.app_name || '—')
-                    : (entry.activity_type || 'Ping');
-                const rawCtx = entry.device === 'mac'
+            timelineFeed.innerHTML = '';
+            logs.forEach((entry, i) => {
+                const isMac = entry.device === 'mac';
+                const isFirst = i === 0;
+                const timeText = formatTime(entry.timestamp);
+                const appText = isMac ? (entry.app_name || 'Unknown') : (entry.activity_type || 'Ping');
+                const rawCtx = isMac
                     ? (entry.window_title || '')
                     : (entry.location_label || '');
-                const context = rawCtx.length > 60 ? rawCtx.substring(0, 60) + '\u2026' : rawCtx;
+                const ctxText = rawCtx.length > 70 ? rawCtx.substring(0, 70) + '…' : rawCtx;
+                const dotClass = isFirst ? 'timeline-dot live' : (isMac ? 'timeline-dot' : 'timeline-dot ios');
+                const showLine = i < logs.length - 1;
 
-                const dot = document.createElement('span');
-                dot.className = 'tl-dot';
-
-                const tTime = document.createElement('span');
-                tTime.className = 'tl-time';
-                tTime.textContent = time;
-
-                const tDevice = document.createElement('span');
-                tDevice.className = 'tl-device';
-                tDevice.textContent = device;
-
-                const tActivity = document.createElement('span');
-                tActivity.className = 'tl-activity';
-                tActivity.textContent = activity;
-
-                item.append(dot, tTime, tDevice, tActivity);
-
-                if (context) {
-                    const tCtx = document.createElement('span');
-                    tCtx.className = 'tl-context';
-                    tCtx.textContent = context;
-                    item.appendChild(tCtx);
-                }
-
-                logsBody.appendChild(item);
+                const item = document.createElement('div');
+                item.className = 'timeline-item';
+                item.style.animationDelay = `${i * 35}ms`;
+                item.innerHTML =
+                    `<div class="timeline-connector">` +
+                        `<div class="${dotClass}"></div>` +
+                        (showLine ? `<div class="timeline-line"></div>` : '') +
+                    `</div>` +
+                    `<div class="timeline-content">` +
+                        `<span class="timeline-time">${esc(timeText)}</span>` +
+                        `<span class="timeline-app">${esc(appText)}</span>` +
+                        (ctxText ? `<span class="timeline-ctx">${esc(ctxText)}</span>` : '') +
+                        (!isMac ? `<span class="timeline-device-tag">iPhone</span>` : '') +
+                    `</div>`;
+                timelineFeed.appendChild(item);
             });
         }
     }
@@ -408,16 +394,32 @@ function refreshAnalyticsIfStale(maxAgeMs = 60000) {
 function renderStats(data) {
     const h = Math.floor(data.total_active_minutes / 60);
     const m = Math.round(data.total_active_minutes % 60);
-    if (document.getElementById('stat-active')) document.getElementById('stat-active').textContent = `${h}h ${m}m`;
-    if (document.getElementById('stat-productive')) document.getElementById('stat-productive').textContent = `${data.productive_pct}%`;
-    if (document.getElementById('stat-llm')) document.getElementById('stat-llm').textContent = `${data.llm_used}/${data.llm_cap}`;
+    const activeText = `${h}h ${m}m`;
+    const productiveText = `${data.productive_pct}%`;
+    const llmText = `${data.llm_used}/${data.llm_cap}`;
+
+    // Header stats strip
+    const elActive = document.getElementById('stat-active');
+    const elProductive = document.getElementById('stat-productive');
+    const elLlm = document.getElementById('stat-llm');
+    if (elActive) elActive.textContent = activeText;
+    if (elProductive) elProductive.textContent = productiveText;
+    if (elLlm) elLlm.textContent = llmText;
+
+    // Right-column detail stats
+    const elActiveD = document.getElementById('stat-active-detail');
+    const elProductiveD = document.getElementById('stat-productive-detail');
+    const elLlmD = document.getElementById('stat-llm-detail');
+    if (elActiveD) elActiveD.textContent = activeText;
+    if (elProductiveD) elProductiveD.textContent = productiveText;
+    if (elLlmD) elLlmD.textContent = llmText;
 
     if (statActiveNote) {
         const fresh = data.data_freshness_seconds != null ? `${Math.floor(data.data_freshness_seconds / 60)}m ago` : 'n/a';
-        statActiveNote.textContent = data.total_active_minutes > 0 ? `Last telemetry: ${fresh}` : 'Collecting data...';
+        statActiveNote.textContent = data.total_active_minutes > 0 ? `Last: ${fresh}` : 'Collecting...';
     }
     if (statProductiveNote) {
-        statProductiveNote.textContent = data.total_active_minutes > 0 ? `${Math.round(data.productive_minutes)} productive mins` : 'Waiting for data...';
+        statProductiveNote.textContent = data.total_active_minutes > 0 ? `${Math.round(data.productive_minutes)}m productive` : 'Waiting...';
     }
 }
 

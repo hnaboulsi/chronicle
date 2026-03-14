@@ -579,10 +579,10 @@ def _guess_activity(location: str, prev_location: str, now: datetime, db: Sessio
         tz = ZoneInfo(DEFAULTS["user_timezone"])
     local_hour = now.replace(tzinfo=ZoneInfo("UTC")).astimezone(tz).hour
 
-    study_places = {"library", "vlsb", "evans", "moffitt", "doe", "soda", "cory", "class", "lecture", "campus"}
-    food_places = {"student union", "crossroads", "cafe", "restaurant", "dining", "golden bear", "grab"}
-    gym_places = {"gym", "rsf", "rec center", "fitness"}
-    home_words = {"home", "apartment", "dorm", "residence", "anchor"}
+    study_places = {"library", "class", "lecture", "campus", "school", "university", "college"}
+    food_places = {"student union", "cafe", "restaurant", "dining", "cafeteria", "canteen", "grab"}
+    gym_places = {"gym", "rec center", "fitness", "pool", "sports"}
+    home_words = {"home", "apartment", "dorm", "residence"}
 
     if any(p in loc for p in study_places):
         return "I think you're about to study"
@@ -608,7 +608,7 @@ def _guess_activity(location: str, prev_location: str, now: datetime, db: Sessio
 def _update_study_mode(db: Session, location_label: str, zone_type: str = ""):
     label = (location_label or "").lower()
     zone_type = (zone_type or "").lower()
-    if zone_type in {"study", "lecture"} or any(word in label for word in ["library", "class", "school", "campus", "vlsb", "dwinelle", "wheeler", "doe", "moffitt"]):
+    if zone_type in {"study", "lecture"} or any(word in label for word in ["library", "class", "school", "campus", "university", "college"]):
         set_state(db, "study_mode", "active")
     elif location_label:
         set_state(db, "study_mode", "inactive")

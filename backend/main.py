@@ -1156,7 +1156,10 @@ async def recap_feedback(payload: Dict[str, Any], db: Session = Depends(get_db))
         return {"status": "error", "message": "Summary not found"}
 
     # Get activity logs for context
-    hour_end = datetime.fromisoformat(hour_start) + timedelta(hours=1)
+    try:
+        hour_end = datetime.fromisoformat(hour_start) + timedelta(hours=1)
+    except ValueError:
+        return {"status": "error", "message": "Invalid hour_start format"}
     logs = agent_logic.get_mac_logs_for_hour(db, since=hour_start, until=hour_end.isoformat())
 
     # Ask LLM to verify feedback

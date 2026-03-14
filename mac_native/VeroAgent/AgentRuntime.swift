@@ -38,7 +38,18 @@ final class AgentRuntime {
     private func runHeartbeatLoop() async {
         while !Task.isCancelled {
             await sendHeartbeat()
-            try? await Task.sleep(for: .seconds(60))
+            let delay = heartbeatDelay()
+            try? await Task.sleep(for: .seconds(delay))
+        }
+    }
+
+    /// Returns the next heartbeat interval with exponential backoff on failures.
+    /// 0 failures → 60s, 1 failure → 120s, 2+ failures → 300s.
+    private func heartbeatDelay() -> Double {
+        switch consecutiveHeartbeatFailures {
+        case 0: return 60
+        case 1: return 120
+        default: return 300
         }
     }
 
@@ -90,6 +101,8 @@ final class AgentRuntime {
             return
         }
 
+        let wasFailingBefore = consecutiveHeartbeatFailures >= 3
+
         do {
             let response = try await backend.sendHeartbeat(
                 clientID: store.clientID,
@@ -100,7 +113,16 @@ final class AgentRuntime {
                 lastError: store.helperLastError
             )
             store.helperLastSeenAt = Date()
+            // Notify once when backend connection is restored after a failure streak.
+            if wasFailingBefore {
+                notifier.deliver(
+                    kind: .callout,
+                    title: "Vero",
+                    body: "Connection to backend restored."
+                )
+            }
             consecutiveHeartbeatFailures = 0
+            store.helperLastError = ""
             // Sync tracking state from backend (e.g. user toggled via web dashboard)
             if let serverTracking = response.tracking_enabled {
                 store.trackingEnabled = serverTracking
@@ -109,7 +131,7 @@ final class AgentRuntime {
             consecutiveHeartbeatFailures += 1
             store.helperLastError = error.localizedDescription
             // Only notify after 3+ consecutive failures to avoid spam during brief outages
-            if consecutiveHeartbeatFailures >= 3 {
+            if consecutiveHeartbeatFailures == 3 {
                 notifier.deliver(
                     kind: .callout,
                     title: "Vero",
@@ -175,19 +197,27 @@ final class AgentRuntime {
         return TelemetrySnapshot(appName: appName, windowTitle: title, idleTimeSeconds: idleTime)
     }
 
+    /// Safely cast a CFTypeRef to AXUIElement after validating its type ID.
+    private func asAXUIElement(_ ref: CFTypeRef) -> AXUIElement? {
+        guard CFGetTypeID(ref) == AXUIElementGetTypeID() else { return nil }
+        return unsafeBitCast(ref, to: AXUIElement.self)
+    }
+
     private func focusedWindowTitle() -> String? {
         let systemWide = AXUIElementCreateSystemWide()
         var focusedApp: CFTypeRef?
         let appResult = AXUIElementCopyAttributeValue(systemWide, kAXFocusedApplicationAttribute as CFString, &focusedApp)
         guard appResult == .success,
-              let appElement = focusedApp.map({ unsafeBitCast($0, to: AXUIElement.self) }) else {
+              let raw = focusedApp,
+              let appElement = asAXUIElement(raw) else {
             return nil
         }
 
         var focusedWindow: CFTypeRef?
         let windowResult = AXUIElementCopyAttributeValue(appElement, kAXFocusedWindowAttribute as CFString, &focusedWindow)
         guard windowResult == .success,
-              let windowElement = focusedWindow.map({ unsafeBitCast($0, to: AXUIElement.self) }) else {
+              let rawWindow = focusedWindow,
+              let windowElement = asAXUIElement(rawWindow) else {
             return nil
         }
 

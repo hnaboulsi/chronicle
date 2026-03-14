@@ -17,6 +17,29 @@ CALENDAR_NAME = "Vero"
 
 _IS_MACOS = sys.platform == "darwin"
 
+# Hardcoded English names to avoid locale-dependent strftime output (broken on
+# non-English macOS systems where %A/%B return translated weekday/month names).
+_DAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+_MONTHS = (
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+)
+
+
+def _format_applescript_date(dt: datetime.datetime) -> str:
+    """Format datetime for AppleScript using hardcoded English day/month names."""
+    hour = dt.hour % 12 or 12
+    am_pm = "AM" if dt.hour < 12 else "PM"
+    return (
+        f"{_DAYS[dt.weekday()]}, {_MONTHS[dt.month - 1]} {dt.day:02d}, {dt.year}"
+        f" at {hour:02d}:{dt.minute:02d}:{dt.second:02d} {am_pm}"
+    )
+
+
+def _escape_applescript_string(s: str) -> str:
+    """Escape a string for safe embedding inside an AppleScript double-quoted string."""
+    return s.replace("\\", "\\\\").replace('"', '\\"')
+
 
 def _run_applescript(script: str) -> str:
     if not _IS_MACOS:
@@ -25,6 +48,13 @@ def _run_applescript(script: str) -> str:
         ["osascript", "-e", script],
         capture_output=True, text=True
     )
+    if result.returncode != 0:
+        log.error(
+            "AppleScript error (rc=%d): %s",
+            result.returncode,
+            (result.stderr or result.stdout).strip(),
+        )
+        return ""
     return result.stdout.strip()
 
 
@@ -42,12 +72,11 @@ def ensure_vero_calendar():
 
 def create_event(title: str, start_dt: datetime.datetime, end_dt: datetime.datetime, notes: str = ""):
     """Add an event to the Vero calendar via AppleScript."""
-    fmt = "%A, %B %d, %Y at %I:%M:%S %p"
-    start_str = start_dt.strftime(fmt)
-    end_str = end_dt.strftime(fmt)
+    start_str = _format_applescript_date(start_dt)
+    end_str = _format_applescript_date(end_dt)
 
-    title_safe = title.replace('"', "'")
-    notes_safe = notes.replace('"', "'")
+    title_safe = _escape_applescript_string(title)
+    notes_safe = _escape_applescript_string(notes)
 
     script = f'''
     tell application "Calendar"
@@ -104,8 +133,8 @@ def get_first_event_tomorrow() -> str:
     """Query Apple Calendar for the first event tomorrow (used by alarm logic)."""
     now = datetime.datetime.now()
     tomorrow = now + datetime.timedelta(days=1)
-    start_str = tomorrow.strftime("%A, %B %d, %Y at 12:00:00 AM")
-    end_str = tomorrow.strftime("%A, %B %d, %Y at 11:59:59 PM")
+    start_str = _format_applescript_date(tomorrow.replace(hour=0, minute=0, second=0))
+    end_str = _format_applescript_date(tomorrow.replace(hour=23, minute=59, second=59))
 
     applescript = f'''
     set startDate to date "{start_str}"

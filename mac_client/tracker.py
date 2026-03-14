@@ -169,18 +169,25 @@ def send_telemetry(app_name: str, window_title: str, idle_time: int):
             resp = requests.post(f"{BACKEND_URL}/api/mac-telemetry", json=payload, timeout=5.0)
 
             if resp.status_code == 200:
-                data = resp.json()
+                try:
+                    data = resp.json()
+                except ValueError as json_err:
+                    print(f"Warning: backend returned non-JSON response: {json_err}")
+                    break
                 prompt = data.get("prompt")
                 if prompt:
                     print(f"Backend triggered prompt: {prompt}")
                     user_reply = notifier.prompt_user(prompt)
 
-                    if user_reply and user_reply != "Canceled" and user_reply != "Error":
+                    if user_reply and user_reply not in ("Canceled", "Error"):
                         requests.post(f"{BACKEND_URL}/api/prompt-reply", json={"reply": user_reply}, timeout=5.0)
 
                     state_resp = requests.get(f"{BACKEND_URL}/api/state", timeout=5.0)
                     if state_resp.status_code == 200:
-                        states = state_resp.json()
+                        try:
+                            states = state_resp.json()
+                        except ValueError:
+                            states = {}
                         if states.get("study_mode") == "active":
                             notifier.notify("Study mode is active. Silencing notifications...", "Life Manager")
             break  # success — exit retry loop

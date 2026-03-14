@@ -66,12 +66,18 @@ async def _ask_gemini(prompt: str, model_kind: str = "default") -> str:
         return ""
     try:
         model = _gemini_model(model_kind)
-        response = await asyncio.to_thread(
-            _gemini_client.models.generate_content,
-            model=model,
-            contents=prompt,
+        response = await asyncio.wait_for(
+            asyncio.to_thread(
+                _gemini_client.models.generate_content,
+                model=model,
+                contents=prompt,
+            ),
+            timeout=60.0,
         )
         return (response.text or "").strip()
+    except asyncio.TimeoutError:
+        log.error("Gemini request timed out after 60s")
+        return ""
     except Exception as exc:
         log.error("Error calling Gemini: %s", exc)
         return ""
@@ -83,7 +89,7 @@ async def _ask_openai(prompt: str, model_kind: str = "default") -> str:
         return ""
     model = _openai_model(model_kind)
     try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
+        async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
                 "https://api.openai.com/v1/chat/completions",
                 headers={
@@ -99,7 +105,7 @@ async def _ask_openai(prompt: str, model_kind: str = "default") -> str:
                     "temperature": 0.3,
                 },
             )
-        response.raise_for_status()
+            response.raise_for_status()
         data = response.json()
         return (
             data.get("choices", [{}])[0]

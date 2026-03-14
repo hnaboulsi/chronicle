@@ -27,9 +27,7 @@
     <div id="onboarding-overlay" class="onboarding-overlay hidden">
         <div class="onboarding-card">
             <div class="onboarding-step" id="onboard-step-1">
-                <div class="onboard-icon">
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-                </div>
+                <div style="font-size: 32px; margin-bottom: 16px;">🧠</div>
                 <h2>Welcome to Vero</h2>
                 <p>Personal productivity agent for Mac telemetry, iPhone automations, and calendar sync.</p>
                 <button class="btn-primary" style="width: 100%" onclick="nextOnboardStep(2)">Get Started</button>
@@ -56,34 +54,28 @@
     </div>
 
     <div class="dashboard-container" id="main-dashboard">
-
-        <!-- Header with inline stats -->
-        <header class="app-header glass-panel">
+        <!-- Sticky Header -->
+        <header class="glass-header glass-panel">
             <div class="header-left">
                 <div class="pulse-ring" id="tracking-pulse"></div>
-                <span class="app-name">Vero</span>
-                <span class="badge" id="tracking-badge">Live</span>
+                <h1>Vero <span class="badge" id="tracking-badge">Live</span></h1>
             </div>
-            <div class="stats-strip">
-                <span class="stat-val" id="stat-active">0h 0m</span>
-                <span class="stat-lbl">Active today <span class="kpi-help" data-tip="Active time = non-idle telemetry points.">?</span></span>
-                <span class="stat-sep">·</span>
-                <span class="stat-val" id="stat-productive">0%</span>
-                <span class="stat-lbl">Productive <span class="kpi-help" data-tip="Productive % = work/study minutes / active minutes.">?</span></span>
-                <span class="stat-sep">·</span>
-                <span class="stat-val" id="stat-llm">0/200</span>
-                <span class="stat-lbl">AI budget</span>
+            <div class="header-stats" id="header-stats">
+                <span class="header-stat"><span id="stat-active" class="header-stat-value">0h 0m</span> Active</span>
+                <span class="header-divider">·</span>
+                <span class="header-stat"><span id="stat-productive" class="header-stat-value">0%</span> Productive</span>
+                <span class="header-divider">·</span>
+                <span class="header-stat"><span id="stat-llm" class="header-stat-value">0/30</span> AI</span>
             </div>
             <div class="header-right">
                 <button id="toggle-tracking-btn" class="toggle-btn active" title="Toggle tracking">Tracking: ON</button>
-                <button id="theme-toggle-btn" class="icon-btn" title="Toggle theme" onclick="toggleTheme()">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-                </button>
+                <button id="theme-toggle-btn" class="icon-btn" title="Toggle theme" onclick="toggleTheme()">☀️</button>
                 <button id="settings-btn" class="icon-btn" title="Settings" onclick="openSettings()">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                         stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="12" cy="12" r="3"></circle>
-                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z">
+                        <path
+                            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z">
                         </path>
                     </svg>
                 </button>
@@ -91,22 +83,23 @@
             </div>
         </header>
 
-        <!-- Hidden stat notes (JS compatibility) -->
-        <div id="stat-active-note" class="hidden"></div>
-        <div id="stat-productive-note" class="hidden"></div>
-
         <!-- Check-In Banner -->
         <div id="checkin-banner" class="checkin-banner hidden">
-            <div class="checkin-content">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent-blue);flex-shrink:0"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+            <div class="checkin-content" style="display: flex; align-items: center; gap: 8px; flex: 1;">
+                <span class="checkin-icon">💬</span>
                 <span id="checkin-message">What are you up to?</span>
             </div>
-            <div class="banner-actions">
-                <button id="checkin-confirm" class="btn-primary" style="padding: 4px 10px; font-size: 11px;">Confirm</button>
-                <input type="text" id="checkin-correction" placeholder="Actually..." class="recap-feedback-input banner-input">
-                <button id="checkin-send" class="btn-secondary" style="padding: 4px 10px; font-size: 11px;">Send</button>
-                <button id="checkin-snooze" class="btn-secondary" style="padding: 4px 10px; font-size: 11px;">Snooze</button>
-                <button id="checkin-dismiss" class="icon-btn" style="font-size: 16px; line-height:1;">×</button>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <button id="checkin-confirm" class="btn-primary"
+                    style="padding: 4px 10px; font-size: 11px;">Confirm</button>
+                <input type="text" id="checkin-correction" placeholder="Actually..." class="recap-feedback-input"
+                    style="margin-top: 0; width: 120px; padding: 4px 8px;">
+                <button id="checkin-send" class="btn-secondary"
+                    style="padding: 4px 10px; font-size: 11px;">Send</button>
+                <button id="checkin-snooze" class="btn-secondary"
+                    style="padding: 4px 10px; font-size: 11px;">Snooze</button>
+                <button id="checkin-dismiss" class="btn-secondary"
+                    style="padding: 4px 10px; font-size: 11px;">×</button>
             </div>
         </div>
 
@@ -115,95 +108,146 @@
             <div style="flex: 1;">
                 <span id="callout-message"></span>
             </div>
-            <div class="banner-actions">
-                <input type="text" id="callout-reply" placeholder="Reply..." class="recap-feedback-input banner-input">
-                <button id="callout-submit" class="btn-primary" style="padding: 4px 10px; font-size: 11px;">Tell it</button>
-                <button id="callout-dismiss" class="icon-btn" style="font-size: 16px; line-height:1;">×</button>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <input type="text" id="callout-reply" placeholder="Reply..." class="recap-feedback-input"
+                    style="margin-top: 0; width: 150px; padding: 4px 8px;">
+                <button id="callout-submit" class="btn-primary" style="padding: 4px 10px; font-size: 11px;">Tell
+                    it</button>
+                <button id="callout-dismiss" class="btn-secondary"
+                    style="padding: 4px 10px; font-size: 11px;">×</button>
             </div>
         </div>
 
-        <!-- Recent Chat -->
-        <section class="glass-panel chat-panel">
-            <div class="feed-header">
-                <h2>Recent Chat</h2>
-            </div>
-            <div id="chat-history-list" class="chat-history-list">
-                <p class="text-muted">No chat yet.</p>
-            </div>
-            <div id="chat-reply" class="hidden chat-inline-reply">
-                <span id="chat-reply-text"></span>
-            </div>
-            <div class="chat-composer">
-                <div class="chat-pills">
-                    <button class="pill-action" onclick="setChatContext('Eating')">Eating</button>
-                    <button class="pill-action" onclick="setChatContext('Studying')">Studying</button>
-                    <button class="pill-action" onclick="setChatContext('Working')">Working</button>
-                    <button class="pill-action" onclick="setChatContext('In a break')">Taking a break</button>
-                    <button class="pill-action" onclick="setChatContext('Going to sleep')">Going to sleep</button>
-                    <button class="pill-action" onclick="setChatContext('Working out')">Working out</button>
-                </div>
-                <div class="chat-input-row">
-                    <input type="text" id="chat-input" class="chat-text-input"
-                        placeholder="Tell me what you're doing...">
-                    <button id="chat-send" class="chat-send-btn">Send</button>
-                </div>
-            </div>
-        </section>
+        <!-- 2-Column Dashboard Grid -->
+        <div class="dashboard-grid">
 
-        <!-- Device Status (flat rows, no cards) -->
-        <section class="device-section glass-panel">
-            <div class="section-label">Device Status</div>
-            <div class="device-row" id="card-mac">
-                <span class="device-name">MacBook</span>
-                <span class="status-value color-muted" id="mac-status">Waiting...</span>
-                <span class="device-detail" id="mac-detail">Checking agent</span>
-                <div class="device-row-actions">
-                    <a id="mac-open-app" class="btn-link hidden" href="vero://open">Open Vero</a>
-                    <a id="mac-setup-link" class="btn-link" href="/setup/mac" target="_blank">Setup</a>
-                </div>
-            </div>
-            <div class="device-row" id="card-ios">
-                <span class="device-name">iPhone</span>
-                <span class="status-value color-muted" id="ios-status">Waiting...</span>
-                <span class="device-detail" id="ios-detail">No location data</span>
-            </div>
-            <div class="device-row" id="card-mode">
-                <span class="device-name">Sleep Context</span>
-                <span class="status-value color-primary" id="focus-status">—</span>
-                <span class="device-detail" id="focus-detail">Waiting for events</span>
-            </div>
-            <div class="device-row" id="card-activity">
-                <span class="device-name">Current Activity</span>
-                <span class="status-value color-green" id="activity-category">Analyzing...</span>
-                <span class="device-detail" id="activity-summary">&mdash;</span>
-            </div>
-        </section>
+            <!-- LEFT COLUMN: Chat + Live Activity -->
+            <div class="dashboard-left">
 
-        <!-- Live Activity (Timeline) -->
-        <section class="activity-feed glass-panel">
-            <div class="feed-header">
-                <h2>Live Activity</h2>
-                <div class="feed-controls">
-                    <div id="interval-pills" class="interval-group">
-                        <button class="toggle-btn active" data-val="1">1m</button>
-                        <button class="toggle-btn" data-val="5">5m</button>
-                        <button class="toggle-btn" data-val="15">15m</button>
-                        <button class="toggle-btn" data-val="30">30m</button>
+                <!-- Recent Chat -->
+                <section class="glass-panel chat-panel">
+                    <div class="feed-header">
+                        <h2>Recent Chat</h2>
                     </div>
-                    <button id="refresh-btn" class="icon-btn" title="Refresh">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-                    </button>
-                    <button id="clear-logs-btn" class="icon-btn" style="color: var(--accent-red)" title="Clear Logs">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-                    </button>
-                </div>
-            </div>
-            <div class="timeline" id="logs-body">
-                <p class="text-muted" style="padding: 8px 0;">No activity yet.</p>
-            </div>
-        </section>
+                    <div id="chat-history-list" class="chat-history-list">
+                        <p class="text-muted">No chat yet.</p>
+                    </div>
+                    <div id="chat-reply" class="hidden chat-inline-reply">
+                        <span id="chat-reply-text"></span>
+                    </div>
+                    <div class="chat-composer">
+                        <div class="chat-pills">
+                            <button class="pill-action" onclick="setChatContext('Eating')">Eating</button>
+                            <button class="pill-action" onclick="setChatContext('Studying')">Studying</button>
+                            <button class="pill-action" onclick="setChatContext('Working')">Working</button>
+                            <button class="pill-action" onclick="setChatContext('In a break')">Taking a break</button>
+                            <button class="pill-action" onclick="setChatContext('Going to sleep')">Going to sleep</button>
+                            <button class="pill-action" onclick="setChatContext('Working out')">Working out</button>
+                        </div>
+                        <div class="chat-input-row">
+                            <input type="text" id="chat-input" class="chat-text-input"
+                                placeholder="Tell me what you're doing...">
+                            <button id="chat-send" class="chat-send-btn">Send</button>
+                        </div>
+                    </div>
+                </section>
 
-        <!-- Hourly Recaps -->
+                <!-- Live Activity — Timeline -->
+                <section class="activity-feed glass-panel">
+                    <div class="feed-header">
+                        <h2>Live Activity</h2>
+                        <div style="display: flex; gap: 12px; align-items: center;">
+                            <div id="interval-pills"
+                                style="display: flex; gap: 4px; background: var(--bg-elevated); padding: 2px; border-radius: 6px;">
+                                <button class="toggle-btn active" style="border:none" data-val="1">1m</button>
+                                <button class="toggle-btn" style="border:none" data-val="5">5m</button>
+                                <button class="toggle-btn" style="border:none" data-val="15">15m</button>
+                                <button class="toggle-btn" style="border:none" data-val="30">30m</button>
+                            </div>
+                            <button id="refresh-btn" class="icon-btn" title="Refresh">↻</button>
+                            <button id="clear-logs-btn" class="icon-btn" style="color: var(--accent-red)"
+                                title="Clear Logs">×</button>
+                        </div>
+                    </div>
+                    <div id="timeline-feed" class="timeline-feed">
+                        <p class="text-muted" style="padding: 16px 0;">Waiting for activity...</p>
+                    </div>
+                </section>
+
+            </div><!-- /dashboard-left -->
+
+            <!-- RIGHT COLUMN: Stats + Device / Context -->
+            <div class="dashboard-right">
+
+                <!-- KPI Stats -->
+                <div class="stats-col">
+                    <div class="stat-row glass-panel">
+                        <div class="stat-row-item">
+                            <div class="stat-number" id="stat-active-detail">0h 0m</div>
+                            <div class="stat-label">Active <span class="kpi-help"
+                                    data-tip="Active time = non-idle telemetry points.">?</span></div>
+                            <div id="stat-active-note" class="stat-note">Collecting...</div>
+                        </div>
+                        <div class="stat-divider"></div>
+                        <div class="stat-row-item">
+                            <div class="stat-number" id="stat-productive-detail">0%</div>
+                            <div class="stat-label">Productive <span class="kpi-help"
+                                    data-tip="Productive % = work/study minutes / active minutes.">?</span></div>
+                            <div id="stat-productive-note" class="stat-note">Waiting...</div>
+                        </div>
+                        <div class="stat-divider"></div>
+                        <div class="stat-row-item">
+                            <div class="stat-number" id="stat-llm-detail">0/30</div>
+                            <div class="stat-label">AI Budget</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Device & Context Status -->
+                <div class="glass-panel device-status-panel">
+                    <div class="device-section-label">DEVICE STATUS</div>
+                    <div class="device-row" id="row-mac">
+                        <span class="device-row-label">MacBook</span>
+                        <div class="device-row-right">
+                            <p class="device-row-value status-value color-muted" id="mac-status">Waiting...</p>
+                            <p class="device-row-detail" id="mac-detail">Checking agent</p>
+                            <div class="device-row-actions hidden" id="mac-actions">
+                                <a id="mac-open-app" class="btn-secondary" style="padding: 2px 8px; font-size: 10px;"
+                                    href="vero://open">Open Vero</a>
+                                <a id="mac-setup-link" class="btn-secondary" style="padding: 2px 8px; font-size: 10px;"
+                                    href="/setup/mac" target="_blank">Setup</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="device-row" id="row-ios">
+                        <span class="device-row-label">iPhone</span>
+                        <div class="device-row-right">
+                            <p class="device-row-value status-value color-muted" id="ios-status">Waiting...</p>
+                            <p class="device-row-detail" id="ios-detail">No location data</p>
+                        </div>
+                    </div>
+
+                    <div class="device-section-label" style="margin-top: 20px;">CONTEXT</div>
+                    <div class="device-row">
+                        <span class="device-row-label">Sleep</span>
+                        <div class="device-row-right">
+                            <p class="device-row-value status-value color-primary" id="focus-status">—</p>
+                            <p class="device-row-detail" id="focus-detail">Waiting for events</p>
+                        </div>
+                    </div>
+                    <div class="device-row">
+                        <span class="device-row-label">Activity</span>
+                        <div class="device-row-right">
+                            <p class="device-row-value status-value color-green" id="activity-category">Analyzing...</p>
+                            <p class="device-row-detail" id="activity-summary">&mdash;</p>
+                        </div>
+                    </div>
+                </div>
+
+            </div><!-- /dashboard-right -->
+        </div><!-- /dashboard-grid -->
+
+        <!-- Hourly Recaps — full width -->
         <section class="hourly-summaries glass-panel">
             <div class="feed-header">
                 <h2>Hourly Recaps</h2>
@@ -214,7 +258,7 @@
             </div>
         </section>
 
-        <!-- Setup & Health -->
+        <!-- Setup & Health — full width -->
         <section class="glass-panel" id="control-center-repair">
             <div class="status-panel-header">
                 <span class="status-panel-label">SETUP &amp; REPAIR</span>
@@ -248,7 +292,7 @@
         </section>
 
         <!-- Footer -->
-        <footer class="app-footer">
+        <footer class="dashboard-footer">
             <span>Vero</span>
             <a href="/api/export?days=30">Export CSV</a>
             <a href="/setup/ios">iPhone Setup</a>
@@ -257,7 +301,8 @@
                 <summary>How it works</summary>
                 <div class="footer-popover">
                     <h4>The Vero Agent</h4>
-                    <p>Minimal battery impact. Silently monitors active windows and syncs calendar jobs every 60s. Uses Apple Accessibility permissions.</p>
+                    <p>Minimal battery impact. Silently monitors active windows and syncs calendar jobs every 60s.
+                        Uses Apple Accessibility permissions.</p>
                 </div>
             </details>
         </footer>
@@ -268,9 +313,7 @@
     <aside id="settings-drawer" class="settings-drawer hidden">
         <div class="settings-header">
             <h2>Settings</h2>
-            <button class="icon-btn" onclick="closeSettings()">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
+            <button class="icon-btn" onclick="closeSettings()">×</button>
         </div>
         <div class="settings-content">
             <div class="settings-section">
@@ -316,29 +359,37 @@
 
             <div class="settings-section">
                 <h3>Geofence Zones</h3>
-                <p class="sub-text" style="margin-bottom:12px;">Zones let your iPhone trigger location events automatically.</p>
+                <p class="sub-text" style="margin-bottom:12px;">Zones let your iPhone trigger location events
+                    automatically.</p>
                 <div id="zones-list"></div>
-
-                <div id="add-zone-form" style="display:none; margin-top:12px; padding:12px; background:var(--bg-elevated); border:1px solid var(--border); border-radius:var(--radius-input);">
+                <div id="add-zone-form"
+                    style="display:none; margin-top:12px; padding:12px; background:var(--bg-elevated); border:1px solid var(--border); border-radius:var(--radius-input);">
                     <div style="margin-bottom:8px;">
                         <label class="setting-label">Zone Name</label>
-                        <input type="text" id="new-zone-name" class="recap-feedback-input" placeholder="e.g. Home, Work, Campus" style="margin-top:4px; width:100%; box-sizing:border-box;">
+                        <input type="text" id="new-zone-name" class="recap-feedback-input"
+                            placeholder="e.g. Home, Work, Campus"
+                            style="margin-top:4px; width:100%; box-sizing:border-box;">
                     </div>
                     <div style="margin-bottom:12px;">
                         <label class="setting-label">Radius (meters)</label>
-                        <input type="number" id="new-zone-radius" class="recap-feedback-input" value="75" min="25" max="5000" style="margin-top:4px; width:100%; box-sizing:border-box;">
+                        <input type="number" id="new-zone-radius" class="recap-feedback-input" value="75" min="25"
+                            max="5000" style="margin-top:4px; width:100%; box-sizing:border-box;">
                     </div>
                     <div style="display:flex; gap:8px;">
                         <button class="btn-primary" style="flex:1;" onclick="submitAddZone()">Add Zone</button>
                         <button class="btn-secondary" onclick="cancelAddZone()">Cancel</button>
                     </div>
                 </div>
-
-                <button id="show-add-zone-btn" class="btn-secondary" style="width:100%; margin-top:12px;" onclick="showAddZoneForm()">+ Add Zone</button>
-
-                <div id="zone-shortcuts-panel" style="display:none; margin-top:16px; padding:12px; background:var(--bg-elevated); border:1px solid var(--border); border-radius:var(--radius-input);">
-                    <p style="font-size:12px; font-weight:600; color:var(--text-primary); margin-bottom:8px;">Set up iPhone Shortcuts</p>
-                    <p style="font-size:11px; color:var(--text-muted); margin-bottom:10px;">Download and add these two Shortcuts to your iPhone, then create Automations in the Shortcuts app triggered by <strong>Arrive</strong> and <strong>Leave</strong> at this location.</p>
+                <button id="show-add-zone-btn" class="btn-secondary" style="width:100%; margin-top:12px;"
+                    onclick="showAddZoneForm()">+ Add Zone</button>
+                <div id="zone-shortcuts-panel"
+                    style="display:none; margin-top:16px; padding:12px; background:var(--bg-elevated); border:1px solid var(--border); border-radius:var(--radius-input);">
+                    <p style="font-size:12px; font-weight:600; color:var(--text-primary); margin-bottom:8px;">📱 Set up
+                        iPhone Shortcuts</p>
+                    <p style="font-size:11px; color:var(--text-muted); margin-bottom:10px;">Download and add these two
+                        Shortcuts to your iPhone, then create Automations in the Shortcuts app triggered by
+                        <strong>Arrive</strong> and <strong>Leave</strong> at this location.
+                    </p>
                     <div id="zone-shortcut-links"></div>
                 </div>
             </div>
@@ -355,9 +406,7 @@
         <div class="onboarding-card" style="text-align: left; width: 500px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
                 <h2 style="margin-bottom: 0;">AI Activity Insight</h2>
-                <button class="icon-btn" onclick="closeSummaryModal()">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                </button>
+                <button class="icon-btn" onclick="closeSummaryModal()">×</button>
             </div>
             <div id="summary-text" style="font-size: 14px; line-height: 1.6; color: var(--text-secondary);">
                 Analyzing your activity...
