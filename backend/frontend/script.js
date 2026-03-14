@@ -160,13 +160,16 @@ function initTheme() {
     applyTheme(savedTheme);
 }
 
+const SVG_SUN = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>`;
+const SVG_MOON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>`;
+
 function applyTheme(theme) {
     if (theme === 'light') {
         document.documentElement.setAttribute('data-theme', 'light');
-        if (themeToggleBtn) themeToggleBtn.textContent = '🌙';
+        if (themeToggleBtn) themeToggleBtn.innerHTML = SVG_MOON;
     } else {
         document.documentElement.removeAttribute('data-theme');
-        if (themeToggleBtn) themeToggleBtn.textContent = '☀️';
+        if (themeToggleBtn) themeToggleBtn.innerHTML = SVG_SUN;
     }
     localStorage.setItem(THEME_KEY, theme);
 }
@@ -325,36 +328,53 @@ function updateUI(logs, states) {
         activityCategory.className = PRODUCTIVE.has(cat) ? 'status-value color-green' : DISTRACTED.has(cat) ? 'status-value color-red' : 'status-value color-primary';
     }
 
-    // Logs Table
+    // Timeline
     if (logsBody) {
-        logsBody.innerHTML = '';
-        logs.forEach((entry, i) => {
-            const tr = document.createElement('tr');
-            // Disabled: activity insight modal on row click
-            // tr.onclick = () => openSummaryModal(entry.id);
+        if (!logs.length) {
+            logsBody.innerHTML = '<p class="text-muted" style="padding:12px 16px;">No activity yet.</p>';
+        } else {
+            logsBody.innerHTML = '';
+            logs.forEach((entry) => {
+                const item = document.createElement('div');
+                item.className = 'timeline-item';
 
-            const tdTime = document.createElement('td');
-            tdTime.textContent = formatTime(entry.timestamp);
+                const time = formatTime(entry.timestamp);
+                const device = entry.device === 'mac' ? 'Mac' : 'iPhone';
+                const activity = entry.device === 'mac'
+                    ? (entry.app_name || '—')
+                    : (entry.activity_type || 'Ping');
+                const rawCtx = entry.device === 'mac'
+                    ? (entry.window_title || '')
+                    : (entry.location_label || '');
+                const context = rawCtx.length > 60 ? rawCtx.substring(0, 60) + '\u2026' : rawCtx;
 
-            const tdDevice = document.createElement('td');
-            tdDevice.textContent = entry.device === 'mac' ? 'Mac' : 'iPhone';
+                const dot = document.createElement('span');
+                dot.className = 'tl-dot';
 
-            const tdActivity = document.createElement('td');
-            tdActivity.textContent = entry.device === 'mac' ? (entry.app_name || '') : (entry.activity_type || 'Ping');
+                const tTime = document.createElement('span');
+                tTime.className = 'tl-time';
+                tTime.textContent = time;
 
-            const tdContext = document.createElement('td');
-            if (entry.device === 'mac' && entry.window_title) {
-                const pill = document.createElement('span');
-                pill.className = 'tab-pill';
-                pill.textContent = entry.window_title.substring(0, 50) + (entry.window_title.length > 50 ? '...' : '');
-                tdContext.appendChild(pill);
-            } else if (entry.device !== 'mac') {
-                tdContext.textContent = entry.location_label || '\u2014';
-            }
+                const tDevice = document.createElement('span');
+                tDevice.className = 'tl-device';
+                tDevice.textContent = device;
 
-            tr.append(tdTime, tdDevice, tdActivity, tdContext);
-            logsBody.appendChild(tr);
-        });
+                const tActivity = document.createElement('span');
+                tActivity.className = 'tl-activity';
+                tActivity.textContent = activity;
+
+                item.append(dot, tTime, tDevice, tActivity);
+
+                if (context) {
+                    const tCtx = document.createElement('span');
+                    tCtx.className = 'tl-context';
+                    tCtx.textContent = context;
+                    item.appendChild(tCtx);
+                }
+
+                logsBody.appendChild(item);
+            });
+        }
     }
 
     // Interval pill: only set from backend on very first load (no localStorage value yet)
