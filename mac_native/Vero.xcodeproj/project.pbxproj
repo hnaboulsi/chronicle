@@ -9,13 +9,10 @@
 /* Begin PBXBuildFile section */
 		145DC6088185B0D24A83342D /* AppConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49FEE2107DD410AE4FE58CC8 /* AppConstants.swift */; };
 		24C551211A68A9D0AF57D580 /* SharedModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 106725C7812C7997C9FE1666 /* SharedModels.swift */; };
-		29F5E9CCAC1BBB978E3CA684 /* NativeAppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DC5EF4B510BE2A9DA5101F1 /* NativeAppModel.swift */; };
 		3FAB630C7F2872F458C666E5 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 79FEDD7620B479066227DF0C /* Assets.xcassets */; };
 		4CACBD509578C4B19974BB20 /* CalendarSyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AAB8FFF28650AB078AF7C1E /* CalendarSyncEngine.swift */; };
 		734445FF17373AE20C12AF3B /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65F3BBA4EAA066DE39DEE7B7 /* AppDelegate.swift */; };
 		A8F4AE127AECF534CCD425F5 /* AppGroupStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CFC64694C9AFDAD8634FA2B /* AppGroupStore.swift */; };
-		AB2DA577B59A36E7635248DA /* AgentPopoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 553E1A55B3C39F3D3ABEA714 /* AgentPopoverView.swift */; };
-		B3195F2CA1CE76CF6AC962A5 /* PermissionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B70C05CBE90413EBD5BAE0BE /* PermissionsView.swift */; };
 		B680497FF3018C0561577D02 /* LegacyConfigImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA456C6FC9102045E2D34AD8 /* LegacyConfigImporter.swift */; };
 		B8917D36178EC5A07A641463 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51C029D8BD5817ED941F54E9 /* Theme.swift */; };
 		B917F9848143392A07B53CCB /* SetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBDAAF287E2C2431FC5CA435 /* SetupView.swift */; };
@@ -32,18 +29,15 @@
 		14EB4CC9DD658728FB74CD5D /* AgentRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRuntime.swift; sourceTree = "<group>"; };
 		19DDAA4BD557C3625CC79DB9 /* AgentNotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNotificationManager.swift; sourceTree = "<group>"; };
 		3BAD5611AAF80728F3F7C0F8 /* BackendClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendClient.swift; sourceTree = "<group>"; };
-		3DC5EF4B510BE2A9DA5101F1 /* NativeAppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAppModel.swift; sourceTree = "<group>"; };
 		43EBA6A56BEE7CACFBC2D263 /* Vero.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Vero.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		49FEE2107DD410AE4FE58CC8 /* AppConstants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConstants.swift; sourceTree = "<group>"; };
 		4AAB8FFF28650AB078AF7C1E /* CalendarSyncEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarSyncEngine.swift; sourceTree = "<group>"; };
 		4CFC64694C9AFDAD8634FA2B /* AppGroupStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppGroupStore.swift; sourceTree = "<group>"; };
 		51C029D8BD5817ED941F54E9 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
-		553E1A55B3C39F3D3ABEA714 /* AgentPopoverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPopoverView.swift; sourceTree = "<group>"; };
 		65F3BBA4EAA066DE39DEE7B7 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		67D96562E981403F5DC4BB74 /* PermissionSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionSnapshot.swift; sourceTree = "<group>"; };
 		79FEDD7620B479066227DF0C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		9B6759BBABB2722C137DFADD /* StatusItemController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusItemController.swift; sourceTree = "<group>"; };
-		B70C05CBE90413EBD5BAE0BE /* PermissionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsView.swift; sourceTree = "<group>"; };
 		CA456C6FC9102045E2D34AD8 /* LegacyConfigImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyConfigImporter.swift; sourceTree = "<group>"; };
 		D68478A724BE3ACFA255A4A7 /* VeroApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VeroApp.swift; sourceTree = "<group>"; };
 		DBDAAF287E2C2431FC5CA435 /* SetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupView.swift; sourceTree = "<group>"; };
@@ -55,8 +49,6 @@
 			children = (
 				65F3BBA4EAA066DE39DEE7B7 /* AppDelegate.swift */,
 				79FEDD7620B479066227DF0C /* Assets.xcassets */,
-				3DC5EF4B510BE2A9DA5101F1 /* NativeAppModel.swift */,
-				B70C05CBE90413EBD5BAE0BE /* PermissionsView.swift */,
 				DBDAAF287E2C2431FC5CA435 /* SetupView.swift */,
 				D68478A724BE3ACFA255A4A7 /* VeroApp.swift */,
 			);
@@ -92,7 +84,6 @@
 		D7920E5F4CAFDD0E0C09C9B8 /* VeroAgent */ = {
 			isa = PBXGroup;
 			children = (
-				553E1A55B3C39F3D3ABEA714 /* AgentPopoverView.swift */,
 				14EB4CC9DD658728FB74CD5D /* AgentRuntime.swift */,
 				9B6759BBABB2722C137DFADD /* StatusItemController.swift */,
 			);
@@ -178,7 +169,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				C4A85C451B1957A9AAE44811 /* AgentNotificationManager.swift in Sources */,
-				AB2DA577B59A36E7635248DA /* AgentPopoverView.swift in Sources */,
 				D6999182D0BFABCD06335DD5 /* AgentRuntime.swift in Sources */,
 				145DC6088185B0D24A83342D /* AppConstants.swift in Sources */,
 				734445FF17373AE20C12AF3B /* AppDelegate.swift in Sources */,
@@ -186,9 +176,7 @@
 				CE03B79ED02E734022855B67 /* BackendClient.swift in Sources */,
 				4CACBD509578C4B19974BB20 /* CalendarSyncEngine.swift in Sources */,
 				B680497FF3018C0561577D02 /* LegacyConfigImporter.swift in Sources */,
-				29F5E9CCAC1BBB978E3CA684 /* NativeAppModel.swift in Sources */,
 				EE4B7E2D01A0E8251B5CCD58 /* PermissionSnapshot.swift in Sources */,
-				B3195F2CA1CE76CF6AC962A5 /* PermissionsView.swift in Sources */,
 				B917F9848143392A07B53CCB /* SetupView.swift in Sources */,
 				24C551211A68A9D0AF57D580 /* SharedModels.swift in Sources */,
 				E8E00F6C3CF395A3B2ACA5C1 /* StatusItemController.swift in Sources */,
