@@ -357,7 +357,8 @@ function updateUI(logs, states) {
         });
     }
 
-    if (states && states.polling_interval_seconds) {
+    // Interval pill: only set from backend on very first load (no localStorage value yet)
+    if (states && states.polling_interval_seconds && !localStorage.getItem('vero_interval_mins')) {
         const mins = Math.floor(states.polling_interval_seconds / 60);
         document.querySelectorAll('#interval-pills [data-val]').forEach(p => {
             p.classList.toggle('active', parseInt(p.dataset.val) === mins);
@@ -694,33 +695,37 @@ document.getElementById('toggle-tracking-btn').addEventListener('click', async (
 
 // ── Interval Pills ──
 const intervalPillsContainer = document.getElementById('interval-pills');
+
+// Restore saved interval on load
+(function restoreIntervalPill() {
+    const saved = localStorage.getItem('vero_interval_mins');
+    if (saved) {
+        document.querySelectorAll('#interval-pills [data-val]').forEach(p => {
+            p.classList.toggle('active', p.dataset.val === saved);
+        });
+    }
+})();
+
 if (intervalPillsContainer) {
     intervalPillsContainer.addEventListener('click', async (e) => {
         const pill = e.target.closest('[data-val]');
         if (!pill) return;
 
         const mins = parseInt(pill.dataset.val);
-        console.log(`[Interval Pills] Changing polling interval to ${mins} minutes`);
 
-        // Update UI immediately
+        // Update UI immediately and persist preference
         document.querySelectorAll('#interval-pills [data-val]').forEach(p => p.classList.remove('active'));
         pill.classList.add('active');
+        localStorage.setItem('vero_interval_mins', pill.dataset.val);
 
         // Send to backend
         try {
-            const response = await fetch(`${API}/api/settings`, {
+            await fetch(`${API}/api/settings`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ polling_interval_seconds: mins * 60 })
             });
-            if (response.ok) {
-                console.log(`[Interval Pills] Successfully saved: ${mins}m`);
-            } else {
-                console.warn(`[Interval Pills] API returned status ${response.status}`);
-            }
-        } catch (err) {
-            console.error(`[Interval Pills] Error:`, err);
-        }
+        } catch { }
     });
 }
 
