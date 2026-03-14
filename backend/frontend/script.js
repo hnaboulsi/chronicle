@@ -416,10 +416,10 @@ function renderStats(data) {
 
     if (statActiveNote) {
         const fresh = data.data_freshness_seconds != null ? `${Math.floor(data.data_freshness_seconds / 60)}m ago` : 'n/a';
-        statActiveNote.textContent = data.total_active_minutes > 0 ? `Last: ${fresh}` : 'Collecting...';
+        statActiveNote.textContent = data.total_active_minutes > 0 ? `Last: ${fresh}` : 'No activity today yet.';
     }
     if (statProductiveNote) {
-        statProductiveNote.textContent = data.total_active_minutes > 0 ? `${Math.round(data.productive_minutes)}m productive` : 'Waiting...';
+        statProductiveNote.textContent = data.total_active_minutes > 0 ? `${Math.round(data.productive_minutes)}m productive` : 'Insights appear once activity is tracked.';
     }
 }
 
@@ -460,10 +460,12 @@ async function fetchHourlySummaries() {
         const res = await fetch(`${API}/api/hourly-summaries?limit=6`);
         const data = await res.json();
 
+        const section = document.querySelector('.hourly-summaries');
         if (!data.length) {
-            list.innerHTML = '<p class="text-muted">No summaries yet.</p>';
+            if (section) section.classList.add('hidden');
             return;
         }
+        if (section) section.classList.remove('hidden');
 
         list.innerHTML = data.map(s => {
             const date = parseServerTimestamp(s.hour_start_local || s.hour_start);
@@ -503,10 +505,11 @@ function attachSummaryListeners() {
                 const card = btn.closest('.summary-card');
                 if (card) card.remove();
 
-                // If the list is now empty, render empty state
+                // If the list is now empty, hide the section
                 const list = document.getElementById('summaries-list');
                 if (list && list.children.length === 0) {
-                    list.innerHTML = '<p class="text-muted">No summaries yet.</p>';
+                    const section = document.querySelector('.hourly-summaries');
+                    if (section) section.classList.add('hidden');
                 }
             } catch (err) {
                 btn.disabled = false;
@@ -919,6 +922,14 @@ async function updateServicePanel() {
         iosRecent ? 'green' : 'checking',
         iosRecent ? 'Active' : 'Not seen recently',
         iosRecent ? 'iPhone reporting' : 'Open Shortcuts on iPhone');
+
+    const repairSection = document.getElementById('control-center-repair');
+    if (repairSection) {
+        const allHealthy = latestStates
+            && (latestStates.mac_status === 'online')
+            && iosRecent;
+        repairSection.classList.toggle('hidden', !!allHealthy);
+    }
 }
 
 

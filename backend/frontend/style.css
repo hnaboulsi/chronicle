@@ -92,7 +92,7 @@ body {
 .dashboard-grid {
     display: grid;
     grid-template-columns: 1fr 320px;
-    gap: 20px;
+    gap: 24px;
     margin: 20px 0;
     align-items: start;
 }
@@ -100,14 +100,14 @@ body {
 .dashboard-left {
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 24px;
     min-width: 0;
 }
 
 .dashboard-right {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 20px;
     position: sticky;
     top: 56px;
 }
@@ -117,7 +117,7 @@ body {
     background: var(--bg-surface);
     border: 1px solid var(--border);
     border-radius: var(--radius-card);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 0 0 1px var(--border);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
 }
 
 /* ── Header ── */
@@ -513,18 +513,18 @@ h1 {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 16px;
-    padding-bottom: 10px;
+    padding-bottom: 8px;
     border-bottom: 1px solid var(--border);
 }
 
 .feed-header h2 {
-    font-size: 14px;
+    font-size: 15px;
     color: var(--text-primary);
     font-weight: 500;
 }
 
 .activity-feed {
-    padding: 20px;
+    padding: 24px;
 }
 
 /* ── Timeline ── */
@@ -641,7 +641,7 @@ h1 {
 .stat-row {
     display: flex;
     align-items: stretch;
-    padding: 16px;
+    padding: 20px 16px;
     gap: 0;
 }
 
@@ -659,7 +659,7 @@ h1 {
 }
 
 .stat-number {
-    font-size: 22px;
+    font-size: 24px;
     font-family: 'DM Mono', monospace;
     color: var(--text-primary);
     letter-spacing: -0.5px;
@@ -682,7 +682,7 @@ h1 {
 
 /* ── Device Status Panel (flat rows, no individual cards) ── */
 .device-status-panel {
-    padding: 16px 20px 12px;
+    padding: 20px 24px 16px;
 }
 
 .device-section-label {
@@ -706,6 +706,13 @@ h1 {
 .device-row:last-child {
     border-bottom: none;
     padding-bottom: 0;
+}
+
+.device-row:hover {
+    background: var(--bg-hover);
+    border-radius: var(--radius-card);
+    margin: 0 -4px;
+    padding: 8px 4px;
 }
 
 .device-row-label {
@@ -775,6 +782,7 @@ h1 {
 /* ── Hourly Summaries ── */
 .hourly-summaries {
     padding: 20px;
+    margin-top: 32px;
 }
 
 .summaries-viewport {
@@ -790,8 +798,13 @@ h1 {
     padding: 16px;
     border: 1px solid var(--border);
     border-radius: var(--radius-card);
-    background: var(--bg-surface);
+    background: var(--bg-elevated);
     margin-bottom: 10px;
+    transition: background 0.12s ease;
+}
+
+.summary-card:hover {
+    background: var(--bg-hover);
 }
 
 .summary-time {
@@ -850,6 +863,10 @@ h1 {
 }
 
 /* ── Setup & Repair Panel ── */
+#control-center-repair {
+    margin-top: 32px;
+}
+
 .status-panel-header {
     padding: 12px 16px 8px;
 }

@@ -515,9 +515,9 @@ async def _generate_and_store_hourly_summary(db: Session, now: datetime, force_c
         return
 
     if force_current:
-        hour_label = f"{local_hour_start.strftime('%I:%M %p')} — {local_now.strftime('%I:%M %p')} partial ({tz.key})"
+        hour_label = f"{local_hour_start.strftime('%I:%M %p')} — {local_now.strftime('%I:%M %p')} (partial hour)"
     else:
-        hour_label = f"{local_hour_start.strftime('%I:%M %p')} — {local_hour_end.strftime('%I:%M %p')} ({tz.key})"
+        hour_label = f"{local_hour_start.strftime('%I:%M %p')} — {local_hour_end.strftime('%I:%M %p')}"
     fallback = _deterministic_hourly_summary(logs, hour_label)
     result = fallback
     source = "deterministic"
