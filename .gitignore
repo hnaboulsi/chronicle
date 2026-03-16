@@ -31,6 +31,9 @@ __pycache__/
 # Web build
 web/node_modules/
 web/dist/
+web/*.tsbuildinfo
+web/vite.config.js
+web/vite.config.d.ts
 
 # OS generated files
 .DS_Store
