@@ -7,6 +7,7 @@ import {
 import type { ReactNode } from "react";
 import {
   BrowserRouter,
+  Link,
   NavLink,
   Navigate,
   Route,
@@ -147,7 +148,8 @@ function formatAge(seconds?: number) {
 
 function formatTime(value?: string, timezone?: string) {
   if (!value) return "Unknown";
-  const date = new Date(value);
+  const normalized = /[Z+\-]\d{2}:?\d{2}$/.test(value) ? value : value + "Z";
+  const date = new Date(normalized);
   if (Number.isNaN(date.getTime())) return "Unknown";
   return date.toLocaleString([], {
     month: "short",
@@ -199,19 +201,24 @@ function AppShell({
   errorMessage,
   refreshing,
   onRefresh,
+  state,
 }: {
   children: ReactNode;
   statusMessage: string;
   errorMessage: string;
   refreshing: boolean;
   onRefresh: () => void;
+  state: DashboardState | null;
 }) {
   return (
     <div className="app-shell">
       <header className="topbar">
         <div>
-          <div className="eyebrow">Hosted beta</div>
-          <h1>Vero dashboard</h1>
+          <div className="eyebrow">
+            {state?.service_health === "ok" && <span className="status-dot" />}
+            Activity intelligence
+          </div>
+          <h1>Vero</h1>
         </div>
         <div className="topbar-actions">
           <button
@@ -235,12 +242,14 @@ function AppShell({
             <NavItem to="/zones" label="Zones" />
             <NavItem to="/settings" label="Settings" />
           </nav>
-          <div className="sidebar-card">
-            <div className="sidebar-card-title">Dashboard first</div>
-            <p>
-              The Mac side stays lightweight in the menu bar. Settings, privacy,
-              zones, and diagnostics all live here in the dashboard.
-            </p>
+          <div className="sidebar-status">
+            <span className={`sidebar-status-dot bg-${serviceTone(state?.service_health)}`} />
+            <span className="sidebar-status-label">
+              {state?.service_health === "ok" ? "Connected" : state?.service_health === "offline" ? "Offline" : "Connecting"}
+            </span>
+            {state?.last_mac_heartbeat_age_seconds != null && (
+              <span className="muted">{formatAge(state.last_mac_heartbeat_age_seconds)}</span>
+            )}
           </div>
         </aside>
 
@@ -324,6 +333,10 @@ function StatCard({
   );
 }
 
+function Skeleton({ h = "1em", w = "100%" }: { h?: string; w?: string }) {
+  return <div className="skeleton" style={{ height: h, width: w }} />;
+}
+
 function Surface({
   title,
   eyebrow,
@@ -371,6 +384,7 @@ function TodayPage({
   checkin,
   timezone,
   captureIntervalSeconds,
+  initialLoading,
 }: {
   state: DashboardState | null;
   analytics: Analytics | null;
@@ -378,6 +392,7 @@ function TodayPage({
   checkin: CheckinResponse | null;
   timezone?: string;
   captureIntervalSeconds?: number;
+  initialLoading: boolean;
 }) {
   const deferredLogs = useDeferredValue(logs);
 
@@ -389,16 +404,24 @@ function TodayPage({
           <div className="hero-grid">
             <div>
               <h3 className="hero-title">
-                {state?.current_activity_summary ?? "Waiting for your first capture"}
+                {initialLoading ? <Skeleton h="2rem" w="65%" /> : (state?.current_activity_summary ?? "Waiting for your first capture")}
               </h3>
               <p className="hero-copy">
-                Presence: <strong>{presenceLabel(state?.presence_state)}</strong> ·
-                Capture cadence: <strong>{intervalLabel(captureIntervalSeconds ?? state?.capture_interval_seconds)}</strong>
+                {initialLoading ? <Skeleton h="0.9rem" w="40%" /> : (
+                  <>
+                    Presence: <strong>{presenceLabel(state?.presence_state)}</strong> ·
+                    Capture cadence: <strong>{intervalLabel(captureIntervalSeconds ?? state?.capture_interval_seconds)}</strong>
+                  </>
+                )}
               </p>
             </div>
-            <div className={`pill tone-${serviceTone(state?.service_health)}`}>
-              {state?.mac_status?.replace(/_/g, " ") ?? "unknown"}
-            </div>
+            {initialLoading ? (
+              <Skeleton h="1.5rem" w="80px" />
+            ) : (
+              <div className={`pill tone-${serviceTone(state?.service_health)}`}>
+                {state?.mac_status?.replace(/_/g, " ") ?? (initialLoading ? "—" : "not connected")}
+              </div>
+            )}
           </div>
         </Surface>
       </div>
@@ -416,23 +439,27 @@ function TodayPage({
 
       {/* Row 2: Stats + privacy */}
       <div className="bento-row">
-        <StatCard
-          label="Active today"
-          value={`${analytics?.total_active_minutes ?? 0} min`}
-          note={`${analytics?.log_count ?? 0} captured intervals`}
-        />
-        <StatCard
-          label="Productive"
-          value={`${analytics?.productive_pct ?? 0}%`}
-          note={`${analytics?.productive_minutes ?? 0} productive minutes`}
-          tone="warn"
-        />
-        <StatCard
-          label="AI budget"
-          value={`${analytics?.llm_used ?? 0}/${analytics?.llm_cap ?? 0}`}
-          note="Falls back gracefully when cap is reached"
-          tone="good"
-        />
+        <article className={`stat-card tone-good`}>
+          <div className="card-label">Active today</div>
+          <div className="stat-value">
+            {initialLoading ? <Skeleton h="2.2rem" w="55%" /> : `${analytics?.total_active_minutes ?? 0} min`}
+          </div>
+          <p className="card-note">{`${analytics?.log_count ?? 0} captured intervals`}</p>
+        </article>
+        <article className={`stat-card tone-warn`}>
+          <div className="card-label">Productive</div>
+          <div className="stat-value">
+            {initialLoading ? <Skeleton h="2.2rem" w="55%" /> : `${analytics?.productive_pct ?? 0}%`}
+          </div>
+          <p className="card-note">{`${analytics?.productive_minutes ?? 0} productive minutes`}</p>
+        </article>
+        <article className={`stat-card tone-good`}>
+          <div className="card-label">AI budget</div>
+          <div className="stat-value">
+            {initialLoading ? <Skeleton h="2.2rem" w="55%" /> : `${analytics?.llm_used ?? 0}/${analytics?.llm_cap ?? 0}`}
+          </div>
+          <p className="card-note">Falls back gracefully when cap is reached</p>
+        </article>
         <Surface title="Privacy" eyebrow="Data handling">
           <p className="lead">{privacyLabel(state?.privacy_mode)}</p>
           <p className="muted">
@@ -455,7 +482,15 @@ function TodayPage({
       <div className="col-span-4">
         <Surface title="Recent timeline" eyebrow="Redacted by default">
           <div className="timeline">
-            {deferredLogs.length ? (
+            {initialLoading ? (
+              Array.from({ length: 6 }).map((_, i) => (
+                <article className="timeline-row" key={i}>
+                  <div className="timeline-time"><Skeleton h="0.9rem" w="90px" /></div>
+                  <div className="timeline-copy"><Skeleton h="0.9rem" w="100%" /></div>
+                  <div className="timeline-meta"><Skeleton h="0.9rem" w="60px" /></div>
+                </article>
+              ))
+            ) : deferredLogs.length ? (
               deferredLogs.map((entry) => (
                 <article className="timeline-row" key={entry.id}>
                   <div className="timeline-time">{formatTime(entry.timestamp, timezone)}</div>
@@ -467,7 +502,11 @@ function TodayPage({
                 </article>
               ))
             ) : (
-              <p className="empty-state">No activity has been recorded yet.</p>
+              <div className="empty-cta">
+                <p className="empty-cta-heading">No captures yet</p>
+                <p className="muted">Once the Mac companion is running, activity appears here automatically.</p>
+                <Link className="secondary-link" to="/setup">Go to Setup →</Link>
+              </div>
             )}
           </div>
         </Surface>
@@ -731,9 +770,9 @@ function ZonesPage({
         title="Zones"
         eyebrow="Optional iPhone context"
         action={
-          <a className="secondary-link" href="/setup/ios" target="_blank" rel="noreferrer">
+          <Link className="secondary-link" to="/setup">
             Open iPhone setup
-          </a>
+          </Link>
         }
       >
         <p className="muted">
@@ -1012,6 +1051,7 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [initialLoading, setInitialLoading] = useState(true);
 
   async function refreshCore() {
     setRefreshing(true);
@@ -1034,9 +1074,11 @@ export default function App() {
         setLogs(nextLogs);
         setHealth(nextHealth);
         setCheckin(nextCheckin);
+        setInitialLoading(false);
       });
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to refresh data.");
+      setInitialLoading(false);
     } finally {
       setRefreshing(false);
     }
@@ -1092,6 +1134,12 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [statusMessage]);
 
+  useEffect(() => {
+    if (!errorMessage) return undefined;
+    const timer = window.setTimeout(() => setErrorMessage(""), 8000);
+    return () => window.clearTimeout(timer);
+  }, [errorMessage]);
+
   return (
     <BrowserRouter>
       <AppShell
@@ -1099,6 +1147,7 @@ export default function App() {
         errorMessage={errorMessage}
         refreshing={refreshing}
         onRefresh={() => void refreshCore()}
+        state={state}
       >
         <Routes>
           <Route path="/" element={<Navigate replace to="/today" />} />
@@ -1112,6 +1161,7 @@ export default function App() {
                 checkin={checkin}
                 timezone={settings?.user_timezone}
                 captureIntervalSeconds={settings?.capture_interval_seconds}
+                initialLoading={initialLoading}
               />
             }
           />
