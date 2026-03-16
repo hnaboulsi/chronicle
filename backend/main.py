@@ -411,7 +411,8 @@ async def redirect_to_dashboard():
 
 @app.get("/dashboard")
 @app.get("/dashboard/")
-async def legacy_dashboard_redirect():
+@app.get("/dashboard/{rest:path}")
+async def legacy_dashboard_redirect(rest: str = ""):
     return RedirectResponse(url="/today")
 
 

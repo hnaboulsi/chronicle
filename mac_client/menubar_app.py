@@ -288,7 +288,7 @@ class LifeManagerApp(rumps.App):
             pass
 
     def open_dashboard_url(self):
-        webbrowser.open(f"{BACKEND_URL}/dashboard/index.html")
+        webbrowser.open(f"{BACKEND_URL}/today")
 
     def open_dashboard(self, _):
         self.open_dashboard_url()
