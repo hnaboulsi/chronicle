@@ -1153,6 +1153,23 @@ def clear_logs(payload: Dict[str, Any], db: Session = Depends(get_db)):
     return {"status": "cleared", "count": count}
 
 
+@app.post("/api/manual-log")
+def create_manual_log(payload: Dict[str, Any], db: Session = Depends(get_db)):
+    from datetime import datetime, timezone as tz
+    entry = ActivityLog(
+        timestamp=datetime.now(tz.utc),
+        device="manual",
+        app_name=payload.get("label", "Manual entry"),
+        activity_type=payload.get("activity_type", "manual"),
+        window_title=payload.get("note") or "",
+        presence_state="active",
+    )
+    db.add(entry)
+    db.commit()
+    db.refresh(entry)
+    return {"status": "logged", "id": entry.id}
+
+
 def _fallback_summary_payload(entry: ActivityLog, context_logs: list[ActivityLog] | None = None) -> dict:
     context_logs = context_logs or []
     if entry.device == "ios":

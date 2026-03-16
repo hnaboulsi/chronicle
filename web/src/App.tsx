@@ -377,6 +377,14 @@ function Field({
   );
 }
 
+const QUICK_LOG_PRESETS = [
+  { emoji: "💻", label: "Working",  activity_type: "work"     },
+  { emoji: "🏃", label: "Moving",   activity_type: "exercise" },
+  { emoji: "🍽", label: "Eating",   activity_type: "meal"     },
+  { emoji: "📖", label: "Learning", activity_type: "study"    },
+  { emoji: "☕", label: "Break",    activity_type: "break"    },
+];
+
 function TodayPage({
   state,
   analytics,
@@ -385,6 +393,7 @@ function TodayPage({
   timezone,
   captureIntervalSeconds,
   initialLoading,
+  onRefreshLogs,
 }: {
   state: DashboardState | null;
   analytics: Analytics | null;
@@ -393,13 +402,28 @@ function TodayPage({
   timezone?: string;
   captureIntervalSeconds?: number;
   initialLoading: boolean;
+  onRefreshLogs: () => void;
 }) {
   const deferredLogs = useDeferredValue(logs);
+  const [loggedMsg, setLoggedMsg] = useState("");
+
+  async function handleQuickLog(activity_type: string, label: string) {
+    await fetchJson("/api/manual-log", {
+      method: "POST",
+      body: JSON.stringify({ activity_type, label }),
+    });
+    setLoggedMsg("Logged!");
+    setTimeout(() => setLoggedMsg(""), 1500);
+    onRefreshLogs();
+  }
+
+  const captureAgeSeconds = state?.last_mac_capture_age_seconds;
+  const captureAgeMinutes = captureAgeSeconds != null ? Math.floor(captureAgeSeconds / 60) : null;
 
   return (
     <div className="today-bento">
-      {/* Row 1: Compact hero + device */}
-      <div className="col-span-3">
+      {/* Row 1: Hero */}
+      <div className="col-span-4">
         <Surface title="Today" eyebrow="Live view">
           <div className="hero-grid">
             <div>
@@ -410,7 +434,7 @@ function TodayPage({
                 {initialLoading ? <Skeleton h="0.9rem" w="40%" /> : (
                   <>
                     Presence: <strong>{presenceLabel(state?.presence_state)}</strong> ·
-                    Capture cadence: <strong>{intervalLabel(captureIntervalSeconds ?? state?.capture_interval_seconds)}</strong>
+                    Last capture: <strong>{captureAgeMinutes != null ? `${captureAgeMinutes}m ago` : "Unknown"}</strong>
                   </>
                 )}
               </p>
@@ -419,25 +443,29 @@ function TodayPage({
               <Skeleton h="1.5rem" w="80px" />
             ) : (
               <div className={`pill tone-${serviceTone(state?.service_health)}`}>
-                {state?.mac_status?.replace(/_/g, " ") ?? (initialLoading ? "—" : "not connected")}
+                {state?.mac_status?.replace(/_/g, " ") ?? "not connected"}
               </div>
             )}
           </div>
         </Surface>
       </div>
 
-      <div className="col-span-1">
-        <Surface title="Device" eyebrow="Mac health">
-          <Field label="Status" value={state?.mac_status_reason ?? "Waiting for agent"} />
-          <Field label="Presence" value={presenceLabel(state?.presence_state)} />
-          <Field label="Heartbeat" value={formatAge(state?.last_mac_heartbeat_age_seconds)} />
-          <Field label="Last capture" value={formatAge(state?.last_mac_capture_age_seconds)} />
-          <Field label="Location" value={state?.current_location ?? "No location"} />
-          <Field label="Sleep" value={state?.sleep_status_note ?? "Unknown"} />
+      {/* Row 2: Quick-log */}
+      <div className="col-span-4">
+        <Surface title="Log a moment" eyebrow="Manual entry">
+          <div className="quicklog-row">
+            {QUICK_LOG_PRESETS.map(({ emoji, label, activity_type }) => (
+              <button key={activity_type} className="quicklog-btn" onClick={() => handleQuickLog(activity_type, label)}>
+                <span className="quicklog-emoji">{emoji}</span>
+                <span>{label}</span>
+              </button>
+            ))}
+          </div>
+          <div className="quicklog-confirm">{loggedMsg}</div>
         </Surface>
       </div>
 
-      {/* Row 2: Stats + privacy */}
+      {/* Row 3: Stats */}
       <div className="bento-row">
         <article className={`stat-card tone-good`}>
           <div className="card-label">Active today</div>
@@ -453,19 +481,6 @@ function TodayPage({
           </div>
           <p className="card-note">{`${analytics?.productive_minutes ?? 0} productive minutes`}</p>
         </article>
-        <article className={`stat-card tone-good`}>
-          <div className="card-label">AI budget</div>
-          <div className="stat-value">
-            {initialLoading ? <Skeleton h="2.2rem" w="55%" /> : `${analytics?.llm_used ?? 0}/${analytics?.llm_cap ?? 0}`}
-          </div>
-          <p className="card-note">Falls back gracefully when cap is reached</p>
-        </article>
-        <Surface title="Privacy" eyebrow="Data handling">
-          <p className="lead">{privacyLabel(state?.privacy_mode)}</p>
-          <p className="muted">
-            Browser titles stay redacted unless detailed capture is on in settings.
-          </p>
-        </Surface>
       </div>
 
       {/* Check-in if pending */}
@@ -478,7 +493,7 @@ function TodayPage({
         </div>
       ) : null}
 
-      {/* Row 3: Timeline */}
+      {/* Row 4: Timeline */}
       <div className="col-span-4">
         <Surface title="Recent timeline" eyebrow="Redacted by default">
           <div className="timeline">
@@ -922,6 +937,7 @@ function SettingsPage({
               }
             />
           </label>
+          <p className="field-hint">Pause all data collection</p>
 
           <label className="field">
             <span>Capture interval</span>
@@ -942,9 +958,10 @@ function SettingsPage({
               <option value={900}>15 minutes</option>
             </select>
           </label>
+          <p className="field-hint">How often the Mac agent records a snapshot</p>
 
           <label className="field">
-            <span>Privacy mode</span>
+            <span>Capture detail</span>
             <select
               value={draft.privacy_mode}
               onChange={(event) =>
@@ -954,35 +971,11 @@ function SettingsPage({
                 })
               }
             >
-              <option value="private">Private by default</option>
-              <option value="detailed">Detailed capture</option>
+              <option value="private">Minimal — only app names</option>
+              <option value="detailed">Full — app names + window titles</option>
             </select>
           </label>
-
-          <label className="field">
-            <span>AI provider</span>
-            <select
-              value={draft.ai_provider}
-              onChange={(event) => setDraft({ ...draft, ai_provider: event.target.value })}
-            >
-              <option value="auto">Auto</option>
-              <option value="gemini">Gemini</option>
-              <option value="openai">OpenAI</option>
-            </select>
-          </label>
-
-          <label className="field">
-            <span>Daily AI cap</span>
-            <input
-              type="number"
-              min={1}
-              max={500}
-              value={draft.llm_daily_cap}
-              onChange={(event) =>
-                setDraft({ ...draft, llm_daily_cap: Number(event.target.value || 30) })
-              }
-            />
-          </label>
+          <p className="field-hint">Full capture shows window titles in the timeline</p>
 
           <label className="field">
             <span>Timezone</span>
@@ -997,17 +990,7 @@ function SettingsPage({
               ))}
             </select>
           </label>
-
-          <label className="toggle-field">
-            <span>Calendar sync</span>
-            <input
-              type="checkbox"
-              checked={draft.calendar_sync_enabled}
-              onChange={(event) =>
-                setDraft({ ...draft, calendar_sync_enabled: event.target.checked })
-              }
-            />
-          </label>
+          <p className="field-hint">Used to display times correctly</p>
         </div>
 
         <div className="surface-actions">
@@ -1162,6 +1145,7 @@ export default function App() {
                 timezone={settings?.user_timezone}
                 captureIntervalSeconds={settings?.capture_interval_seconds}
                 initialLoading={initialLoading}
+                onRefreshLogs={refreshCore}
               />
             }
           />

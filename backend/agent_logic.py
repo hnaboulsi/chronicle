@@ -36,7 +36,7 @@ DEFAULTS = {
     "sleep_source": "iphone_only",
     "user_timezone": "America/Los_Angeles",
     "tracking_enabled": "true",
-    "privacy_mode": "private",
+    "privacy_mode": "detailed",
     "calendar_sync_enabled": "true",
     "sleep_start_hour": "1",
     "sleep_end_hour": "9",
@@ -98,6 +98,9 @@ def ensure_default_settings(db: Session):
             continue
         if not get_state(db, key):
             set_state(db, key, value)
+    # Migration: upgrade legacy "private" default to "detailed"
+    if get_state(db, "privacy_mode") == "private":
+        set_state(db, "privacy_mode", "detailed")
     set_capture_interval_seconds(db, get_capture_interval_seconds(db))
     ensure_default_zones(db)
     os.environ["LIFE_MANAGER_AI_PROVIDER"] = get_state(db, "ai_provider", DEFAULTS["ai_provider"])
