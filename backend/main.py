@@ -513,14 +513,27 @@ async def initialize_runtime():
 
 
 async def _hourly_summary_scheduler():
-    """Background task: generates missed hourly summaries every 5 minutes."""
+    """Background task: generates hourly summaries. Runs every 5 min but only
+    does real work in the first 15 minutes of each hour, or when a summary is
+    still missing/deterministic (catch-up after downtime or LLM quota hit)."""
     await asyncio.sleep(10)  # Wait 10s for DB to stabilize on startup
     while True:
         try:
             await asyncio.sleep(300)  # Check every 5 minutes
+            now = datetime.now(timezone.utc)
+            # Skip the expensive work if we're well into the hour and already
+            # have a good LLM summary for the previous hour.
+            if now.minute > 15:
+                db = SessionLocal()
+                try:
+                    prev_hour_start = (now.replace(minute=0, second=0, microsecond=0) - timedelta(hours=1)).replace(tzinfo=None)
+                    existing = db.query(HourlySummary).filter(HourlySummary.hour_start == prev_hour_start).first()
+                    if existing and getattr(existing, "summary_source", "") == "llm":
+                        continue  # Good summary already exists — nothing to do
+                finally:
+                    db.close()
             db = SessionLocal()
             try:
-                now = datetime.now(timezone.utc)
                 summaries_enabled = agent_logic.get_state(db, "hourly_summaries_enabled", "true") == "true"
                 if summaries_enabled:
                     await agent_logic._generate_and_store_hourly_summary(db, now)

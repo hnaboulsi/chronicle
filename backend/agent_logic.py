@@ -584,7 +584,7 @@ def _deterministic_hourly_summary(logs: list[dict], hour_label: str) -> dict:
         app_counts[app] = app_counts.get(app, 0) + 1
     top_apps = sorted(app_counts.items(), key=lambda item: item[1], reverse=True)[:3]
     app_text = ", ".join(app for app, _ in top_apps) if top_apps else "mixed activity"
-    summary = f"In {hour_label}, activity was mostly in {app_text}."
+    summary = f"Activity was mostly in {app_text}."
     score = 6.0 if top_apps else 4.5
     return {"summary": summary, "productivity_score": score}
 

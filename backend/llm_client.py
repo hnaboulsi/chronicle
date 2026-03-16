@@ -317,6 +317,7 @@ async def generate_hourly_summary(logs: list, hour_start: str, app_cache: dict =
         f"{global_section}"
         f"{calendar_section}"
         "Write a 2-3 sentence summary of what they worked on, how focused they were, and whether time was well spent. "
+        "Do NOT begin the summary with a time range — the time is shown separately. "
         + ("If calendar events are listed, note whether Mac activity appears to match or contradict them. " if calendar_section else "")
         + "Then give a productivity score 0-10.\n\n"
         'Respond ONLY with valid JSON: {"summary": "...", "productivity_score": 7.5}'

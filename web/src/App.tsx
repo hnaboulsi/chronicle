@@ -1082,6 +1082,7 @@ export default function App() {
   const [errorMessage, setErrorMessage] = useState("");
   const [initialLoading, setInitialLoading] = useState(true);
 
+  // Full initial load — all 6 endpoints in parallel
   async function refreshCore() {
     setRefreshing(true);
     setErrorMessage("");
@@ -1111,6 +1112,48 @@ export default function App() {
     } finally {
       setRefreshing(false);
     }
+  }
+
+  // Tight loop (60s) — only the two live-changing endpoints
+  async function refreshLive() {
+    try {
+      const [nextState, nextLogs] = await Promise.all([
+        fetchJson<DashboardState>("/api/state"),
+        fetchJson<ActivityLog[]>("/api/logs?limit=15"),
+      ]);
+      startTransition(() => {
+        setState(nextState);
+        setLogs(nextLogs);
+      });
+    } catch { /* silent — errors shown on next full refresh */ }
+  }
+
+  // Medium loop (2 min) — analytics + checkin change on new captures
+  async function refreshAnalytics() {
+    try {
+      const [nextAnalytics, nextCheckin] = await Promise.all([
+        fetchJson<Analytics>("/api/analytics/today"),
+        fetchJson<CheckinResponse>("/api/checkin"),
+      ]);
+      startTransition(() => {
+        setAnalytics(nextAnalytics);
+        setCheckin(nextCheckin);
+      });
+    } catch { /* silent */ }
+  }
+
+  // Slow loop (5 min) — health + summaries rarely change
+  async function refreshSlow() {
+    try {
+      const [nextHealth, nextSummaries] = await Promise.all([
+        fetchJson<HealthResponse>("/api/healthz"),
+        fetchJson<HourlySummary[]>("/api/hourly-summaries?limit=4").catch(() => [] as HourlySummary[]),
+      ]);
+      startTransition(() => {
+        setHealth(nextHealth);
+        setHourlySummaries(nextSummaries);
+      });
+    } catch { /* silent */ }
   }
 
   async function reloadZones() {
@@ -1146,31 +1189,30 @@ export default function App() {
     }
   }
 
-  async function refreshSummaries() {
-    try {
-      const next = await fetchJson<HourlySummary[]>("/api/hourly-summaries?limit=4").catch(() => [] as HourlySummary[]);
-      startTransition(() => setHourlySummaries(next));
-    } catch { /* ignore */ }
-  }
-
   useEffect(() => {
     void refreshCore();
-    void refreshSummaries();
+    void refreshSlow();   // health + summaries on first load
     void reloadZones();
 
-    // Core telemetry: every 60s (presence, last capture, analytics)
-    const coreInterval = window.setInterval(() => {
-      void refreshCore();
+    // 60s — state + logs only (2 requests instead of 6). Skip when tab hidden.
+    const liveInterval = window.setInterval(() => {
+      if (!document.hidden) void refreshLive();
     }, 60_000);
 
-    // Hourly summaries update at most once per hour — poll every 5 min
-    const summaryInterval = window.setInterval(() => {
-      void refreshSummaries();
+    // 2 min — analytics + checkin. Skip when tab hidden.
+    const analyticsInterval = window.setInterval(() => {
+      if (!document.hidden) void refreshAnalytics();
+    }, 2 * 60_000);
+
+    // 5 min — health + summaries. Skip when tab hidden.
+    const slowInterval = window.setInterval(() => {
+      if (!document.hidden) void refreshSlow();
     }, 5 * 60_000);
 
     return () => {
-      window.clearInterval(coreInterval);
-      window.clearInterval(summaryInterval);
+      window.clearInterval(liveInterval);
+      window.clearInterval(analyticsInterval);
+      window.clearInterval(slowInterval);
     };
   }, []);
 
