@@ -168,6 +168,7 @@ function formatTime(value?: string, timezone?: string) {
 }
 
 function intervalLabel(seconds?: number) {
+  if (seconds === 30) return "30 seconds";
   if (seconds === 60) return "1 minute";
   if (seconds === 300) return "5 minutes";
   if (seconds === 900) return "15 minutes";
@@ -415,14 +416,28 @@ function TodayPage({
 }) {
   const deferredLogs = useDeferredValue(logs);
   const [loggedMsg, setLoggedMsg] = useState("");
+  const [customNote, setCustomNote] = useState("");
 
-  async function handleQuickLog(activity_type: string, label: string) {
+  async function handleQuickLog(activity_type: string, label: string, note?: string) {
     await fetchJson("/api/manual-log", {
       method: "POST",
-      body: JSON.stringify({ activity_type, label }),
+      body: JSON.stringify({ activity_type, label, note: note || undefined }),
     });
+    setLoggedMsg(`${label} logged!`);
+    setTimeout(() => setLoggedMsg(""), 2000);
+    onRefreshLogs();
+  }
+
+  async function handleCustomLog() {
+    const note = customNote.trim();
+    if (!note) return;
+    await fetchJson("/api/manual-log", {
+      method: "POST",
+      body: JSON.stringify({ activity_type: "manual", label: note, note }),
+    });
+    setCustomNote("");
     setLoggedMsg("Logged!");
-    setTimeout(() => setLoggedMsg(""), 1500);
+    setTimeout(() => setLoggedMsg(""), 2000);
     onRefreshLogs();
   }
 
@@ -462,7 +477,7 @@ function TodayPage({
 
       {/* Row 2: Quick-log */}
       <div className="col-span-4">
-        <Surface title="Log a moment" eyebrow="Manual entry">
+        <Surface title="What are you up to?" eyebrow="Log a moment">
           <div className="quicklog-row">
             {QUICK_LOG_PRESETS.map(({ emoji, label, activity_type }) => (
               <button key={activity_type} className="quicklog-btn" onClick={() => handleQuickLog(activity_type, label)}>
@@ -471,7 +486,25 @@ function TodayPage({
               </button>
             ))}
           </div>
-          <div className="quicklog-confirm">{loggedMsg}</div>
+          <div className="quicklog-custom">
+            <input
+              className="quicklog-input"
+              type="text"
+              placeholder="Or describe what you're doing…"
+              value={customNote}
+              onChange={(e) => setCustomNote(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") void handleCustomLog(); }}
+            />
+            <button
+              className="quicklog-submit"
+              type="button"
+              onClick={() => void handleCustomLog()}
+              disabled={!customNote.trim()}
+            >
+              Log
+            </button>
+          </div>
+          {loggedMsg && <div className="quicklog-confirm">{loggedMsg}</div>}
         </Surface>
       </div>
 
@@ -901,18 +934,6 @@ function ZoneForm({
         />
       </label>
       <label className="field">
-        <span>Radius (meters)</span>
-        <input
-          type="number"
-          min={25}
-          max={5000}
-          value={zone.radius_meters}
-          onChange={(event) =>
-            onChange({ ...zone, radius_meters: Number(event.target.value || 75) })
-          }
-        />
-      </label>
-      <label className="field">
         <span>Focus mode</span>
         <input
           value={zone.focus_mode}
@@ -970,9 +991,10 @@ function SettingsPage({
                 });
               }}
             >
+              <option value={30}>30 seconds — most accurate</option>
               <option value={60}>1 minute</option>
               <option value={300}>5 minutes</option>
-              <option value={900}>15 minutes</option>
+              <option value={900}>15 minutes — least battery impact</option>
             </select>
           </label>
           <p className="field-hint">How often the Mac agent records a snapshot</p>
@@ -988,11 +1010,11 @@ function SettingsPage({
                 })
               }
             >
-              <option value="private">Minimal — only app names</option>
-              <option value="detailed">Full — app names + window titles</option>
+              <option value="detailed">Full — app names + window titles (recommended)</option>
+              <option value="private">Minimal — app names only</option>
             </select>
           </label>
-          <p className="field-hint">Full capture shows window titles in the timeline</p>
+          <p className="field-hint">Full capture enables window-level timeline detail and better AI summaries</p>
 
           <label className="field">
             <span>Timezone</span>

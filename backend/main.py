@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc, text, func
 from database import engine, Base, get_db, SessionLocal
 import models
-from models import ActivityLog, CalendarEventJob, HourlySummary, MacHeartbeat, MacPresence, MacTelemetry, iOSZoneEvent, iOSTelemetry
+from models import ActivityLog, CalendarEventJob, HourlySummary, MacHeartbeat, MacPresence, MacTelemetry, iOSZoneEvent, iOSTelemetry, UserCalendarEvent, CalendarEventItem
 import agent_logic
 import llm_client
 
@@ -1058,6 +1058,36 @@ def fail_calendar_job(job_id: int, payload: Dict[str, Any], db: Session = Depend
     db.commit()
     db.refresh(job)
     return {"status": "failed", "job": _serialize_calendar_job(job)}
+
+
+@app.post("/api/mac-calendar-events")
+def upsert_mac_calendar_events(events: list[CalendarEventItem], db: Session = Depends(get_db)):
+    """Mac companion pushes today's calendar events for cross-referencing in AI summaries."""
+    upserted = 0
+    for ev in events:
+        start_utc = ev.start_at.replace(tzinfo=None) if ev.start_at.tzinfo else ev.start_at
+        end_utc = ev.end_at.replace(tzinfo=None) if ev.end_at.tzinfo else ev.end_at
+        if ev.event_uid:
+            existing = db.query(UserCalendarEvent).filter(UserCalendarEvent.event_uid == ev.event_uid).first()
+            if existing:
+                existing.title = ev.title
+                existing.start_at = start_utc
+                existing.end_at = end_utc
+                existing.calendar_name = ev.calendar_name
+                existing.notes = ev.notes
+                upserted += 1
+                continue
+        db.add(UserCalendarEvent(
+            event_uid=ev.event_uid,
+            title=ev.title,
+            start_at=start_utc,
+            end_at=end_utc,
+            calendar_name=ev.calendar_name,
+            notes=ev.notes,
+        ))
+        upserted += 1
+    db.commit()
+    return {"status": "ok", "upserted": upserted}
 
 
 @app.post("/mcp")

@@ -279,7 +279,7 @@ async def classify_activity_context(recent_activities: list, user_self_report: s
     }
 
 
-async def generate_hourly_summary(logs: list, hour_start: str, app_cache: dict = None, global_context: str = "") -> dict:
+async def generate_hourly_summary(logs: list, hour_start: str, app_cache: dict = None, global_context: str = "", calendar_events: list = None) -> dict:
     if not logs:
         return {"summary": "No activity recorded this hour.", "productivity_score": None}
 
@@ -293,7 +293,21 @@ async def generate_hourly_summary(logs: list, hour_start: str, app_cache: dict =
     activity_text = "\n".join(lines)
 
     global_section = f"User long-term context/projects: {global_context}\n\n" if global_context else ""
-    
+
+    calendar_section = ""
+    if calendar_events:
+        cal_lines = []
+        for ev in calendar_events:
+            try:
+                from datetime import datetime as _dt
+                s = _dt.fromisoformat(ev["start_at"]).strftime("%I:%M %p")
+                e = _dt.fromisoformat(ev["end_at"]).strftime("%I:%M %p")
+                cal_name = f" [{ev['calendar_name']}]" if ev.get("calendar_name") else ""
+                cal_lines.append(f"- {s}–{e}: {ev['title']}{cal_name}")
+            except Exception:
+                cal_lines.append(f"- {ev.get('title', 'Event')}")
+        calendar_section = "Calendar events scheduled during this hour:\n" + "\n".join(cal_lines) + "\n\n"
+
     prompt = (
         f"You are a productivity analyst. Here is what the user did on their Mac during {hour_start}:\n\n"
         f"{activity_text}\n\n"
@@ -301,8 +315,10 @@ async def generate_hourly_summary(logs: list, hour_start: str, app_cache: dict =
         "'Cursor' is an AI code editor for coding. 'Antigravity' is a productivity app. "
         "'Vero' and 'LifeManager' are personal productivity tracking apps (NOT social media).\n"
         f"{global_section}"
+        f"{calendar_section}"
         "Write a 2-3 sentence summary of what they worked on, how focused they were, and whether time was well spent. "
-        "Then give a productivity score 0-10.\n\n"
+        + ("If calendar events are listed, note whether Mac activity appears to match or contradict them. " if calendar_section else "")
+        + "Then give a productivity score 0-10.\n\n"
         'Respond ONLY with valid JSON: {"summary": "...", "productivity_score": 7.5}'
     )
 

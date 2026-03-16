@@ -118,6 +118,29 @@ class MacPresence(BaseModel):
     idle_time_seconds: int = 0
 
 
+class UserCalendarEvent(Base):
+    __tablename__ = "user_calendar_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    event_uid = Column(String, nullable=True, index=True)  # native calendar UID for dedup
+    title = Column(String, nullable=False)
+    start_at = Column(DateTime, nullable=False)
+    end_at = Column(DateTime, nullable=False)
+    calendar_name = Column(String, nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=_utc_now)
+    updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
+
+
+class CalendarEventItem(BaseModel):
+    event_uid: Optional[str] = None
+    title: str
+    start_at: datetime.datetime
+    end_at: datetime.datetime
+    calendar_name: Optional[str] = None
+    notes: Optional[str] = None
+
+
 class iOSZoneEvent(BaseModel):
     zone_slug: str
     transition: str

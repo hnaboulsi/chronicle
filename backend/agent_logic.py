@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
-from models import AgentState, ActivityLog, CalendarEventJob, HourlySummary, LocationZone, MacHeartbeat, MacPresence, MacTelemetry, iOSTelemetry, iOSZoneEvent
+from models import AgentState, ActivityLog, CalendarEventJob, HourlySummary, LocationZone, MacHeartbeat, MacPresence, MacTelemetry, iOSTelemetry, iOSZoneEvent, UserCalendarEvent
 import llm_client
 
 log = logging.getLogger("vero")
@@ -290,9 +290,9 @@ def normalize_presence_state(value: str | None, idle_time_seconds: int = 0) -> s
     cleaned = (value or "").strip().lower()
     if cleaned in VALID_PRESENCE_STATES:
         return cleaned
-    if idle_time_seconds < 60:
+    if idle_time_seconds < 120:
         return "active"
-    if idle_time_seconds < 300:
+    if idle_time_seconds < 900:
         return "idle"
     return "away"
 
@@ -589,6 +589,23 @@ def _deterministic_hourly_summary(logs: list[dict], hour_label: str) -> dict:
     return {"summary": summary, "productivity_score": score}
 
 
+def get_calendar_events_for_window(db: Session, since: datetime, until: datetime) -> list[dict]:
+    """Return UserCalendarEvents that overlap with [since, until]."""
+    events = db.query(UserCalendarEvent).filter(
+        UserCalendarEvent.start_at < until,
+        UserCalendarEvent.end_at > since,
+    ).order_by(UserCalendarEvent.start_at).all()
+    return [
+        {
+            "title": e.title,
+            "start_at": e.start_at.isoformat(),
+            "end_at": e.end_at.isoformat(),
+            "calendar_name": e.calendar_name or "",
+        }
+        for e in events
+    ]
+
+
 async def _generate_and_store_hourly_summary(db: Session, now: datetime, force_current: bool = False):
     tz = resolve_user_timezone(db)
     local_now = now.astimezone(tz)
@@ -638,8 +655,9 @@ async def _generate_and_store_hourly_summary(db: Session, now: datetime, force_c
         try:
             app_cache = json.loads(get_state(db, "app_category_cache") or "{}")
             global_context = get_state(db, "global_chat_context", "")
+            calendar_events = get_calendar_events_for_window(db, hour_start, hour_end)
             register_llm_call(db, now)
-            llm_result = await llm_client.generate_hourly_summary(logs, hour_label, app_cache, global_context=global_context)
+            llm_result = await llm_client.generate_hourly_summary(logs, hour_label, app_cache, global_context=global_context, calendar_events=calendar_events)
             if llm_result and llm_result.get("summary"):
                 result = llm_result
                 source = "llm"
