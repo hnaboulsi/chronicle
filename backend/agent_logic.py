@@ -2,9 +2,12 @@ import json
 import logging
 import os
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import date as _date, datetime, timedelta, timezone
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
+
+import httpx
+from icalendar import Calendar as iCalCalendar
 
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
@@ -38,6 +41,7 @@ DEFAULTS = {
     "tracking_enabled": "true",
     "privacy_mode": "detailed",
     "calendar_sync_enabled": "true",
+    "calendar_ical_url": "",
     "sleep_start_hour": "1",
     "sleep_end_hour": "9",
     "context_special_mode": "normal",
@@ -616,6 +620,103 @@ def _deterministic_hourly_summary(logs: list[dict], hour_label: str) -> dict:
     return {"summary": summary, "productivity_score": score}
 
 
+async def sync_ical_calendar(db: Session) -> dict:
+    """Fetch the user's iCal feed URL and upsert events into user_calendar_events."""
+    url = get_state(db, "calendar_ical_url", "").strip()
+    if not url:
+        return {"synced": 0, "error": "no_url"}
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+        raw = resp.content
+    except Exception as exc:
+        err = str(exc)
+        set_state(db, "calendar_sync_error", err[:300])
+        return {"synced": 0, "error": err}
+
+    try:
+        cal = iCalCalendar.from_ical(raw)
+    except Exception as exc:
+        err = f"parse error: {exc}"
+        set_state(db, "calendar_sync_error", err[:300])
+        return {"synced": 0, "error": err}
+
+    now_utc = datetime.now(timezone.utc)
+    window_start = (now_utc - timedelta(days=1)).replace(tzinfo=None)
+    window_end = (now_utc + timedelta(days=7)).replace(tzinfo=None)
+
+    # Try to get calendar name from the feed itself
+    feed_cal_name = str(cal.get("X-WR-CALNAME", "")).strip() or None
+
+    synced = 0
+    for component in cal.walk():
+        if component.name != "VEVENT":
+            continue
+        try:
+            dtstart = component.get("DTSTART")
+            dtend = component.get("DTEND") or component.get("DTSTART")
+            if dtstart is None:
+                continue
+
+            summary = str(component.get("SUMMARY", "Untitled")).strip()
+            uid = str(component.get("UID", "")).strip()
+            cal_name = feed_cal_name or str(component.get("X-WR-CALNAME", "")).strip() or None
+            notes = str(component.get("DESCRIPTION", "")).strip() or None
+
+            s = dtstart.dt
+            e = dtend.dt if dtend else s
+
+            # All-day events (date, not datetime)
+            if isinstance(s, _date) and not isinstance(s, datetime):
+                s = datetime(s.year, s.month, s.day, 0, 0, tzinfo=timezone.utc)
+            if isinstance(e, _date) and not isinstance(e, datetime):
+                e = datetime(e.year, e.month, e.day, 23, 59, tzinfo=timezone.utc)
+
+            # Normalise to UTC naive for DB
+            if s.tzinfo:
+                s = s.astimezone(timezone.utc).replace(tzinfo=None)
+            if e.tzinfo:
+                e = e.astimezone(timezone.utc).replace(tzinfo=None)
+
+            if e < window_start or s > window_end:
+                continue
+
+            if uid:
+                existing = db.query(UserCalendarEvent).filter(UserCalendarEvent.event_uid == uid).first()
+                if existing:
+                    existing.title = summary
+                    existing.start_at = s
+                    existing.end_at = e
+                    existing.calendar_name = cal_name
+                    existing.notes = notes[:500] if notes else None
+                    synced += 1
+                    continue
+
+            db.add(UserCalendarEvent(
+                event_uid=uid or None,
+                title=summary,
+                start_at=s,
+                end_at=e,
+                calendar_name=cal_name,
+                notes=notes[:500] if notes else None,
+            ))
+            synced += 1
+        except Exception:
+            continue
+
+    # Prune events older than 14 days
+    cutoff = (now_utc - timedelta(days=14)).replace(tzinfo=None)
+    db.query(UserCalendarEvent).filter(UserCalendarEvent.end_at < cutoff).delete()
+    db.commit()
+
+    set_state(db, "calendar_last_sync", now_utc.isoformat())
+    set_state(db, "calendar_sync_error", "")
+    log.info("iCal sync complete: %d events upserted", synced)
+    return {"synced": synced, "error": ""}
+
+
 def get_calendar_events_for_window(db: Session, since: datetime, until: datetime) -> list[dict]:
     """Return UserCalendarEvents that overlap with [since, until]."""
     events = db.query(UserCalendarEvent).filter(
@@ -683,6 +784,7 @@ async def _generate_and_store_hourly_summary(db: Session, now: datetime, force_c
             app_cache = json.loads(get_state(db, "app_category_cache") or "{}")
             global_context = get_state(db, "global_chat_context", "")
             calendar_events = get_calendar_events_for_window(db, hour_start, hour_end)
+            upcoming_events = get_calendar_events_for_window(db, hour_end, hour_end + timedelta(hours=2))
             manual_logs = get_manual_logs_for_hour(db, hour_start, hour_end)
 
             # Idle metrics
@@ -716,6 +818,7 @@ async def _generate_and_store_hourly_summary(db: Session, now: datetime, force_c
                 logs, hour_label, app_cache,
                 global_context=global_context,
                 calendar_events=calendar_events,
+                upcoming_events=upcoming_events,
                 manual_logs=manual_logs,
                 idle_pct=idle_pct,
                 active_pct=active_pct,

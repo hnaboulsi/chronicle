@@ -782,6 +782,33 @@ select:focus-visible {
 }
 .field-hint { font-size: 0.78rem; color: var(--muted); margin: 2px 0 0; line-height: 1.4; }
 
+/* Calendar strip */
+.cal-strip { display: flex; flex-direction: column; gap: 2px; }
+.cal-event {
+  display: grid;
+  grid-template-columns: 70px 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--panel-strong);
+  border: 1px solid var(--line);
+  transition: opacity 0.15s;
+}
+.cal-past { opacity: 0.45; }
+.cal-current {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+.cal-time { font-size: 0.75rem; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.cal-title { font-size: 0.88rem; color: var(--text); font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cal-name { font-size: 0.72rem; color: var(--muted); white-space: nowrap; }
+.cal-badge {
+  font-size: 0.7rem; font-weight: 700; padding: 2px 8px;
+  border-radius: 999px; background: var(--accent); color: #fff;
+  white-space: nowrap;
+}
+
 /* AI recap list */
 .recap-list { display: flex; flex-direction: column; gap: 10px; }
 .recap-row {

@@ -285,6 +285,7 @@ async def generate_hourly_summary(
     app_cache: dict = None,
     global_context: str = "",
     calendar_events: list = None,
+    upcoming_events: list = None,
     manual_logs: list = None,
     idle_pct: int = 0,
     active_pct: int = 100,
@@ -314,19 +315,23 @@ async def generate_hourly_summary(
         manual_section = f"\nUser self-reported this hour:\n{ml}\n"
 
     # --- Calendar section ---
-    calendar_section = ""
-    if calendar_events:
-        cal_lines = []
-        for ev in calendar_events:
+    def _fmt_cal_events(events: list, label: str) -> str:
+        if not events:
+            return ""
+        lines = []
+        for ev in events:
             try:
                 from datetime import datetime as _dt
                 s = _dt.fromisoformat(ev["start_at"]).strftime("%I:%M %p")
                 e = _dt.fromisoformat(ev["end_at"]).strftime("%I:%M %p")
                 cal_name = f" [{ev['calendar_name']}]" if ev.get("calendar_name") else ""
-                cal_lines.append(f"- {s}–{e}: {ev['title']}{cal_name}")
+                lines.append(f"- {s}–{e}: {ev['title']}{cal_name}")
             except Exception:
-                cal_lines.append(f"- {ev.get('title', 'Event')}")
-        calendar_section = f"\nScheduled calendar events this hour:\n" + "\n".join(cal_lines) + "\n"
+                lines.append(f"- {ev.get('title', 'Event')}")
+        return f"\n{label}:\n" + "\n".join(lines) + "\n"
+
+    calendar_section = _fmt_cal_events(calendar_events or [], "Scheduled calendar events this hour")
+    upcoming_section = _fmt_cal_events(upcoming_events or [], "Coming up in the next 2 hours")
 
     # --- iOS / physical context ---
     ios_section = ""
@@ -371,7 +376,7 @@ PRESENCE: {active_pct}% active / {idle_pct}% idle or away this hour
 {trend_section}{global_section}
 MAC ACTIVITY (app [category] [idle if inactive]: window title):
 {activity_text}
-{manual_section}{calendar_section}{ios_section}
+{manual_section}{calendar_section}{upcoming_section}{ios_section}
 APP CATEGORY KEY: [working]=coding/dev tools/work apps, [studying]=learning, [creative]=design/video, [entertainment]=YouTube/Netflix/Reddit, [social_media]=Twitter/Instagram, [gaming]=games, [break]=confirmed rest
 
 SCORING RUBRIC — be strict, do not inflate:

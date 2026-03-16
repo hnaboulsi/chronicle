@@ -51,6 +51,19 @@ type BackendSettings = {
   user_timezone: string;
   privacy_mode: "private" | "detailed";
   calendar_sync_enabled: boolean;
+  calendar_ical_url: string;
+  calendar_last_sync: string;
+  calendar_sync_error: string;
+};
+
+type CalendarEventUI = {
+  id: number;
+  title: string;
+  start_at: string;
+  end_at: string;
+  calendar_name: string | null;
+  is_current: boolean;
+  is_past: boolean;
 };
 
 type Analytics = {
@@ -161,6 +174,18 @@ function formatTime(value?: string, timezone?: string) {
   return date.toLocaleString([], {
     month: "short",
     day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    ...(timezone ? { timeZone: timezone } : {}),
+  });
+}
+
+function formatTimeOnly(value?: string, timezone?: string) {
+  if (!value) return "";
+  const normalized = /[Z+\-]\d{2}:?\d{2}$/.test(value) ? value : value + "Z";
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString([], {
     hour: "numeric",
     minute: "2-digit",
     ...(timezone ? { timeZone: timezone } : {}),
@@ -409,6 +434,7 @@ function TodayPage({
   initialLoading,
   onRefreshLogs,
   hourlySummaries,
+  calendarEvents,
 }: {
   state: DashboardState | null;
   analytics: Analytics | null;
@@ -419,6 +445,7 @@ function TodayPage({
   initialLoading: boolean;
   onRefreshLogs: () => void;
   hourlySummaries: HourlySummary[];
+  calendarEvents: CalendarEventUI[];
 }) {
   const deferredLogs = useDeferredValue(logs);
   const [loggedMsg, setLoggedMsg] = useState("");
@@ -481,7 +508,25 @@ function TodayPage({
         </Surface>
       </div>
 
-      {/* Row 2: Quick-log */}
+      {/* Row 2: Today's schedule */}
+      {calendarEvents.length > 0 && (
+        <div className="col-span-4">
+          <Surface title="Today's schedule" eyebrow="Calendar">
+            <div className="cal-strip">
+              {calendarEvents.map(ev => (
+                <div key={ev.id} className={`cal-event${ev.is_current ? " cal-current" : ev.is_past ? " cal-past" : ""}`}>
+                  <span className="cal-time">{formatTimeOnly(ev.start_at, timezone)}</span>
+                  <span className="cal-title">{ev.title}</span>
+                  {ev.calendar_name && <span className="cal-name">{ev.calendar_name}</span>}
+                  {ev.is_current && <span className="cal-badge">Now</span>}
+                </div>
+              ))}
+            </div>
+          </Surface>
+        </div>
+      )}
+
+      {/* Row 3: Quick-log */}
       <div className="col-span-4">
         <Surface title="What are you up to?" eyebrow="Log a moment">
           <div className="quicklog-row">
@@ -950,6 +995,79 @@ function ZoneForm({
   );
 }
 
+function CalendarSettingsPanel({
+  settings,
+  onSave,
+}: {
+  settings: BackendSettings;
+  onSave: (s: BackendSettings) => Promise<void>;
+}) {
+  const [url, setUrl] = useState(settings.calendar_ical_url ?? "");
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState("");
+
+  const lastSync = settings.calendar_last_sync
+    ? formatAge(Math.floor((Date.now() - new Date(settings.calendar_last_sync).getTime()) / 1000))
+    : null;
+
+  async function handleSave() {
+    await onSave({ ...settings, calendar_ical_url: url });
+  }
+
+  async function handleSyncNow() {
+    setSyncing(true);
+    setSyncMsg("");
+    try {
+      const res = await fetchJson<{ synced: number; error: string }>("/api/calendar/sync-now", { method: "POST" });
+      setSyncMsg(res.error ? `Error: ${res.error}` : `Synced ${res.synced} events`);
+    } catch {
+      setSyncMsg("Sync failed");
+    } finally {
+      setSyncing(false);
+      setTimeout(() => setSyncMsg(""), 4000);
+    }
+  }
+
+  return (
+    <Surface
+      title="Calendar"
+      eyebrow="iCal sync"
+      action={
+        <button className="secondary-button" type="button" onClick={handleSyncNow} disabled={syncing || !url.trim()}>
+          {syncing ? "Syncing…" : "Sync now"}
+        </button>
+      }
+    >
+      <label className="field">
+        <span>Private iCal feed URL</span>
+        <input
+          type="url"
+          value={url}
+          placeholder="webcal:// or https://..."
+          onChange={(e) => setUrl(e.target.value)}
+          style={{ fontFamily: "monospace", fontSize: "0.82rem" }}
+        />
+      </label>
+      <p className="field-hint">
+        Google Calendar: open calendar settings → "Secret address in iCal format". iCloud: share calendar → copy link. Paste it here — Vero syncs every 30 min automatically.
+      </p>
+      {settings.calendar_sync_error && (
+        <p className="field-hint" style={{ color: "var(--bad)", marginTop: "8px" }}>
+          Last sync error: {settings.calendar_sync_error}
+        </p>
+      )}
+      {!settings.calendar_sync_error && lastSync && (
+        <p className="field-hint" style={{ marginTop: "8px" }}>Last synced {lastSync}</p>
+      )}
+      {syncMsg && <p className="field-hint" style={{ color: syncMsg.startsWith("Error") ? "var(--bad)" : "var(--good)", marginTop: "8px" }}>{syncMsg}</p>}
+      <div className="surface-actions">
+        <button className="primary-button" type="button" onClick={handleSave}>Save URL</button>
+      </div>
+    </Surface>
+  );
+}
+
+
 function SettingsPage({
   settings,
   onSave,
@@ -1046,6 +1164,8 @@ function SettingsPage({
           <p className="field-hint">Used to display times correctly</p>
         </div>
       </Surface>
+
+      <CalendarSettingsPanel settings={draft} onSave={onSave} />
     </div>
   );
 }
@@ -1079,6 +1199,7 @@ export default function App() {
   const [checkin, setCheckin] = useState<CheckinResponse | null>(null);
   const [zones, setZones] = useState<ZoneRecord[]>([]);
   const [hourlySummaries, setHourlySummaries] = useState<HourlySummary[]>([]);
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEventUI[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -1147,13 +1268,15 @@ export default function App() {
   // Slow loop (5 min) — health + summaries rarely change
   async function refreshSlow() {
     try {
-      const [nextHealth, nextSummaries] = await Promise.all([
+      const [nextHealth, nextSummaries, nextCalendar] = await Promise.all([
         fetchJson<HealthResponse>("/api/healthz"),
         fetchJson<HourlySummary[]>("/api/hourly-summaries?limit=4").catch(() => [] as HourlySummary[]),
+        fetchJson<CalendarEventUI[]>("/api/calendar/today").catch(() => [] as CalendarEventUI[]),
       ]);
       startTransition(() => {
         setHealth(nextHealth);
         setHourlySummaries(nextSummaries);
+        setCalendarEvents(nextCalendar);
       });
     } catch { /* silent */ }
   }
@@ -1182,6 +1305,7 @@ export default function App() {
           user_timezone: nextSettings.user_timezone,
           privacy_mode: nextSettings.privacy_mode,
           calendar_sync_enabled: nextSettings.calendar_sync_enabled,
+          calendar_ical_url: nextSettings.calendar_ical_url,
         }),
       });
       setStatusMessage("Settings saved.");
@@ -1254,6 +1378,7 @@ export default function App() {
                 initialLoading={initialLoading}
                 onRefreshLogs={refreshCore}
                 hourlySummaries={hourlySummaries}
+                calendarEvents={calendarEvents}
               />
             }
           />

@@ -510,6 +510,7 @@ async def initialize_runtime():
 
     # Start background task for hourly summary generation (even if Mac is offline)
     loop.create_task(_hourly_summary_scheduler())
+    loop.create_task(_calendar_sync_scheduler())
 
 
 async def _hourly_summary_scheduler():
@@ -541,6 +542,23 @@ async def _hourly_summary_scheduler():
                 db.close()
         except Exception as exc:
             log.error(f"Hourly summary scheduler error: {exc}")
+
+
+async def _calendar_sync_scheduler():
+    """Background task: syncs iCal feed every 30 minutes if a URL is configured."""
+    await asyncio.sleep(15)  # Stagger slightly after hourly summary scheduler
+    while True:
+        try:
+            db = SessionLocal()
+            try:
+                url = agent_logic.get_state(db, "calendar_ical_url", "").strip()
+                if url:
+                    await agent_logic.sync_ical_calendar(db)
+            finally:
+                db.close()
+        except Exception as exc:
+            log.error("Calendar sync scheduler error: %s", exc)
+        await asyncio.sleep(30 * 60)  # Every 30 minutes
 
 
 def _run_async(coro):
@@ -929,6 +947,9 @@ def get_settings(db: Session = Depends(get_db)):
         "user_timezone": agent_logic.get_state(db, "user_timezone", agent_logic.DEFAULTS["user_timezone"]),
         "privacy_mode": agent_logic.get_state(db, "privacy_mode", agent_logic.DEFAULTS["privacy_mode"]),
         "calendar_sync_enabled": agent_logic.get_state(db, "calendar_sync_enabled", agent_logic.DEFAULTS["calendar_sync_enabled"]).lower() == "true",
+        "calendar_ical_url": agent_logic.get_state(db, "calendar_ical_url", ""),
+        "calendar_last_sync": agent_logic.get_state(db, "calendar_last_sync", ""),
+        "calendar_sync_error": agent_logic.get_state(db, "calendar_sync_error", ""),
     }
 
 @app.post("/api/settings")
@@ -968,6 +989,8 @@ def update_settings(payload: Dict[str, Any], db: Session = Depends(get_db)):
         agent_logic.set_state(db, "privacy_mode", privacy_mode)
     if "calendar_sync_enabled" in payload:
         agent_logic.set_state(db, "calendar_sync_enabled", str(_coerce_bool(payload["calendar_sync_enabled"])).lower())
+    if "calendar_ical_url" in payload:
+        agent_logic.set_state(db, "calendar_ical_url", str(payload["calendar_ical_url"]).strip())
     if "user_timezone" in payload:
         from zoneinfo import ZoneInfo
         tz_name = str(payload["user_timezone"])
@@ -1071,6 +1094,48 @@ def fail_calendar_job(job_id: int, payload: Dict[str, Any], db: Session = Depend
     db.commit()
     db.refresh(job)
     return {"status": "failed", "job": _serialize_calendar_job(job)}
+
+
+@app.post("/api/calendar/sync-now")
+async def calendar_sync_now(db: Session = Depends(get_db)):
+    """Manually trigger an iCal feed sync."""
+    result = await agent_logic.sync_ical_calendar(db)
+    return result
+
+
+@app.get("/api/calendar/today")
+def get_calendar_today(db: Session = Depends(get_db)):
+    """Return today's calendar events in the user's local timezone, sorted by start time."""
+    tz = agent_logic.resolve_user_timezone(db)
+    now_local = datetime.now(timezone.utc).astimezone(tz)
+    day_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc).replace(tzinfo=None)
+    day_end = now_local.replace(hour=23, minute=59, second=59, microsecond=0).astimezone(timezone.utc).replace(tzinfo=None)
+    now_utc_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    events = (
+        db.query(UserCalendarEvent)
+        .filter(UserCalendarEvent.start_at < day_end, UserCalendarEvent.end_at > day_start)
+        .order_by(UserCalendarEvent.start_at)
+        .all()
+    )
+
+    def _local_iso(dt):
+        if dt is None:
+            return ""
+        return dt.replace(tzinfo=timezone.utc).astimezone(tz).isoformat()
+
+    return [
+        {
+            "id": e.id,
+            "title": e.title,
+            "start_at": _local_iso(e.start_at),
+            "end_at": _local_iso(e.end_at),
+            "calendar_name": e.calendar_name,
+            "is_current": e.start_at <= now_utc_naive <= e.end_at,
+            "is_past": e.end_at < now_utc_naive,
+        }
+        for e in events
+    ]
 
 
 @app.post("/api/mac-calendar-events")
