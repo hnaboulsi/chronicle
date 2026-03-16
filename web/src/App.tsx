@@ -176,6 +176,12 @@ function intervalLabel(seconds?: number) {
   return `${seconds}s`;
 }
 
+function stripSummaryTimePrefix(text: string): string {
+  // Deterministic summaries begin with "In HH:MM AM — HH:MM AM, " — strip it since
+  // the recap-time column already shows the hour.
+  return text.replace(/^In \d{1,2}:\d{2}\s*[AP]M\s*[–—-]\s*\d{1,2}:\d{2}\s*[AP]M[^,]*,\s*/i, "");
+}
+
 function presenceLabel(value?: string) {
   switch ((value ?? "").toLowerCase()) {
     case "active":
@@ -516,7 +522,7 @@ function TodayPage({
               {hourlySummaries.map(s => (
                 <div key={s.id} className="recap-row">
                   <span className="recap-time">{formatTime(s.hour_start_local, timezone)}</span>
-                  <span className="recap-text">{s.summary_text}</span>
+                  <span className="recap-text">{stripSummaryTimePrefix(s.summary_text)}</span>
                   {s.productivity_score != null && (
                     <span className="recap-score">{Math.round(s.productivity_score * 100)}%</span>
                   )}
@@ -1080,7 +1086,7 @@ export default function App() {
     setRefreshing(true);
     setErrorMessage("");
     try {
-      const [nextState, nextSettings, nextAnalytics, nextLogs, nextHealth, nextCheckin, nextSummaries] =
+      const [nextState, nextSettings, nextAnalytics, nextLogs, nextHealth, nextCheckin] =
         await Promise.all([
           fetchJson<DashboardState>("/api/state"),
           fetchJson<BackendSettings>("/api/settings"),
@@ -1088,7 +1094,6 @@ export default function App() {
           fetchJson<ActivityLog[]>("/api/logs?limit=15"),
           fetchJson<HealthResponse>("/api/healthz"),
           fetchJson<CheckinResponse>("/api/checkin"),
-          fetchJson<HourlySummary[]>("/api/hourly-summaries?limit=4").catch(() => [] as HourlySummary[]),
         ]);
 
       startTransition(() => {
@@ -1098,7 +1103,6 @@ export default function App() {
         setLogs(nextLogs);
         setHealth(nextHealth);
         setCheckin(nextCheckin);
-        setHourlySummaries(nextSummaries);
         setInitialLoading(false);
       });
     } catch (error) {
@@ -1142,15 +1146,32 @@ export default function App() {
     }
   }
 
+  async function refreshSummaries() {
+    try {
+      const next = await fetchJson<HourlySummary[]>("/api/hourly-summaries?limit=4").catch(() => [] as HourlySummary[]);
+      startTransition(() => setHourlySummaries(next));
+    } catch { /* ignore */ }
+  }
+
   useEffect(() => {
     void refreshCore();
+    void refreshSummaries();
     void reloadZones();
 
-    const interval = window.setInterval(() => {
+    // Core telemetry: every 60s (presence, last capture, analytics)
+    const coreInterval = window.setInterval(() => {
       void refreshCore();
-    }, 30_000);
+    }, 60_000);
 
-    return () => window.clearInterval(interval);
+    // Hourly summaries update at most once per hour — poll every 5 min
+    const summaryInterval = window.setInterval(() => {
+      void refreshSummaries();
+    }, 5 * 60_000);
+
+    return () => {
+      window.clearInterval(coreInterval);
+      window.clearInterval(summaryInterval);
+    };
   }, []);
 
   useEffect(() => {
