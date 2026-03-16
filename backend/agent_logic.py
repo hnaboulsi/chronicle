@@ -455,7 +455,34 @@ def get_mac_logs_for_hour(db: Session, since: datetime, until: datetime | None =
     if until is not None:
         q = q.filter(ActivityLog.timestamp < until)
     logs = q.order_by(ActivityLog.timestamp).all()
-    return [{"app_name": l.app_name, "window_title": l.window_title} for l in logs]
+    return [
+        {
+            "app_name": l.app_name,
+            "window_title": l.window_title,
+            "activity_type": l.activity_type,
+            "is_idle": bool(l.is_idle),
+            "presence_state": l.presence_state or "unknown",
+            "timestamp": l.timestamp.isoformat() if l.timestamp else None,
+        }
+        for l in logs
+    ]
+
+
+def get_manual_logs_for_hour(db: Session, since: datetime, until: datetime) -> list:
+    logs = (
+        db.query(ActivityLog)
+        .filter(ActivityLog.device == "manual", ActivityLog.timestamp >= since, ActivityLog.timestamp < until)
+        .order_by(ActivityLog.timestamp)
+        .all()
+    )
+    return [
+        {
+            "label": l.app_name or "manual",
+            "activity_type": l.activity_type or "manual",
+            "note": l.window_title or "",
+        }
+        for l in logs
+    ]
 
 
 def queue_calendar_job(
@@ -656,8 +683,47 @@ async def _generate_and_store_hourly_summary(db: Session, now: datetime, force_c
             app_cache = json.loads(get_state(db, "app_category_cache") or "{}")
             global_context = get_state(db, "global_chat_context", "")
             calendar_events = get_calendar_events_for_window(db, hour_start, hour_end)
+            manual_logs = get_manual_logs_for_hour(db, hour_start, hour_end)
+
+            # Idle metrics
+            total = len(logs)
+            idle_count = sum(1 for l in logs if l.get("is_idle") or l.get("presence_state") in ("away", "locked", "sleeping"))
+            idle_pct = round(idle_count / total * 100) if total else 0
+            active_pct = 100 - idle_pct
+
+            # Previous hour summary score for trend context
+            prev_hour_start = (hour_start - timedelta(hours=1))
+            prev_summary = db.query(HourlySummary).filter(HourlySummary.hour_start == prev_hour_start).first()
+            prev_score = getattr(prev_summary, "productivity_score", None) if prev_summary else None
+
+            # iOS context (most recent entry in window)
+            ios_entry = (
+                db.query(ActivityLog)
+                .filter(ActivityLog.device == "ios", ActivityLog.timestamp >= hour_start, ActivityLog.timestamp < hour_end)
+                .order_by(ActivityLog.timestamp.desc())
+                .first()
+            )
+            ios_context = {}
+            if ios_entry:
+                ios_context = {
+                    "location": ios_entry.location_label,
+                    "steps_today": ios_entry.steps_today,
+                    "activity_type": ios_entry.activity_type,
+                }
+
             register_llm_call(db, now)
-            llm_result = await llm_client.generate_hourly_summary(logs, hour_label, app_cache, global_context=global_context, calendar_events=calendar_events)
+            llm_result = await llm_client.generate_hourly_summary(
+                logs, hour_label, app_cache,
+                global_context=global_context,
+                calendar_events=calendar_events,
+                manual_logs=manual_logs,
+                idle_pct=idle_pct,
+                active_pct=active_pct,
+                prev_score=prev_score,
+                ios_context=ios_context,
+                hour_of_day=local_hour_start.hour,
+                day_of_week=local_hour_start.strftime("%A"),
+            )
             if llm_result and llm_result.get("summary"):
                 result = llm_result
                 source = "llm"

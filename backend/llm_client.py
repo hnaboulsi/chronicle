@@ -279,21 +279,41 @@ async def classify_activity_context(recent_activities: list, user_self_report: s
     }
 
 
-async def generate_hourly_summary(logs: list, hour_start: str, app_cache: dict = None, global_context: str = "", calendar_events: list = None) -> dict:
+async def generate_hourly_summary(
+    logs: list,
+    hour_start: str,
+    app_cache: dict = None,
+    global_context: str = "",
+    calendar_events: list = None,
+    manual_logs: list = None,
+    idle_pct: int = 0,
+    active_pct: int = 100,
+    prev_score: float | None = None,
+    ios_context: dict = None,
+    hour_of_day: int = 12,
+    day_of_week: str = "Monday",
+) -> dict:
     if not logs:
         return {"summary": "No activity recorded this hour.", "productivity_score": None}
 
+    # --- Mac activity lines ---
     lines = []
     for a in logs:
         app = a.get("app_name", "Unknown")
         title = a.get("window_title", "") or ""
         cat = (app_cache or {}).get(app, "")
-        annotation = f" ({cat})" if cat else ""
-        lines.append(f"- {app}{annotation}: {title[:80]}")
+        annotation = f" [{cat}]" if cat else ""
+        idle_tag = " [idle]" if a.get("is_idle") else ""
+        lines.append(f"- {app}{annotation}{idle_tag}: {title[:100]}")
     activity_text = "\n".join(lines)
 
-    global_section = f"User long-term context/projects: {global_context}\n\n" if global_context else ""
+    # --- Manual log entries ---
+    manual_section = ""
+    if manual_logs:
+        ml = "\n".join(f"- {m['label']} ({m['activity_type']}){': ' + m['note'] if m.get('note') else ''}" for m in manual_logs)
+        manual_section = f"\nUser self-reported this hour:\n{ml}\n"
 
+    # --- Calendar section ---
     calendar_section = ""
     if calendar_events:
         cal_lines = []
@@ -306,22 +326,82 @@ async def generate_hourly_summary(logs: list, hour_start: str, app_cache: dict =
                 cal_lines.append(f"- {s}–{e}: {ev['title']}{cal_name}")
             except Exception:
                 cal_lines.append(f"- {ev.get('title', 'Event')}")
-        calendar_section = "Calendar events scheduled during this hour:\n" + "\n".join(cal_lines) + "\n\n"
+        calendar_section = f"\nScheduled calendar events this hour:\n" + "\n".join(cal_lines) + "\n"
 
-    prompt = (
-        f"You are a productivity analyst. Here is what the user did on their Mac during {hour_start}:\n\n"
-        f"{activity_text}\n\n"
-        "CONTEXT: App names in parentheses show the category (working/studying/creative/entertainment/etc). "
-        "'Cursor' is an AI code editor for coding. 'Antigravity' is a productivity app. "
-        "'Vero' and 'LifeManager' are personal productivity tracking apps (NOT social media).\n"
-        f"{global_section}"
-        f"{calendar_section}"
-        "Write a 2-3 sentence summary of what they worked on, how focused they were, and whether time was well spent. "
-        "Do NOT begin the summary with a time range — the time is shown separately. "
-        + ("If calendar events are listed, note whether Mac activity appears to match or contradict them. " if calendar_section else "")
-        + "Then give a productivity score 0-10.\n\n"
-        'Respond ONLY with valid JSON: {"summary": "...", "productivity_score": 7.5}'
-    )
+    # --- iOS / physical context ---
+    ios_section = ""
+    if ios_context and any(ios_context.values()):
+        parts = []
+        if ios_context.get("location"):
+            parts.append(f"Location: {ios_context['location']}")
+        if ios_context.get("activity_type"):
+            parts.append(f"Physical activity: {ios_context['activity_type']}")
+        if ios_context.get("steps_today") is not None:
+            parts.append(f"Steps today so far: {ios_context['steps_today']}")
+        ios_section = "\nPhysical context: " + ", ".join(parts) + "\n"
+
+    # --- Previous hour trend ---
+    trend_section = ""
+    if prev_score is not None:
+        trend_section = f"\nPrevious hour productivity score: {prev_score}/10\n"
+
+    # --- Global context ---
+    global_section = f"\nUser's ongoing projects / long-term context:\n{global_context}\n" if global_context else ""
+
+    # --- Time context ---
+    if 5 <= hour_of_day < 9:
+        time_context = "early morning"
+    elif 9 <= hour_of_day < 12:
+        time_context = "morning (prime work hours)"
+    elif 12 <= hour_of_day < 14:
+        time_context = "midday / lunch window"
+    elif 14 <= hour_of_day < 18:
+        time_context = "afternoon (prime work hours)"
+    elif 18 <= hour_of_day < 21:
+        time_context = "evening"
+    elif 21 <= hour_of_day < 24:
+        time_context = "late evening"
+    else:
+        time_context = "late night / early hours"
+
+    prompt = f"""You are Vero, a precise personal productivity analyst. Analyze this hour of activity and return a JSON object.
+
+TIME CONTEXT: {day_of_week}, {time_context} ({hour_of_day}:00)
+PRESENCE: {active_pct}% active / {idle_pct}% idle or away this hour
+{trend_section}{global_section}
+MAC ACTIVITY (app [category] [idle if inactive]: window title):
+{activity_text}
+{manual_section}{calendar_section}{ios_section}
+APP CATEGORY KEY: [working]=coding/dev tools/work apps, [studying]=learning, [creative]=design/video, [entertainment]=YouTube/Netflix/Reddit, [social_media]=Twitter/Instagram, [gaming]=games, [break]=confirmed rest
+
+SCORING RUBRIC — be strict, do not inflate:
+10: Exceptional — pure deep focused work/study for the full hour, zero distractions
+9:  Strong — deep work with only brief context switches (< 5 min total off-task)
+8:  Good — mostly focused work, 1-2 short breaks or minor distractions
+7:  Solid — productive work majority of hour, some unrelated browsing
+6:  Moderate — roughly half productive, half distracted or idle
+5:  Below average — more distraction than work, or mostly idle with some work
+4:  Poor — primarily entertainment/social media with minor work activity
+3:  Very poor — almost entirely off-task during work hours
+2:  Wasted — full hour of entertainment/social media during prime hours
+1:  Inactive — present but not engaging (screen on, no meaningful activity)
+0:  Away — no activity at all
+
+SCORE ADJUSTMENTS:
+- Late night (22:00+) or early morning (before 7:00): lower expectations, shift score up 1 if activity is reasonable for the time
+- Confirmed break (manual log or calendar block): score 5 is neutral/expected, not penalized
+- Calendar mismatch (calendar says meeting but Mac shows unrelated browsing): note it, penalize 1-2 points
+- Calendar match (working on what calendar says): bonus +0.5
+- High idle% (>50%): cap score at 5 unless idle is during confirmed break
+
+INSTRUCTIONS:
+- Write 2-3 sentences: what specifically they did, how focused, and one concrete observation (pattern, concern, or positive)
+- If calendar events exist, explicitly state whether Mac activity matches or contradicts them
+- Do NOT start with a time range — just describe the activity directly
+- Be specific about app names and what they suggest (e.g. "Cursor suggests active coding" not just "used coding tools")
+- productivity_score must be a float to one decimal place, strictly following the rubric above
+
+Respond ONLY with valid JSON: {{"summary": "...", "productivity_score": 7.5}}"""
 
     result_text = await ask_llm(prompt, model_kind="default")
     result = _parse_json_response(result_text)
