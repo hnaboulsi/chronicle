@@ -379,7 +379,7 @@ async def do_login(request: Request):
 
 BACKEND_DIR = os.path.dirname(__file__)
 LEGACY_FRONTEND_PATH = os.path.join(BACKEND_DIR, "frontend")
-WEB_DIST_PATH = os.path.abspath(os.path.join(BACKEND_DIR, "..", "web", "dist"))
+WEB_DIST_PATH = os.path.join(BACKEND_DIR, "web_dist")
 WEB_ASSETS_PATH = os.path.join(WEB_DIST_PATH, "assets")
 FRONTEND_DEV_URL = os.environ.get("FRONTEND_DEV_URL", "").rstrip("/")
 
