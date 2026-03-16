@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleDisplayName</key>
-    <string>Vero Agent</string>
+    <string>Vero Helper</string>
     <key>CFBundleName</key>
-    <string>Vero Agent</string>
+    <string>Vero Helper</string>
     <key>CFBundleIdentifier</key>
     <string>com.naboulsi.vero.agent</string>
     <key>LSMinimumSystemVersion</key>
@@ -13,8 +13,10 @@
     <key>LSUIElement</key>
     <true/>
     <key>NSCalendarsUsageDescription</key>
-    <string>Vero Agent writes queued productivity events to Apple Calendar on this Mac.</string>
+    <string>Vero Helper writes queued productivity events to Apple Calendar on this Mac.</string>
     <key>NSAppleEventsUsageDescription</key>
-    <string>Vero Agent reads your browser tab titles to track what you're working on.</string>
+    <string>Vero Helper reads your browser tab titles to track what you're working on.</string>
+    <key>NSUserNotificationUsageDescription</key>
+    <string>Vero Helper sends check-ins and background status notifications.</string>
 </dict>
 </plist>

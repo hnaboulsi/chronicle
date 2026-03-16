@@ -88,23 +88,45 @@ final class AppGroupStore: ObservableObject {
         }
     }
 
-    var pollingInterval: Int {
+    var captureInterval: Int {
         get {
-            let value = defaults?.integer(forKey: "polling_interval_seconds") ?? 60
-            return value == 0 ? 60 : value
+            let captureValue = defaults?.integer(forKey: "capture_interval_seconds") ?? 0
+            if captureValue > 0 {
+                return captureValue
+            }
+            let legacyValue = defaults?.integer(forKey: "polling_interval_seconds") ?? 300
+            return legacyValue == 0 ? 300 : legacyValue
         }
         set {
+            defaults?.set(newValue, forKey: "capture_interval_seconds")
             defaults?.set(newValue, forKey: "polling_interval_seconds")
         }
     }
 
-    var classificationInterval: Int {
+    var pollingInterval: Int {
+        get { captureInterval }
+        set { captureInterval = newValue }
+    }
+
+    var privacyMode: String {
         get {
-            let value = defaults?.integer(forKey: "classification_interval_seconds") ?? 300
-            return value == 0 ? 300 : value
+            let raw = defaults?.string(forKey: "privacy_mode") ?? "private"
+            return raw.isEmpty ? "private" : raw
         }
         set {
-            defaults?.set(newValue, forKey: "classification_interval_seconds")
+            defaults?.set(newValue, forKey: "privacy_mode")
+        }
+    }
+
+    var calendarSyncEnabled: Bool {
+        get {
+            if defaults?.object(forKey: "calendar_sync_enabled") == nil {
+                return true
+            }
+            return defaults?.bool(forKey: "calendar_sync_enabled") ?? true
+        }
+        set {
+            defaults?.set(newValue, forKey: "calendar_sync_enabled")
         }
     }
 

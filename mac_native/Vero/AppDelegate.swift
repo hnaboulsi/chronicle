@@ -58,6 +58,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItemController.stop()
     }
 
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        true
+    }
+
     func openSettingsWindow() {
         if NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil) {
             NSApp.activate(ignoringOtherApps: true)

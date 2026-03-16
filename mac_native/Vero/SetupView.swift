@@ -17,26 +17,35 @@ struct SetupView: View {
                 SecureField("Password or auth token", text: $authTokenInput)
 
                 HStack {
-                    Button(isLoading ? "Connecting…" : "Save Connection") {
+                    Button(isLoading ? "Connecting…" : "Connect Menu Bar Companion") {
                         connectToBackend()
                     }
-                    .disabled(isLoading || backendURLInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || authTokenInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(
+                        isLoading
+                            || backendURLInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || authTokenInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    )
 
-                    if let dashboardURL = dashboardURL {
+                    if let dashboardURL {
                         Button("Open Dashboard") {
                             NSWorkspace.shared.open(dashboardURL)
                         }
                     }
                 }
 
-                Text("Use your deployed HTTPS backend URL and the same dashboard password the Mac app uses for Basic Auth.")
+                Text("Use your hosted HTTPS backend URL and the same dashboard password or Basic Auth value you use on the web.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
-            Section("Status") {
+            Section("How Vero Works") {
+                Text("Vero lives in your menu bar after setup. Use the dashboard for tracking cadence, privacy, zones, and diagnostics.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
                 LabeledContent("Connected", value: AppGroupStore.shared.isConfigured ? "Yes" : "No")
                 LabeledContent("Calendar", value: CalendarSyncEngine.shared.targetDescription())
+
                 Text(CalendarSyncEngine.shared.setupRecommendation())
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -62,7 +71,7 @@ struct SetupView: View {
     }
 
     private var dashboardURL: URL? {
-        AppGroupStore.shared.backendURL?.appendingPathComponent("dashboard/index.html")
+        AppGroupStore.shared.backendURL?.appendingPathComponent("today")
     }
 
     private func connectToBackend() {
@@ -95,9 +104,10 @@ struct SetupView: View {
                     let store = AppGroupStore.shared
                     store.backendURL = url
                     store.authValue = auth
-                    statusMessage = "Connection saved."
+                    statusMessage = "Connection saved. Opening the dashboard."
                     isLoading = false
                     onConnected()
+                    NSWorkspace.shared.open(url.appendingPathComponent("today"))
                 }
             } catch {
                 await MainActor.run {
@@ -122,5 +132,5 @@ struct SetupView: View {
 
 #Preview {
     SetupView(onConnected: {})
-        .frame(width: 480, height: 320)
+        .frame(width: 560, height: 420)
 }

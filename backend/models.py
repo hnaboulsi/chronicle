@@ -1,8 +1,10 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, Text
-from database import Base
 import datetime
-from pydantic import BaseModel
 from typing import Optional
+
+from pydantic import BaseModel
+from sqlalchemy import Boolean, Column, DateTime, Float, Integer, String, Text
+
+from database import Base
 
 # Helper to get current UTC time as naive datetime (for backward compat with existing DB)
 def _utc_now():
@@ -14,16 +16,18 @@ class ActivityLog(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     timestamp = Column(DateTime, default=_utc_now)
-    device = Column(String, index=True) # "mac" or "ios"
+    device = Column(String, index=True)  # "mac" or "ios"
     app_name = Column(String, nullable=True)
     window_title = Column(String, nullable=True)
     is_idle = Column(Boolean, default=False)
-    location_label = Column(String, nullable=True) # e.g. "Library", "Home"
-    activity_type = Column(String, nullable=True) # e.g. "Walking", "Stationary"
+    location_label = Column(String, nullable=True)  # e.g. "Library", "Home"
+    activity_type = Column(String, nullable=True)  # e.g. "Walking", "Stationary"
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
     steps_today = Column(Integer, nullable=True)
     battery_pct = Column(Integer, nullable=True)  # 0-100, iOS only
+    presence_state = Column(String, nullable=True)
+    screen_state = Column(String, nullable=True)
 
 class AgentState(Base):
     __tablename__ = "agent_states"
@@ -71,6 +75,9 @@ class MacTelemetry(BaseModel):
     window_title: str
     idle_time_seconds: int
     recent_history: Optional[list] = None
+    presence_state: Optional[str] = None
+    screen_state: Optional[str] = None
+    detailed_capture_enabled: Optional[bool] = False
 
 class HourlySummary(Base):
     __tablename__ = "hourly_summaries"
@@ -102,6 +109,13 @@ class MacHeartbeat(BaseModel):
     tracking_enabled: Optional[bool] = True
     permissions_state: Optional[str] = "ok"
     last_error: Optional[str] = None
+
+
+class MacPresence(BaseModel):
+    presence_state: str
+    screen_state: Optional[str] = "visible"
+    changed_at: Optional[datetime.datetime] = None
+    idle_time_seconds: int = 0
 
 
 class iOSZoneEvent(BaseModel):

@@ -13,7 +13,7 @@ struct VeroApp: App {
     var body: some Scene {
         Settings {
             SetupView(onConnected: {})
-                .frame(minWidth: 480, minHeight: 280)
+                .frame(minWidth: 520, minHeight: 420)
         }
     }
 }

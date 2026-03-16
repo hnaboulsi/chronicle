@@ -72,11 +72,11 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
         let statusText: String
         if !isConfigured {
-            statusText = "Status: Not connected"
+            statusText = "Status: Connect Vero to start"
         } else if hasError {
             statusText = "Status: Attention needed"
         } else if trackingEnabled {
-            statusText = "Status: Tracking"
+            statusText = "Status: Menu bar companion active"
         } else {
             statusText = "Status: Paused"
         }
@@ -88,7 +88,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         toggleTrackingItem.title = trackingEnabled ? "Pause Tracking" : "Resume Tracking"
         toggleTrackingItem.isEnabled = isConfigured
         openDashboardItem.isEnabled = isConfigured
-        settingsItem.title = isConfigured ? "Connection Settings…" : "Connect Backend…"
+        settingsItem.title = hasError ? "Repair Vero…" : (isConfigured ? "Connection Settings…" : "Connect Vero…")
         statusItem.button?.toolTip = "Vero"
     }
 
@@ -100,7 +100,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     @objc private func openDashboard() {
         guard let baseURL = store.backendURL else { return }
-        NSWorkspace.shared.open(baseURL.appendingPathComponent("dashboard/index.html"))
+        NSWorkspace.shared.open(baseURL.appendingPathComponent("today"))
     }
 
     @objc private func openSettings() {
