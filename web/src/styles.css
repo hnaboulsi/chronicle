@@ -808,17 +808,29 @@ select:focus-visible {
   border-radius: 999px; background: var(--accent); color: #fff;
   white-space: nowrap;
 }
+.cal-countdown {
+  font-size: 0.72rem; font-weight: 700; color: var(--accent);
+  background: rgba(129,140,248,0.12); border: 1px solid rgba(129,140,248,0.25);
+  border-radius: 999px; padding: 1px 7px; white-space: nowrap; flex-shrink: 0;
+}
 
 /* AI recap list */
 .recap-list { display: flex; flex-direction: column; gap: 10px; }
 .recap-row {
-  display: flex; align-items: baseline; gap: 12px;
+  display: flex; align-items: flex-start; gap: 12px;
   padding: 10px 0; border-bottom: 1px solid var(--line);
 }
 .recap-row:last-child { border-bottom: none; }
 .recap-time { font-size: 0.78rem; color: var(--muted); white-space: nowrap; flex-shrink: 0; }
 .recap-text { flex: 1; font-size: 0.88rem; color: var(--text); line-height: 1.4; }
 .recap-score { font-size: 0.78rem; font-weight: 700; color: var(--good); white-space: nowrap; }
+.recap-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.recap-badge {
+  font-size: 0.65rem; font-weight: 700; padding: 2px 6px;
+  border-radius: 999px; text-transform: uppercase; letter-spacing: 0.05em;
+}
+.recap-badge-ai  { background: rgba(129,140,248,0.15); color: var(--accent); border: 1px solid rgba(129,140,248,0.3); }
+.recap-badge-est { background: var(--panel-strong); color: var(--muted); border: 1px solid var(--line); }
 
 /* Activity type tags */
 .tag {
@@ -827,3 +839,34 @@ select:focus-visible {
   border: 1px solid var(--line); white-space: nowrap;
 }
 .tag-manual { color: var(--accent); border-color: var(--accent-dim); }
+
+.checkin-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.btn-primary {
+  background: var(--accent); color: #fff; border: none; border-radius: 8px;
+  padding: 6px 16px; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+}
+.btn-primary:hover { opacity: 0.88; }
+.btn-secondary {
+  background: var(--panel-strong); color: var(--text); border: 1px solid var(--line);
+  border-radius: 8px; padding: 6px 16px; font-size: 0.85rem; cursor: pointer;
+}
+.btn-secondary:hover { background: var(--panel); }
+.btn-ghost {
+  background: transparent; color: var(--muted); border: none;
+  padding: 6px 12px; font-size: 0.85rem; cursor: pointer;
+}
+.btn-ghost:hover { color: var(--text); }
+
+.category-pill {
+  display: inline-block; font-size: 0.72rem; font-weight: 700;
+  padding: 2px 10px; border-radius: 999px; text-transform: uppercase;
+  letter-spacing: 0.06em; margin-top: 4px;
+  background: var(--panel-strong); color: var(--muted); border: 1px solid var(--line);
+}
+.cat-working   { color: var(--accent); background: rgba(129,140,248,0.1); border-color: rgba(129,140,248,0.25); }
+.cat-studying  { color: var(--good);   background: rgba(52,211,153,0.1);  border-color: rgba(52,211,153,0.25); }
+.cat-creative  { color: #f59e0b;       background: rgba(245,158,11,0.1);  border-color: rgba(245,158,11,0.25); }
+.cat-entertainment, .cat-social_media, .cat-gaming {
+  color: #f87171; background: rgba(248,113,113,0.1); border-color: rgba(248,113,113,0.25);
+}
+.cat-break, .cat-idle { color: var(--muted); }

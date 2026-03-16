@@ -124,6 +124,8 @@ type HourlySummary = {
   hour_start_local: string;
   summary_text: string;
   productivity_score: number | null;
+  source: string;
+  fallback_used: boolean;
 };
 
 type ZoneRecord = {
@@ -205,6 +207,13 @@ function stripSummaryTimePrefix(text: string): string {
   // Deterministic summaries begin with "In HH:MM AM — HH:MM AM, " — strip it since
   // the recap-time column already shows the hour.
   return text.replace(/^In \d{1,2}:\d{2}\s*[AP]M\s*[–—-]\s*\d{1,2}:\d{2}\s*[AP]M[^,]*,\s*/i, "");
+}
+
+function minutesUntil(isoStr: string): number | null {
+  try {
+    const diff = Math.round((new Date(isoStr).getTime() - Date.now()) / 60000);
+    return diff > 0 && diff <= 90 ? diff : null;
+  } catch { return null; }
 }
 
 function presenceLabel(value?: string) {
@@ -461,6 +470,11 @@ function TodayPage({
     onRefreshLogs();
   }
 
+  const handleCheckin = async (action: "confirm" | "snooze" | "dismiss") => {
+    await fetch(`/api/checkin/${action}`, { method: "POST" }).catch(() => {});
+    onRefreshLogs();
+  };
+
   async function handleCustomLog() {
     const note = customNote.trim();
     if (!note) return;
@@ -487,6 +501,11 @@ function TodayPage({
               <h3 className="hero-title">
                 {initialLoading ? <Skeleton h="2rem" w="65%" /> : (state?.current_activity_summary ?? "Waiting for your first capture")}
               </h3>
+              {state?.current_activity_category && state.current_activity_category !== "unknown" && (
+                <span className={`category-pill cat-${state.current_activity_category}`}>
+                  {state.current_activity_category.replace(/_/g, " ")}
+                </span>
+              )}
               <p className="hero-copy">
                 {initialLoading ? <Skeleton h="0.9rem" w="40%" /> : (
                   <>
@@ -519,6 +538,7 @@ function TodayPage({
                   <span className="cal-title">{ev.title}</span>
                   {ev.calendar_name && <span className="cal-name">{ev.calendar_name}</span>}
                   {ev.is_current && <span className="cal-badge">Now</span>}
+                  {(() => { const m = minutesUntil(ev.start_at); return m != null ? <span className="cal-countdown">in {m}m</span> : null; })()}
                 </div>
               ))}
             </div>
@@ -568,9 +588,14 @@ function TodayPage({
                 <div key={s.id} className="recap-row">
                   <span className="recap-time">{formatTime(s.hour_start_local, timezone)}</span>
                   <span className="recap-text">{stripSummaryTimePrefix(s.summary_text)}</span>
-                  {s.productivity_score != null && (
-                    <span className="recap-score">{Math.round(s.productivity_score * 100)}%</span>
-                  )}
+                  <div className="recap-right">
+                    {s.source === "llm" && !s.fallback_used
+                      ? <span className="recap-badge recap-badge-ai">AI</span>
+                      : <span className="recap-badge recap-badge-est">est.</span>}
+                    {s.productivity_score != null && (
+                      <span className="recap-score">{s.productivity_score.toFixed(1)}/10</span>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -581,9 +606,14 @@ function TodayPage({
       {/* Check-in if pending */}
       {checkin?.checkin ? (
         <div className="col-span-4">
-          <Surface title="Pending check-in" eyebrow="Needs input">
+          <Surface title="Check-in" eyebrow="Needs input">
             <p className="lead">{checkin.checkin}</p>
-            {checkin.guess ? <p className="muted">Last guess: {checkin.guess}</p> : null}
+            {checkin.guess ? <p className="muted">Guess: {checkin.guess}</p> : null}
+            <div className="checkin-actions">
+              <button className="btn-primary" onClick={() => void handleCheckin("confirm")}>Confirm</button>
+              <button className="btn-secondary" onClick={() => void handleCheckin("snooze")}>Snooze</button>
+              <button className="btn-ghost" onClick={() => void handleCheckin("dismiss")}>Dismiss</button>
+            </div>
           </Surface>
         </div>
       ) : null}

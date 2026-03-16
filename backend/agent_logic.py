@@ -412,7 +412,9 @@ def heuristic_classify_activity(recent_activities: list, idle_time_seconds: int 
           "slack", "zoom", "vero", "lifemanager", "postman", "datagrip", "tableplus",
           "zed", "emacs", "vim", "arc",
           "claude", "claude.ai", "anthropic", "gemini.google", "aistudio.google",
-          "chatgpt", "openai", "copilot", "windsurf"], ("working", "Doing focused computer work")),
+          "chatgpt", "openai", "copilot", "windsurf",
+          "code", "stackoverflow", "vercel", "railway", "docs.google", "drive.google",
+          "sheets", "supabase", "planetscale", "render.com", "heroku", "aws", "azure", "gcp"], ("working", "Doing focused computer work")),
     ]
     for needles, result in rules:
         if any(n in text for n in needles):
@@ -608,15 +610,26 @@ def _maybe_start_session(db: Session, category: str, summary: str, now: datetime
     log.info("Session started: %s - %s", category, summary)
 
 
+_CATEGORY_SCORES = {
+    "working": 7.0, "studying": 7.0, "creative": 6.5,
+    "break": 5.0, "entertainment": 3.0, "social_media": 3.0,
+    "gaming": 2.5, "idle": 4.0, "unknown": 5.0,
+}
+
+
 def _deterministic_hourly_summary(logs: list[dict], hour_label: str) -> dict:
     app_counts: dict[str, int] = {}
     for row in logs:
         app = (row.get("app_name") or "Unknown App").strip() or "Unknown App"
         app_counts[app] = app_counts.get(app, 0) + 1
-    top_apps = sorted(app_counts.items(), key=lambda item: item[1], reverse=True)[:3]
-    app_text = ", ".join(app for app, _ in top_apps) if top_apps else "mixed activity"
+    top_apps = sorted(app_counts.items(), key=lambda x: x[1], reverse=True)[:3]
+    app_text = ", ".join(a for a, _ in top_apps) if top_apps else "mixed activity"
+
+    heuristic = heuristic_classify_activity(logs) if logs else {"category": "unknown"}
+    category = heuristic.get("category", "unknown")
+    score = _CATEGORY_SCORES.get(category, 5.0) if top_apps else 4.0
+
     summary = f"Activity was mostly in {app_text}."
-    score = 6.0 if top_apps else 4.5
     return {"summary": summary, "productivity_score": score}
 
 
