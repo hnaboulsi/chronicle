@@ -1,13 +1,15 @@
 import json
 import logging
 import os
+import re
 from datetime import datetime, timedelta
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
-from models import AgentState, ActivityLog, CalendarEventJob, HourlySummary, LocationZone, MacHeartbeat, MacTelemetry, iOSTelemetry, iOSZoneEvent
+from models import AgentState, ActivityLog, CalendarEventJob, HourlySummary, LocationZone, MacHeartbeat, MacPresence, MacTelemetry, iOSTelemetry, iOSZoneEvent
 import llm_client
 
 log = logging.getLogger("life_manager")
@@ -15,17 +17,27 @@ log = logging.getLogger("life_manager")
 PRODUCTIVE_CATEGORIES = {"studying", "working", "creative"}
 DISTRACTED_CATEGORIES = {"entertainment", "social_media", "gaming"}
 MIN_SESSION_MINUTES = 10
+VALID_PRESENCE_STATES = {"active", "idle", "away", "locked", "sleeping"}
+AWAY_PRESENCE_STATES = {"away", "locked", "sleeping"}
+VALID_SCREEN_STATES = {"visible", "locked", "sleeping", "unknown"}
+BROWSER_APP_NAMES = {"Safari", "Google Chrome", "Brave Browser", "Arc"}
+URL_PATTERN = re.compile(r"https?://[^\s)]+", re.IGNORECASE)
+DOMAIN_PATTERN = re.compile(r"\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b", re.IGNORECASE)
 
 DEFAULTS = {
     "backend_mode": "railway_primary",
     "llm_mode": "balanced",
     "ai_provider": "auto",
     "hourly_summaries_enabled": "true",
-    "classification_interval_seconds": "1800",  # 30-min default to conserve API budget
+    "capture_interval_seconds": "300",
+    "polling_interval_seconds": "300",
+    "classification_interval_seconds": "300",
     "llm_daily_cap": "30",   # Gemini free tier is generous; 30 is a safe daily default
     "sleep_source": "iphone_only",
     "user_timezone": "America/Los_Angeles",
     "tracking_enabled": "true",
+    "privacy_mode": "private",
+    "calendar_sync_enabled": "true",
 }
 
 DEFAULT_ZONES = [
@@ -105,10 +117,35 @@ def get_all_states(db: Session):
     return {s.key: s.value for s in states}
 
 
+def _set_state_if_changed(db: Session, key: str, value: str):
+    if get_state(db, key) != value:
+        set_state(db, key, value)
+
+
+def get_capture_interval_seconds(db: Session) -> int:
+    raw = (
+        get_state(db, "capture_interval_seconds")
+        or get_state(db, "polling_interval_seconds")
+        or DEFAULTS["capture_interval_seconds"]
+    )
+    return max(60, _safe_int(raw, 300))
+
+
+def set_capture_interval_seconds(db: Session, seconds: int):
+    normalized = max(60, int(seconds))
+    derived_classification = max(300, normalized)
+    _set_state_if_changed(db, "capture_interval_seconds", str(normalized))
+    _set_state_if_changed(db, "polling_interval_seconds", str(normalized))
+    _set_state_if_changed(db, "classification_interval_seconds", str(derived_classification))
+
+
 def ensure_default_settings(db: Session):
     for key, value in DEFAULTS.items():
+        if key in {"capture_interval_seconds", "polling_interval_seconds", "classification_interval_seconds"}:
+            continue
         if not get_state(db, key):
             set_state(db, key, value)
+    set_capture_interval_seconds(db, get_capture_interval_seconds(db))
     ensure_default_zones(db)
     os.environ["LIFE_MANAGER_AI_PROVIDER"] = get_state(db, "ai_provider", DEFAULTS["ai_provider"])
 
@@ -216,6 +253,77 @@ def _age_seconds(value: str | None, now: datetime | None = None) -> int | None:
         return None
     now = now or datetime.utcnow()
     return max(0, int((now - dt).total_seconds()))
+
+
+def normalize_presence_state(value: str | None, idle_time_seconds: int = 0) -> str:
+    cleaned = (value or "").strip().lower()
+    if cleaned in VALID_PRESENCE_STATES:
+        return cleaned
+    if idle_time_seconds < 60:
+        return "active"
+    if idle_time_seconds < 300:
+        return "idle"
+    return "away"
+
+
+def normalize_screen_state(value: str | None, presence_state: str) -> str:
+    cleaned = (value or "").strip().lower()
+    if cleaned in VALID_SCREEN_STATES:
+        return cleaned
+    if presence_state == "locked":
+        return "locked"
+    if presence_state == "sleeping":
+        return "sleeping"
+    return "visible"
+
+
+def presence_summary(presence_state: str) -> str:
+    return {
+        "active": "Active on your Mac",
+        "idle": "Briefly idle",
+        "away": "Away from your Mac",
+        "locked": "Mac locked",
+        "sleeping": "Mac sleeping",
+    }.get(presence_state, "Unknown presence")
+
+
+def _extract_domain_hint(text: str) -> str:
+    if not text:
+        return ""
+    match = URL_PATTERN.search(text)
+    if match:
+        host = urlparse(match.group(0)).netloc.lower().split("@")[-1].split(":")[0]
+        return host[4:] if host.startswith("www.") else host
+
+    for token in re.split(r"\s+", text):
+        cleaned = token.strip("()[]{}<>|,;\"'")
+        if DOMAIN_PATTERN.fullmatch(cleaned):
+            lowered = cleaned.lower()
+            return lowered[4:] if lowered.startswith("www.") else lowered
+    return ""
+
+
+def sanitize_window_title(app_name: str, window_title: str, privacy_mode: str, detailed_capture_enabled: bool = False) -> str:
+    title = (window_title or "").strip()
+    if not title:
+        return ""
+    if privacy_mode == "detailed" or detailed_capture_enabled:
+        return title[:240]
+
+    domain_hint = _extract_domain_hint(title)
+    if domain_hint:
+        return domain_hint
+    if app_name in BROWSER_APP_NAMES:
+        return "Browser activity"
+    if title.lower() == (app_name or "").strip().lower():
+        return app_name[:120]
+    if app_name:
+        return f"{app_name[:100]} activity"
+    return "Activity"
+
+
+def _presence_changed_at(states: dict, now: datetime) -> datetime:
+    return _parse_iso_dt(states.get("last_presence_change_at")) or now
 
 
 def llm_usage_snapshot(db: Session, now: datetime | None = None) -> dict:
@@ -355,7 +463,7 @@ def _queue_session_event(db: Session, category: str, summary: str, start_dt: dat
     label = label_map.get(category, category.replace("_", " ").title())
     display = summary if summary else label
     title = f"{display} ({duration_min} min)"
-    notes = f"Auto-logged by Life Manager | Category: {category}"
+    notes = f"Auto-logged by Vero | Category: {category}"
     queue_calendar_job(
         db,
         kind="session",
@@ -567,14 +675,71 @@ def _update_sleep_state(db: Session, now: datetime, activity_type: str, is_charg
         set_state(db, "user_asleep", "false")
 
 
+def _is_checkin_stale(db: Session, now: datetime) -> bool:
+    last_checkin = _parse_iso_dt(get_state(db, "last_user_checkin"))
+    if not last_checkin:
+        return True
+    return (now - last_checkin).total_seconds() > 1800
+
+
+def _set_resume_checkin(db: Session, now: datetime):
+    if get_state(db, "pending_checkin"):
+        return
+
+    location = get_state(db, "current_location")
+    if location:
+        guess = _guess_activity(location, "", now, db)
+        if guess:
+            msg = f"Back at {location} — {guess.rstrip('.')}?"
+        else:
+            msg = f"Back at {location} — what are you working on?"
+    else:
+        msg = "Welcome back. What are you working on next?"
+
+    set_state(db, "pending_checkin", msg)
+    set_state(db, "checkin_guess", "")
+    log.info("Mac return check-in: %s", msg)
+
+
+def _record_presence_state(
+    db: Session,
+    presence_state: str,
+    screen_state: str,
+    now: datetime,
+    idle_time_seconds: int,
+):
+    states = get_all_states(db)
+    previous_presence = normalize_presence_state(states.get("presence_state"), idle_time_seconds)
+    previous_changed_at = _presence_changed_at(states, now)
+    changed = previous_presence != presence_state or (states.get("screen_state") or "visible") != screen_state
+
+    if changed:
+        set_state(db, "last_presence_change_at", now.isoformat())
+        if previous_presence in AWAY_PRESENCE_STATES and presence_state == "active":
+            away_seconds = max(0, int((now - previous_changed_at).total_seconds()))
+            if away_seconds >= 900 and _is_checkin_stale(db, now):
+                _set_resume_checkin(db, now)
+
+    set_state(db, "presence_state", presence_state)
+    set_state(db, "screen_state", screen_state)
+    set_state(db, "last_mac_presence", now.isoformat())
+    set_state(db, "last_mac_idle", str(presence_state != "active").lower())
+
+    if presence_state in AWAY_PRESENCE_STATES:
+        set_state(db, "callout_category", "")
+        set_state(db, "callout_summary", "")
+        set_state(db, "pending_prompt", "")
+
+
 def compute_mac_status(states: dict, now: datetime | None = None) -> dict:
     now = now or datetime.utcnow()
     heartbeat_age = _age_seconds(states.get("last_mac_heartbeat"), now)
-    snapshot_age = _age_seconds(states.get("last_mac_ping"), now)
+    capture_age = _age_seconds(states.get("last_capture_at") or states.get("last_mac_ping"), now)
     tracking_enabled = str(states.get("tracking_enabled", "true")).lower() == "true"
     permissions_state = (states.get("last_mac_permissions_state") or "ok").lower()
     agent_state = (states.get("last_mac_agent_state") or "running").lower()
-    is_idle = str(states.get("last_mac_idle", "false")).lower() == "true"
+    presence_state = normalize_presence_state(states.get("presence_state"), 0)
+    screen_state = normalize_screen_state(states.get("screen_state"), presence_state)
 
     if heartbeat_age is None or heartbeat_age > 150:
         status = "offline"
@@ -585,9 +750,18 @@ def compute_mac_status(states: dict, now: datetime | None = None) -> dict:
     elif permissions_state not in {"ok", "granted"}:
         status = "degraded"
         reason = "The agent is alive, but macOS permissions are incomplete."
-    elif is_idle:
-        status = "online_idle"
-        reason = "The agent is online and the Mac has been idle."
+    elif presence_state == "idle":
+        status = "online"
+        reason = "The agent is online and the Mac is briefly idle."
+    elif presence_state == "away":
+        status = "online"
+        reason = "The agent is online and you are away from your Mac."
+    elif presence_state == "locked":
+        status = "online"
+        reason = "The agent is online and the Mac is locked."
+    elif presence_state == "sleeping":
+        status = "online"
+        reason = "The agent is online and the Mac is sleeping."
     else:
         status = "online"
         reason = "The agent is online and sending heartbeats."
@@ -597,7 +771,10 @@ def compute_mac_status(states: dict, now: datetime | None = None) -> dict:
         "mac_status_reason": reason,
         "mac_online": status != "offline",
         "last_mac_heartbeat_age_seconds": heartbeat_age,
-        "last_mac_snapshot_age_seconds": snapshot_age,
+        "last_mac_capture_age_seconds": capture_age,
+        "last_mac_snapshot_age_seconds": capture_age,
+        "presence_state": presence_state,
+        "screen_state": screen_state,
     }
 
 
@@ -614,51 +791,34 @@ async def process_mac_heartbeat(data: MacHeartbeat, db: Session):
         set_state(db, "tracking_enabled", str(bool(data.tracking_enabled)).lower())
 
 
+async def process_mac_presence(data: MacPresence, db: Session):
+    now = data.changed_at or datetime.utcnow()
+    ensure_default_settings(db)
+    presence_state = normalize_presence_state(data.presence_state, data.idle_time_seconds)
+    screen_state = normalize_screen_state(data.screen_state, presence_state)
+    _record_presence_state(db, presence_state, screen_state, now, data.idle_time_seconds)
+
+
 async def process_mac_telemetry(data: MacTelemetry, db: Session):
     now = datetime.utcnow()
     ensure_default_settings(db)
+    privacy_mode = get_state(db, "privacy_mode", DEFAULTS["privacy_mode"])
+    presence_state = normalize_presence_state(data.presence_state, data.idle_time_seconds)
+    screen_state = normalize_screen_state(data.screen_state, presence_state)
 
-    prev_mac_ping_str = get_state(db, "last_mac_ping")
+    set_state(db, "last_capture_at", now.isoformat())
     set_state(db, "last_mac_ping", now.isoformat())
-    set_state(db, "last_mac_idle", str(data.idle_time_seconds > 60 * 30).lower())
+    _record_presence_state(db, presence_state, screen_state, now, data.idle_time_seconds)
 
-    if prev_mac_ping_str and not get_state(db, "pending_checkin"):
-        try:
-            prev_ping = datetime.fromisoformat(prev_mac_ping_str)
-            offline_seconds = (now - prev_ping).total_seconds()
-            last_checkin_str = get_state(db, "last_user_checkin")
-            checkin_stale = True
-            if last_checkin_str:
-                try:
-                    last_ci = datetime.fromisoformat(last_checkin_str)
-                    checkin_stale = (now - last_ci).total_seconds() > 1800
-                except Exception:
-                    pass
-            if offline_seconds > 900 and checkin_stale:
-                location = get_state(db, "current_location")
-                if location:
-                    guess = _guess_activity(location, "", now, db)
-                    msg = f"Welcome back! You were at {location}. {guess} - what were you up to?"
-                else:
-                    msg = "Welcome back! What have you been up to?"
-                set_state(db, "pending_checkin", msg)
-                set_state(db, "checkin_guess", "")
-                log.info("Mac return check-in: %s", msg)
-        except Exception:
-            pass
-
-    if data.idle_time_seconds > 60 * 30:
-        if not get_state(db, "pending_prompt"):
-            set_state(db, "pending_prompt", "Hey - you've been idle for 30+ minutes. Taking a break or got distracted?")
+    if presence_state != "active":
+        set_state(db, "current_activity_category", "idle")
+        set_state(db, "current_activity_summary", presence_summary(presence_state))
         return
 
     last_check_str = get_state(db, "last_vagueness_check")
     last_check = datetime.fromisoformat(last_check_str) if last_check_str else datetime.min
 
-    classification_interval = _safe_int(
-        get_state(db, "classification_interval_seconds", DEFAULTS["classification_interval_seconds"]),
-        1800,
-    )
+    classification_interval = max(300, get_capture_interval_seconds(db))
     if (now - last_check).total_seconds() > classification_interval:
         set_state(db, "last_vagueness_check", now.isoformat())
 
@@ -682,6 +842,7 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session):
 
         set_state(db, "current_activity_category", new_category)
         set_state(db, "current_activity_summary", new_summary)
+        set_state(db, "last_redacted_window_title", sanitize_window_title(data.app_name, data.window_title, privacy_mode, bool(data.detailed_capture_enabled)))
         log.info("Activity classified: %s - %s", new_category, new_summary)
 
         study_mode = get_state(db, "study_mode")

@@ -39,9 +39,9 @@ final class CalendarSyncEngine {
 
     func setupRecommendation() -> String {
         if hasICloudSource() {
-            return "Keep iCloud Calendar enabled and make sure the Life Manager calendar stays under the iCloud section in Calendar.app."
+            return "Keep iCloud Calendar enabled and make sure the Vero calendar stays under the iCloud section in Calendar.app."
         }
-        return "Turn on System Settings > Apple Account > iCloud > Calendar, then create or move the Life Manager calendar under the iCloud section in Calendar.app."
+        return "Turn on System Settings > Apple Account > iCloud > Calendar, then create or move the Vero calendar under the iCloud section in Calendar.app."
     }
 
     func syncPendingJobs(client: BackendClient = .shared) async {

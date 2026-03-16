@@ -44,7 +44,7 @@ struct PermissionsView: View {
 
             Section {
                 Button(action: { model.openSystemSettings() }) {
-                    Label("Open System Preferences", systemImage: "gear")
+                    Label("Open System Settings", systemImage: "gear")
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(.bordered)

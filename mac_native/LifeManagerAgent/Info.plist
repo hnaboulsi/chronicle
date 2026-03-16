@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleDisplayName</key>
-    <string>Life Manager Agent</string>
+    <string>Vero Helper</string>
     <key>CFBundleName</key>
-    <string>Life Manager Agent</string>
+    <string>Vero Helper</string>
     <key>CFBundleIdentifier</key>
     <string>com.naboulsi.lifemanager.agent</string>
     <key>LSMinimumSystemVersion</key>
@@ -13,8 +13,8 @@
     <key>LSUIElement</key>
     <true/>
     <key>NSCalendarsUsageDescription</key>
-    <string>Life Manager Agent writes queued productivity events to Apple Calendar on this Mac.</string>
+    <string>Vero Helper writes queued productivity events to Apple Calendar on this Mac.</string>
     <key>NSUserNotificationUsageDescription</key>
-    <string>Life Manager Agent sends check-ins and background status notifications.</string>
+    <string>Vero Helper sends check-ins and background status notifications.</string>
 </dict>
 </plist>

@@ -8,11 +8,14 @@ enum BackendError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .notConfigured:
-            return "Life Manager is not connected to a cloud backend yet."
+            return "Vero is not connected to a cloud backend yet."
         case .invalidConfiguration:
             return "The saved backend configuration is invalid. Reconnect to your cloud backend."
         case let .invalidResponse(statusCode):
             if let statusCode {
+                if statusCode == 401 {
+                    return "Auth token mismatch. Reconnect backend credentials in the app."
+                }
                 return "The backend returned an unexpected response (\(statusCode))."
             }
             return "The backend returned an unexpected response."
@@ -97,15 +100,16 @@ final class BackendClient {
 
     func saveSettings(_ settings: BackendSettings) async throws {
         let body: [String: Any] = [
-            "polling_interval_seconds": settings.polling_interval_seconds,
+            "capture_interval_seconds": settings.capture_interval_seconds,
             "tracking_enabled": settings.tracking_enabled,
             "backend_mode": settings.backend_mode,
             "ai_provider": settings.ai_provider,
             "llm_mode": settings.llm_mode,
             "hourly_summaries_enabled": settings.hourly_summaries_enabled,
-            "classification_interval_seconds": settings.classification_interval_seconds,
             "llm_daily_cap": settings.llm_daily_cap,
             "user_timezone": settings.user_timezone,
+            "privacy_mode": settings.privacy_mode,
+            "calendar_sync_enabled": settings.calendar_sync_enabled,
         ]
         _ = try await perform(try request(path: "api/settings", method: "POST", jsonBody: body))
     }
@@ -182,11 +186,24 @@ final class BackendClient {
         return try decode(HeartbeatResponse.self, from: data)
     }
 
-    func sendTelemetry(appName: String, windowTitle: String, idleTimeSeconds: Int) async throws -> TelemetryResponse {
+    func sendPresence(presenceState: String, screenState: String, changedAt: Date, idleTimeSeconds: Int) async throws {
+        let body: [String: Any] = [
+            "presence_state": presenceState,
+            "screen_state": screenState,
+            "changed_at": ISO8601DateFormatter().string(from: changedAt),
+            "idle_time_seconds": idleTimeSeconds,
+        ]
+        _ = try await perform(try request(path: "api/mac-presence", method: "POST", jsonBody: body))
+    }
+
+    func sendTelemetry(appName: String, windowTitle: String, idleTimeSeconds: Int, presenceState: String, screenState: String, detailedCaptureEnabled: Bool) async throws -> TelemetryResponse {
         let body: [String: Any] = [
             "app_name": appName,
             "window_title": windowTitle,
             "idle_time_seconds": idleTimeSeconds,
+            "presence_state": presenceState,
+            "screen_state": screenState,
+            "detailed_capture_enabled": detailedCaptureEnabled,
         ]
         let data = try await perform(try request(path: "api/mac-telemetry", method: "POST", jsonBody: body))
         return try decode(TelemetryResponse.self, from: data)

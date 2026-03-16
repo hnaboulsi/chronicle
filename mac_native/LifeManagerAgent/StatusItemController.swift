@@ -8,18 +8,19 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     private var summaryItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private var lastSeenItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-    private var openAppItem = NSMenuItem(title: "Open Life Manager", action: #selector(openApp), keyEquivalent: "")
-    private var openDashboardItem = NSMenuItem(title: "Open Web Dashboard", action: #selector(openDashboard), keyEquivalent: "")
+    private var openSetupItem = NSMenuItem(title: "", action: #selector(openApp), keyEquivalent: "")
+    private var openDashboardItem = NSMenuItem(title: "Open Dashboard", action: #selector(openDashboard), keyEquivalent: "")
+    private var openSettingsItem = NSMenuItem(title: "Open System Settings", action: #selector(openSystemSettings), keyEquivalent: "")
     private var toggleTrackingItem = NSMenuItem(title: "", action: #selector(toggleTracking), keyEquivalent: "")
     private var quitItem = NSMenuItem(title: "Quit Helper", action: #selector(quitHelper), keyEquivalent: "")
 
     func start() {
         if let button = statusItem.button {
             let config = NSImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
-            let image = NSImage(systemSymbolName: "waveform.path.ecg", accessibilityDescription: "Life Manager")
+            let image = NSImage(systemSymbolName: "waveform.path.ecg", accessibilityDescription: "Vero")
             image?.isTemplate = true
             button.image = image?.withSymbolConfiguration(config)
-            button.toolTip = "Life Manager"
+            button.toolTip = "Vero"
         }
 
         menu.delegate = self
@@ -43,13 +44,17 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         lastSeenItem.title = currentLastSeenLabel
         lastSeenItem.isEnabled = false
 
-        openAppItem.target = self
-
         openDashboardItem.target = self
         openDashboardItem.isEnabled = store.backendConfiguration != nil
 
+        openSetupItem.target = self
+        openSetupItem.title = menuBarActionTitle
+
+        openSettingsItem.target = self
+
         toggleTrackingItem.title = store.trackingEnabled ? "Pause Tracking" : "Resume Tracking"
         toggleTrackingItem.target = self
+        toggleTrackingItem.isEnabled = store.backendConfiguration != nil
 
         quitItem.target = self
 
@@ -57,8 +62,11 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         menu.addItem(summaryItem)
         menu.addItem(lastSeenItem)
         menu.addItem(.separator())
-        menu.addItem(openAppItem)
         menu.addItem(openDashboardItem)
+        if shouldShowSetupAction {
+            menu.addItem(openSetupItem)
+        }
+        menu.addItem(openSettingsItem)
         menu.addItem(toggleTrackingItem)
         menu.addItem(.separator())
         menu.addItem(quitItem)
@@ -68,11 +76,11 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         if let configuration = store.backendConfiguration {
             let host = configuration.baseURL.host ?? configuration.baseURL.absoluteString
             if !store.helperLastError.isEmpty {
-                return "Issue: \(store.helperLastError)"
+                return "Needs attention • \(host)"
             }
-            return store.trackingEnabled ? "Tracking enabled • \(host)" : "Tracking paused • \(host)"
+            return store.trackingEnabled ? "Menu bar companion connected • \(host)" : "Tracking paused • \(host)"
         }
-        return "Not connected to a cloud backend"
+        return "Connect Vero to start the menu bar companion"
     }
 
     private var currentLastSeenLabel: String {
@@ -97,7 +105,15 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         guard let configuration = store.backendConfiguration else {
             return
         }
-        let url = configuration.baseURL.appendingPathComponent("dashboard/index.html")
+        let url = configuration.baseURL.appendingPathComponent("today")
+        NSWorkspace.shared.open(url)
+    }
+
+    @objc
+    private func openSystemSettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else {
+            return
+        }
         NSWorkspace.shared.open(url)
     }
 
@@ -110,5 +126,19 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     @objc
     private func quitHelper() {
         NSApplication.shared.terminate(nil)
+    }
+
+    private var shouldShowSetupAction: Bool {
+        store.backendConfiguration == nil || !store.helperLastError.isEmpty
+    }
+
+    private var menuBarActionTitle: String {
+        if store.backendConfiguration == nil {
+            return "Connect Vero"
+        }
+        if !store.helperLastError.isEmpty {
+            return "Repair Menu Bar Companion"
+        }
+        return "Open Vero"
     }
 }

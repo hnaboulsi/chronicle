@@ -6,6 +6,7 @@ struct BackendConfiguration {
 }
 
 struct BackendSettings: Codable, Equatable {
+    var capture_interval_seconds: Int
     var polling_interval_seconds: Int
     var tracking_enabled: Bool
     var backend_mode: String
@@ -15,14 +16,88 @@ struct BackendSettings: Codable, Equatable {
     var classification_interval_seconds: Int
     var llm_daily_cap: Int
     var user_timezone: String
+    var privacy_mode: String
+    var calendar_sync_enabled: Bool
+
+    init(
+        capture_interval_seconds: Int,
+        polling_interval_seconds: Int? = nil,
+        tracking_enabled: Bool,
+        backend_mode: String,
+        ai_provider: String,
+        llm_mode: String,
+        hourly_summaries_enabled: Bool,
+        classification_interval_seconds: Int,
+        llm_daily_cap: Int,
+        user_timezone: String,
+        privacy_mode: String,
+        calendar_sync_enabled: Bool
+    ) {
+        let capture = max(60, capture_interval_seconds)
+        self.capture_interval_seconds = capture
+        self.polling_interval_seconds = polling_interval_seconds ?? capture
+        self.tracking_enabled = tracking_enabled
+        self.backend_mode = backend_mode
+        self.ai_provider = ai_provider
+        self.llm_mode = llm_mode
+        self.hourly_summaries_enabled = hourly_summaries_enabled
+        self.classification_interval_seconds = max(300, classification_interval_seconds)
+        self.llm_daily_cap = llm_daily_cap
+        self.user_timezone = user_timezone
+        self.privacy_mode = privacy_mode
+        self.calendar_sync_enabled = calendar_sync_enabled
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case capture_interval_seconds
+        case polling_interval_seconds
+        case tracking_enabled
+        case backend_mode
+        case ai_provider
+        case llm_mode
+        case hourly_summaries_enabled
+        case classification_interval_seconds
+        case llm_daily_cap
+        case user_timezone
+        case privacy_mode
+        case calendar_sync_enabled
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let capture = try container.decodeIfPresent(Int.self, forKey: .capture_interval_seconds)
+            ?? container.decodeIfPresent(Int.self, forKey: .polling_interval_seconds)
+            ?? 300
+        self.init(
+            capture_interval_seconds: capture,
+            polling_interval_seconds: try container.decodeIfPresent(Int.self, forKey: .polling_interval_seconds) ?? capture,
+            tracking_enabled: try container.decode(Bool.self, forKey: .tracking_enabled),
+            backend_mode: try container.decode(String.self, forKey: .backend_mode),
+            ai_provider: try container.decode(String.self, forKey: .ai_provider),
+            llm_mode: try container.decode(String.self, forKey: .llm_mode),
+            hourly_summaries_enabled: try container.decode(Bool.self, forKey: .hourly_summaries_enabled),
+            classification_interval_seconds: try container.decodeIfPresent(Int.self, forKey: .classification_interval_seconds) ?? max(300, capture),
+            llm_daily_cap: try container.decode(Int.self, forKey: .llm_daily_cap),
+            user_timezone: try container.decode(String.self, forKey: .user_timezone),
+            privacy_mode: try container.decodeIfPresent(String.self, forKey: .privacy_mode) ?? "private",
+            calendar_sync_enabled: try container.decodeIfPresent(Bool.self, forKey: .calendar_sync_enabled) ?? true
+        )
+    }
 }
 
 struct DashboardState: Codable {
     var backend_target_url: String?
     var mac_status: String?
     var mac_status_reason: String?
+    var mac_idle: Bool?
     var last_mac_heartbeat_age_seconds: Int?
+    var last_mac_capture_age_seconds: Int?
     var last_mac_snapshot_age_seconds: Int?
+    var last_heartbeat_at: String?
+    var last_capture_at: String?
+    var presence_state: String?
+    var last_presence_change_at: String?
+    var screen_state: String?
     var current_activity_category: String?
     var current_activity_summary: String?
     var current_location: String?
@@ -30,6 +105,9 @@ struct DashboardState: Codable {
     var sleep_status_note: String?
     var service_health: String?
     var tracking_enabled: String?
+    var capture_interval_seconds: Int?
+    var privacy_mode: String?
+    var calendar_sync_enabled: Bool?
 }
 
 struct ZoneRecord: Codable, Identifiable, Hashable {

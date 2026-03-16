@@ -7,13 +7,16 @@ struct DiagnosticsView: View {
         Form {
             Section {
                 HStack {
-                    Text("Status")
+                    Text("Desired State")
                     Spacer()
                     StatusBadge(
                         label: model.helperDesiredState.capitalized,
                         color: model.helperDesiredState == "enabled" ? .green : .orange
                     )
                 }
+                InfoRow(label: "Presence", value: presenceLabel(model.state.presence_state))
+                InfoRow(label: "Last Heartbeat", value: ageString(model.state.last_mac_heartbeat_age_seconds))
+                InfoRow(label: "Last Capture", value: ageString(model.state.last_mac_capture_age_seconds))
                 InfoRow(label: "Last Seen", value: model.helperLastSeenAt?.formatted() ?? "Never")
                 if !model.helperLastError.isEmpty {
                     HStack {
@@ -29,7 +32,7 @@ struct DiagnosticsView: View {
             } header: {
                 Text("Background Agent")
             } footer: {
-                Text("The background agent runs as a login item and sends heartbeats every 60 seconds.")
+                Text("The helper runs as a login item. Heartbeats stay at 60 seconds, while captures use your selected interval.")
             }
 
             Section {
@@ -55,6 +58,8 @@ struct DiagnosticsView: View {
                     )
                 }
                 InfoRow(label: "Detail", value: model.state.mac_status_reason ?? "Waiting for agent")
+                InfoRow(label: "Screen State", value: (model.state.screen_state ?? "unknown").capitalized)
+                InfoRow(label: "Privacy Mode", value: (model.state.privacy_mode ?? "private") == "detailed" ? "Detailed Capture" : "Private by Default")
 
                 if let build = model.health?.build {
                     let buildStr = [build.build_version, build.git_sha.map { String($0.prefix(7)) }]
@@ -104,6 +109,14 @@ struct DiagnosticsView: View {
 
             Section {
                 InfoRow(label: "Target", value: CalendarSyncEngine.shared.targetDescription())
+                HStack {
+                    Text("Enabled")
+                    Spacer()
+                    StatusBadge(
+                        label: model.settings.calendar_sync_enabled ? "On" : "Off",
+                        color: model.settings.calendar_sync_enabled ? .green : .orange
+                    )
+                }
                 if let cal = model.health?.calendar {
                     InfoRow(label: "Pending Jobs", value: "\(cal.pending_jobs ?? 0)")
                     if let executor = cal.executor {
@@ -118,6 +131,7 @@ struct DiagnosticsView: View {
 
             Section {
                 Link("Open Accessibility Settings", destination: URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+                Link("Open Notifications Settings", destination: URL(string: "x-apple.systempreferences:com.apple.preference.notifications")!)
                 Button("Open Tracking Screen") {
                     model.selectedScreen = .tracking
                 }
@@ -143,5 +157,30 @@ struct DiagnosticsView: View {
             return "\(hours)h \(minutes)m"
         }
         return "\(minutes)m"
+    }
+
+    private func ageString(_ value: Int?) -> String {
+        guard let value else { return "Unknown" }
+        if value < 60 { return "\(value)s ago" }
+        if value < 3600 { return "\(value / 60)m ago" }
+        if value < 86_400 { return "\(value / 3600)h ago" }
+        return "\(value / 86_400)d ago"
+    }
+
+    private func presenceLabel(_ value: String?) -> String {
+        switch (value ?? "").lowercased() {
+        case "active":
+            return "Active"
+        case "idle":
+            return "Idle"
+        case "away":
+            return "Away"
+        case "locked":
+            return "Locked"
+        case "sleeping":
+            return "Sleeping"
+        default:
+            return "Unknown"
+        }
     }
 }

@@ -114,10 +114,11 @@ struct OverviewView: View {
                     .font(.system(.body, design: .rounded))
                     .fontWeight(.semibold)
                     .foregroundStyle(.primary)
-                Text("Last seen \(ageString(model.state.last_mac_snapshot_age_seconds))")
+                Text("Last capture \(ageString(model.state.last_mac_capture_age_seconds ?? model.state.last_mac_snapshot_age_seconds))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Divider()
+                InfoRow(label: "Presence", value: presenceLabel(model.state.presence_state))
                 InfoRow(label: "Location", value: model.state.current_location ?? "No recent data")
                 InfoRow(label: "Sleep", value: model.state.sleep_status_note ?? "Unknown")
             }
@@ -137,12 +138,14 @@ struct OverviewView: View {
                     .foregroundStyle(.secondary)
                 Divider()
                 HStack {
-                    Text("Last Sync")
+                    Text("Last Heartbeat")
                         .foregroundStyle(.secondary)
                     Spacer()
                     Text(ageString(model.state.last_mac_heartbeat_age_seconds))
                         .font(.caption)
                 }
+                InfoRow(label: "Capture Interval", value: captureIntervalLabel(model.state.capture_interval_seconds))
+                InfoRow(label: "Privacy", value: privacyModeLabel(model.state.privacy_mode))
             }
         }
     }
@@ -163,5 +166,34 @@ struct OverviewView: View {
                 }
             }
         }
+    }
+
+    private func presenceLabel(_ value: String?) -> String {
+        switch (value ?? "").lowercased() {
+        case "active":
+            return "Active"
+        case "idle":
+            return "Idle"
+        case "away":
+            return "Away"
+        case "locked":
+            return "Locked"
+        case "sleeping":
+            return "Sleeping"
+        default:
+            return "Unknown"
+        }
+    }
+
+    private func captureIntervalLabel(_ value: Int?) -> String {
+        guard let value else { return "Unknown" }
+        if value == 60 { return "1 minute" }
+        if value == 300 { return "5 minutes" }
+        if value == 900 { return "15 minutes" }
+        return "\(value)s"
+    }
+
+    private func privacyModeLabel(_ value: String?) -> String {
+        (value ?? "private") == "detailed" ? "Detailed Capture" : "Private by Default"
     }
 }

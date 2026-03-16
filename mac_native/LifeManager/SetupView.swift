@@ -6,6 +6,7 @@ struct SetupView: View {
     @State private var isLoading = false
     @State private var errorMessage = ""
     @State private var showError = false
+    @State private var successMessage = ""
     let onConnected: () -> Void
 
     var body: some View {
@@ -28,11 +29,11 @@ struct SetupView: View {
                         .font(.system(size: 48, weight: .semibold))
                         .foregroundStyle(Color.indigo)
 
-                    Text("Life Manager")
+                    Text("Vero")
                         .font(.system(size: 32, weight: .bold))
                         .foregroundStyle(.primary)
 
-                    Text("Connect to your cloud backend")
+                    Text("Connect the menu bar companion to your hosted backend")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -55,15 +56,15 @@ struct SetupView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 8) {
-                        Label("Authentication Token", systemImage: "key.fill")
+                        Label("Password / Basic Auth", systemImage: "key.fill")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(Color.indigo)
 
-                        SecureField("Paste your auth token", text: $authTokenInput)
+                        SecureField("Paste the dashboard password or basic-auth value", text: $authTokenInput)
                             .textFieldStyle(.roundedBorder)
                             .font(.system(.body, design: .monospaced))
 
-                        Text("Your secure token for API access")
+                        Text("Use the same password or HTTP Basic Auth value that protects your hosted Vero dashboard.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -81,12 +82,37 @@ struct SetupView: View {
                         .background(Color.red.opacity(0.1))
                         .cornerRadius(8)
                     }
+
+                    if !successMessage.isEmpty {
+                        HStack(spacing: 8) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                            Text(successMessage)
+                                .font(.caption)
+                                .foregroundStyle(.green)
+                        }
+                        .padding(.vertical, 10)
+                        .padding(.horizontal, 12)
+                        .background(Color.green.opacity(0.1))
+                        .cornerRadius(8)
+                    }
                 }
                 .padding(20)
                 .background(Color.white.opacity(0.7))
                 .cornerRadius(12)
 
-                Spacer()
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("What happens next", systemImage: "checkmark.seal")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color.indigo)
+                    Text("After saving the connection, Vero continues from your menu bar. Use the dashboard for settings, privacy, zones, and diagnostics.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(16)
+                .background(Color.white.opacity(0.6))
+                .cornerRadius(12)
 
                 // Connect Button
                 Button(action: connectToBackend) {
@@ -94,7 +120,7 @@ struct SetupView: View {
                         ProgressView()
                             .tint(.white)
                     } else {
-                        Label("Connect to Backend", systemImage: "network")
+                        Label("Connect Menu Bar Companion", systemImage: "network")
                     }
                 }
                 .frame(maxWidth: .infinity)
@@ -116,6 +142,7 @@ struct SetupView: View {
     private func connectToBackend() {
         errorMessage = ""
         showError = false
+        successMessage = ""
         isLoading = true
 
         let trimmedURL = backendURLInput.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -128,7 +155,7 @@ struct SetupView: View {
 
         let auth = authTokenInput.trimmingCharacters(in: .whitespacesAndNewlines)
         if auth.isEmpty {
-            errorMessage = "Authentication token is required"
+            errorMessage = "Password or basic-auth value is required"
             showError = true
             isLoading = false
             return
@@ -145,6 +172,8 @@ struct SetupView: View {
                     let store = AppGroupStore.shared
                     store.backendURL = url
                     store.authValue = auth
+                    successMessage = "Connection saved. Opening the dashboard."
+                    NSWorkspace.shared.open(url.appendingPathComponent("today"))
                     isLoading = false
                     onConnected()
                 }

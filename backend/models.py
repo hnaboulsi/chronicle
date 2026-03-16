@@ -1,33 +1,41 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, Text
-from database import Base
 import datetime
-from pydantic import BaseModel
 from typing import Optional
+
+from pydantic import BaseModel
+from sqlalchemy import Boolean, Column, DateTime, Float, Integer, String, Text
+
+from database import Base
+
+
+def _utc_now():
+    return datetime.datetime.utcnow()
 
 # SQLAlchemy Models
 class ActivityLog(Base):
     __tablename__ = "activity_logs"
 
     id = Column(Integer, primary_key=True, index=True)
-    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
-    device = Column(String, index=True) # "mac" or "ios"
+    timestamp = Column(DateTime, default=_utc_now)
+    device = Column(String, index=True)  # "mac" or "ios"
     app_name = Column(String, nullable=True)
     window_title = Column(String, nullable=True)
     is_idle = Column(Boolean, default=False)
-    location_label = Column(String, nullable=True) # e.g. "Library", "Home"
-    activity_type = Column(String, nullable=True) # e.g. "Walking", "Stationary"
+    location_label = Column(String, nullable=True)  # e.g. "Library", "Home"
+    activity_type = Column(String, nullable=True)  # e.g. "Walking", "Stationary"
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
     steps_today = Column(Integer, nullable=True)
     battery_pct = Column(Integer, nullable=True)  # 0-100, iOS only
+    presence_state = Column(String, nullable=True)
+    screen_state = Column(String, nullable=True)
 
 class AgentState(Base):
     __tablename__ = "agent_states"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     key = Column(String, unique=True, index=True)
     value = Column(String)
-    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
 
 
 class LocationZone(Base):
@@ -41,8 +49,8 @@ class LocationZone(Base):
     zone_type = Column(String, nullable=False, default="custom")
     focus_mode = Column(String, nullable=True)
     sort_order = Column(Integer, default=0)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=_utc_now)
+    updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
 
 
 class CalendarEventJob(Base):
@@ -58,8 +66,8 @@ class CalendarEventJob(Base):
     status = Column(String, nullable=False, default="pending", index=True)
     attempts = Column(Integer, nullable=False, default=0)
     last_error = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=_utc_now)
+    updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
 
 # Pydantic Schemas
 class MacTelemetry(BaseModel):
@@ -67,6 +75,9 @@ class MacTelemetry(BaseModel):
     window_title: str
     idle_time_seconds: int
     recent_history: Optional[list] = None
+    presence_state: Optional[str] = None
+    screen_state: Optional[str] = None
+    detailed_capture_enabled: Optional[bool] = False
 
 class HourlySummary(Base):
     __tablename__ = "hourly_summaries"
@@ -75,7 +86,7 @@ class HourlySummary(Base):
     hour_start = Column(DateTime, nullable=False, index=True)  # top of the hour (UTC)
     summary_text = Column(String, nullable=False)
     productivity_score = Column(Float, nullable=True)  # 0.0–10.0
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=_utc_now)
 
 
 class iOSTelemetry(BaseModel):
@@ -95,6 +106,13 @@ class MacHeartbeat(BaseModel):
     tracking_enabled: Optional[bool] = True
     permissions_state: Optional[str] = "ok"
     last_error: Optional[str] = None
+
+
+class MacPresence(BaseModel):
+    presence_state: str
+    screen_state: Optional[str] = "visible"
+    changed_at: Optional[datetime.datetime] = None
+    idle_time_seconds: int = 0
 
 
 class iOSZoneEvent(BaseModel):

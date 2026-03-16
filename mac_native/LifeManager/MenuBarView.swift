@@ -3,7 +3,6 @@ import SwiftUI
 struct MenuBarView: View {
     @EnvironmentObject private var model: NativeAppModel
     @EnvironmentObject private var menuBar: MenuBarManager
-    @Environment(\.openURL) var openURL
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -73,11 +72,7 @@ struct MenuBarView: View {
             // Actions
             VStack(spacing: 0) {
                 Button(action: {
-                    if let url = NSApplication.shared.windows.first?.windowScene?.windows.first?.windowLevel {
-                        NSApplication.shared.windows.first?.makeKeyAndOrderFront(nil)
-                    } else {
-                        openURL(URL(string: "lifemanager://open")!)
-                    }
+                    model.openWebDashboard()
                 }) {
                     HStack {
                         Image(systemName: "rectangle.portrait")
@@ -102,7 +97,7 @@ struct MenuBarView: View {
                 Button(role: .destructive, action: { NSApplication.shared.terminate(nil) }) {
                     HStack {
                         Image(systemName: "xmark.circle")
-                        Text("Quit Life Manager")
+                        Text("Quit Vero")
                         Spacer()
                     }
                     .contentShape(Rectangle())

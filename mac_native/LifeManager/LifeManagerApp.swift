@@ -19,11 +19,11 @@ struct LifeManagerApp: App {
                     SetupView {
                         requiresSetup = false
                     }
-                    .frame(minWidth: 600, minHeight: 700)
+                    .frame(minWidth: 560, minHeight: 680)
                 } else {
                     RootView()
                         .environmentObject(model)
-                        .frame(minWidth: 980, minHeight: 700)
+                        .frame(minWidth: 520, minHeight: 560)
                         .task {
                             await model.startup()
                         }

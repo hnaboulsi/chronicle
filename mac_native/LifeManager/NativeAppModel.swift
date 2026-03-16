@@ -9,7 +9,6 @@ enum AppScreen: String, CaseIterable, Identifiable {
     case zones
     case permissions
     case diagnostics
-    case calendar
 
     var id: String { rawValue }
 
@@ -25,8 +24,6 @@ enum AppScreen: String, CaseIterable, Identifiable {
             return "Permissions"
         case .diagnostics:
             return "Diagnostics"
-        case .calendar:
-            return "Calendar"
         }
     }
 }
@@ -36,7 +33,7 @@ final class NativeAppModel: ObservableObject {
     @Published var selectedScreen: AppScreen = .overview
     @Published var state = DashboardState()
     @Published var settings = BackendSettings(
-        polling_interval_seconds: 60,
+        capture_interval_seconds: 300,
         tracking_enabled: true,
         backend_mode: "railway_primary",
         ai_provider: "auto",
@@ -44,7 +41,9 @@ final class NativeAppModel: ObservableObject {
         hourly_summaries_enabled: true,
         classification_interval_seconds: 300,
         llm_daily_cap: 200,
-        user_timezone: TimeZone.current.identifier
+        user_timezone: TimeZone.current.identifier,
+        privacy_mode: "private",
+        calendar_sync_enabled: true
     )
     @Published var zones: [ZoneRecord] = []
     @Published var calendarJobs: [CalendarJob] = []
@@ -54,7 +53,7 @@ final class NativeAppModel: ObservableObject {
     @Published var statusMessage = ""
     @Published var notificationLevel = AppGroupStore.shared.notificationLevel
     @Published var lastSavedSettings = BackendSettings(
-        polling_interval_seconds: 60,
+        capture_interval_seconds: 300,
         tracking_enabled: true,
         backend_mode: "railway_primary",
         ai_provider: "auto",
@@ -62,7 +61,9 @@ final class NativeAppModel: ObservableObject {
         hourly_summaries_enabled: true,
         classification_interval_seconds: 300,
         llm_daily_cap: 200,
-        user_timezone: TimeZone.current.identifier
+        user_timezone: TimeZone.current.identifier,
+        privacy_mode: "private",
+        calendar_sync_enabled: true
     )
     @Published var lastSavedNotificationLevel = AppGroupStore.shared.notificationLevel
 
@@ -111,8 +112,9 @@ final class NativeAppModel: ObservableObject {
 
             store.trackingEnabled = settings.tracking_enabled
             store.aiProvider = settings.ai_provider
-            store.pollingInterval = settings.polling_interval_seconds
-            store.classificationInterval = settings.classification_interval_seconds
+            store.captureInterval = settings.capture_interval_seconds
+            store.privacyMode = settings.privacy_mode
+            store.calendarSyncEnabled = settings.calendar_sync_enabled
             lastSavedSettings = settings
             lastSavedNotificationLevel = notificationLevel
 
@@ -129,11 +131,14 @@ final class NativeAppModel: ObservableObject {
 
     func saveSettings() async {
         do {
+            settings.polling_interval_seconds = settings.capture_interval_seconds
+            settings.classification_interval_seconds = max(300, settings.capture_interval_seconds)
             try await backend.saveSettings(settings)
             store.trackingEnabled = settings.tracking_enabled
             store.aiProvider = settings.ai_provider
-            store.pollingInterval = settings.polling_interval_seconds
-            store.classificationInterval = settings.classification_interval_seconds
+            store.captureInterval = settings.capture_interval_seconds
+            store.privacyMode = settings.privacy_mode
+            store.calendarSyncEnabled = settings.calendar_sync_enabled
             store.notificationLevel = notificationLevel
             lastSavedSettings = settings
             lastSavedNotificationLevel = notificationLevel
@@ -188,15 +193,20 @@ final class NativeAppModel: ObservableObject {
         statusMessage = "Background agent re-registered."
     }
 
-    func openWebDashboard() {
-        if let target = state.backend_target_url, let url = URL(string: target + "/dashboard/index.html") {
+    func openWebDashboard(path: String = "/today") {
+        let normalizedPath = path.hasPrefix("/") ? path : "/\(path)"
+        if let target = state.backend_target_url, let url = URL(string: target + normalizedPath) {
             NSWorkspace.shared.open(url)
         } else if let baseURL = store.backendURL {
-            let url = baseURL.appendingPathComponent("dashboard/index.html")
+            let url = baseURL.appendingPathComponent(normalizedPath.trimmingCharacters(in: CharacterSet(charactersIn: "/")))
             NSWorkspace.shared.open(url)
         } else {
             statusMessage = BackendError.notConfigured.localizedDescription
         }
+    }
+
+    func openMacSetupGuide() {
+        openWebDashboard(path: "/setup/mac")
     }
 
     func openSystemSettings() {

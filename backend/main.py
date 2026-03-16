@@ -11,12 +11,12 @@ from typing import Dict, Any
 from fastapi import FastAPI, Depends, BackgroundTasks, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, Response, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response, RedirectResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, text, func
 from database import engine, Base, get_db, SessionLocal
 import models
-from models import ActivityLog, CalendarEventJob, HourlySummary, MacHeartbeat, MacTelemetry, iOSZoneEvent, iOSTelemetry
+from models import ActivityLog, CalendarEventJob, HourlySummary, MacHeartbeat, MacPresence, MacTelemetry, iOSZoneEvent, iOSTelemetry
 import agent_logic
 
 # Logging
@@ -43,16 +43,22 @@ def _run_migrations() -> list[str]:
         try:
             if dialect == "postgresql":
                 conn.execute(text("ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS battery_pct INTEGER"))
+                conn.execute(text("ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS presence_state VARCHAR(32)"))
+                conn.execute(text("ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS screen_state VARCHAR(32)"))
             else:  # sqlite doesn't support IF NOT EXISTS on ALTER
                 cols = [r[1] for r in conn.execute(text("PRAGMA table_info(activity_logs)"))]
                 if "battery_pct" not in cols:
                     conn.execute(text("ALTER TABLE activity_logs ADD COLUMN battery_pct INTEGER"))
+                if "presence_state" not in cols:
+                    conn.execute(text("ALTER TABLE activity_logs ADD COLUMN presence_state VARCHAR(32)"))
+                if "screen_state" not in cols:
+                    conn.execute(text("ALTER TABLE activity_logs ADD COLUMN screen_state VARCHAR(32)"))
             conn.commit()
         except Exception as exc:
             errors.append(str(exc))
     return errors
 
-app = FastAPI(title="Life-Manager Agent API")
+app = FastAPI(title="Vero API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -61,8 +67,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 _STARTED_AT = datetime.utcnow()
-_BUILD_VERSION = os.environ.get("LIFE_MANAGER_BUILD_VERSION", "dev")
-_DEPLOYMENT_CHANNEL = os.environ.get("LIFE_MANAGER_DEPLOYMENT_CHANNEL", "internal")
+_BUILD_VERSION = os.environ.get("VERO_BUILD_VERSION") or os.environ.get("LIFE_MANAGER_BUILD_VERSION", "dev")
+_DEPLOYMENT_CHANNEL = os.environ.get("VERO_DEPLOYMENT_CHANNEL") or os.environ.get("LIFE_MANAGER_DEPLOYMENT_CHANNEL", "internal")
 try:
     _GIT_SHA = (
         subprocess.run(
@@ -82,16 +88,8 @@ _NO_AUTH_PATHS = {
     "/api/ios-telemetry",
     "/api/ios-zone-event",
     "/api/healthz",
-    "/dashboard/manifest.json",
-    "/dashboard/sw.js",
-    "/dashboard/icon.svg",
-    "/dashboard/apple-touch-icon.svg",
-    "/dashboard/favicon.svg",
-    "/dashboard/favicon.ico",
 }
-_NO_AUTH_PREFIXES = (
-    "/dashboard/icons/",
-)
+_NO_AUTH_PREFIXES = ()
 
 # Brute-force protection: track failed attempts per IP
 # { ip: {"count": int, "blocked_until": float} }
@@ -160,17 +158,78 @@ async def basic_auth_middleware(request: Request, call_next):
     return Response(
         content="Unauthorized",
         status_code=401,
-        headers={"WWW-Authenticate": 'Basic realm="Life Manager"'},
+        headers={"WWW-Authenticate": 'Basic realm="Vero"'},
     )
 
-# Serve frontend static files
-frontend_path = os.path.join(os.path.dirname(__file__), "frontend")
-os.makedirs(frontend_path, exist_ok=True)
-app.mount("/dashboard", StaticFiles(directory=frontend_path, html=True), name="frontend")
+BACKEND_DIR = os.path.dirname(__file__)
+LEGACY_FRONTEND_PATH = os.path.join(BACKEND_DIR, "frontend")
+WEB_DIST_PATH = os.path.abspath(os.path.join(BACKEND_DIR, "..", "web", "dist"))
+WEB_ASSETS_PATH = os.path.join(WEB_DIST_PATH, "assets")
+FRONTEND_DEV_URL = os.environ.get("FRONTEND_DEV_URL", "").rstrip("/")
+
+if os.path.isdir(WEB_ASSETS_PATH):
+    app.mount("/assets", StaticFiles(directory=WEB_ASSETS_PATH), name="web-assets")
+
+
+def _frontend_index_response() -> Response:
+    index_path = os.path.join(WEB_DIST_PATH, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    if FRONTEND_DEV_URL:
+        return RedirectResponse(url=f"{FRONTEND_DEV_URL}/today")
+    return HTMLResponse(
+        """
+        <html><body style="font-family: ui-sans-serif, system-ui; padding: 2rem;">
+        <h1>Vero frontend not built</h1>
+        <p>Run <code>npm install</code> and <code>npm run build</code> in <code>web/</code>, or set <code>FRONTEND_DEV_URL</code>.</p>
+        </body></html>
+        """,
+        status_code=503,
+    )
+
 
 @app.get("/")
 async def redirect_to_dashboard():
-    return RedirectResponse(url="/dashboard/index.html")
+    return RedirectResponse(url="/today")
+
+
+@app.get("/dashboard")
+async def legacy_dashboard_redirect():
+    return RedirectResponse(url="/today")
+
+
+def _serve_web_file(filename: str) -> Response:
+    target = os.path.join(WEB_DIST_PATH, filename)
+    if os.path.exists(target):
+        return FileResponse(target)
+    legacy_target = os.path.join(LEGACY_FRONTEND_PATH, filename)
+    if os.path.exists(legacy_target):
+        return FileResponse(legacy_target)
+    raise HTTPException(status_code=404, detail=f"{filename} not found")
+
+
+@app.get("/manifest.json")
+async def serve_manifest():
+    return _serve_web_file("manifest.json")
+
+
+@app.get("/favicon.svg")
+async def serve_favicon_svg():
+    return _serve_web_file("favicon.svg")
+
+
+@app.get("/apple-touch-icon.svg")
+async def serve_touch_icon():
+    return _serve_web_file("apple-touch-icon.svg")
+
+
+@app.get("/today")
+@app.get("/setup")
+@app.get("/diagnostics")
+@app.get("/zones")
+@app.get("/settings")
+async def serve_web_app():
+    return _frontend_index_response()
 
 
 @app.on_event("startup")
@@ -272,11 +331,7 @@ def _build_state_payload(db: Session) -> dict:
     agent_logic.ensure_default_settings(db)
     states = agent_logic.get_all_states(db)
     now = datetime.utcnow()
-
-    try:
-        polling_interval_seconds = int(agent_logic.get_state(db, "polling_interval_seconds", "60"))
-    except Exception:
-        polling_interval_seconds = 60
+    capture_interval_seconds = agent_logic.get_capture_interval_seconds(db)
 
     last_ios_event_age_seconds = None
     last_ios_ping_age_seconds = None
@@ -295,11 +350,16 @@ def _build_state_payload(db: Session) -> dict:
 
     mac_status = agent_logic.compute_mac_status(states, now)
     states["backend_target_url"] = _get_backend_url()
-    states["polling_interval_seconds"] = polling_interval_seconds
-    states["mac_online_threshold_seconds"] = max(300, polling_interval_seconds * 2 + 30)
+    states["capture_interval_seconds"] = capture_interval_seconds
+    states["polling_interval_seconds"] = capture_interval_seconds
+    states["classification_interval_seconds"] = max(300, capture_interval_seconds)
+    states["privacy_mode"] = agent_logic.get_state(db, "privacy_mode", agent_logic.DEFAULTS["privacy_mode"])
+    states["calendar_sync_enabled"] = agent_logic.get_state(db, "calendar_sync_enabled", agent_logic.DEFAULTS["calendar_sync_enabled"]).lower() == "true"
+    states["mac_online_threshold_seconds"] = max(180, capture_interval_seconds * 2 + 30)
     states["last_mac_ping_age_seconds"] = mac_status["last_mac_snapshot_age_seconds"]
     states["last_mac_heartbeat_age_seconds"] = mac_status["last_mac_heartbeat_age_seconds"]
     states["last_mac_snapshot_age_seconds"] = mac_status["last_mac_snapshot_age_seconds"]
+    states["last_mac_capture_age_seconds"] = mac_status["last_mac_capture_age_seconds"]
     states["last_ios_ping_age_seconds"] = last_ios_ping_age_seconds
     states["last_ios_event_age_seconds"] = last_ios_event_age_seconds
     states["ios_recent_ping"] = (last_ios_ping_age_seconds is not None and last_ios_ping_age_seconds < 3600)
@@ -313,9 +373,14 @@ def _build_state_payload(db: Session) -> dict:
     states["mac_online"] = mac_status["mac_online"]
     states["mac_status"] = mac_status["mac_status"]
     states["mac_status_reason"] = mac_status["mac_status_reason"]
-    states["mac_launch_url"] = "lifemanager://open"
+    states["presence_state"] = mac_status["presence_state"]
+    states["screen_state"] = mac_status["screen_state"]
+    states["last_presence_change_at"] = states.get("last_presence_change_at", "")
+    states["last_capture_at"] = states.get("last_capture_at", states.get("last_mac_ping", ""))
+    states["last_heartbeat_at"] = states.get("last_mac_heartbeat", "")
+    states["mac_launch_url"] = "vero://open"
     states["last_mac_heartbeat"] = states.get("last_mac_heartbeat", "")
-    states["service_health"] = "ok" if mac_status["mac_status"] in {"online", "online_idle"} else (
+    states["service_health"] = "ok" if mac_status["mac_status"] in {"online"} else (
         "degraded" if mac_status["mac_status"] in {"degraded", "paused"} else "offline"
     )
     return states
@@ -359,6 +424,19 @@ def _bg_process_heartbeat(data: MacHeartbeat):
     threading.Thread(target=_run, daemon=True).start()
 
 
+def _bg_process_mac_presence(data: MacPresence):
+    """Run mac presence processing in its own thread + event loop (FastAPI-safe)."""
+    def _run():
+        db = SessionLocal()
+        try:
+            asyncio.run(agent_logic.process_mac_presence(data, db))
+        except Exception as e:
+            log.error("Background mac presence error: %s", e)
+        finally:
+            db.close()
+    threading.Thread(target=_run, daemon=True).start()
+
+
 def _bg_process_ios_zone(data: iOSZoneEvent):
     """Run iOS zone event processing in its own thread + event loop (FastAPI-safe)."""
     def _run():
@@ -374,11 +452,22 @@ def _bg_process_ios_zone(data: iOSZoneEvent):
 
 @app.post("/api/mac-telemetry")
 def receive_mac_telemetry(data: MacTelemetry, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    privacy_mode = agent_logic.get_state(db, "privacy_mode", agent_logic.DEFAULTS["privacy_mode"])
+    presence_state = agent_logic.normalize_presence_state(data.presence_state, data.idle_time_seconds)
+    screen_state = agent_logic.normalize_screen_state(data.screen_state, presence_state)
+    sanitized_title = agent_logic.sanitize_window_title(
+        data.app_name,
+        data.window_title,
+        privacy_mode,
+        bool(data.detailed_capture_enabled),
+    )
     log_entry = ActivityLog(
         device="mac",
         app_name=data.app_name,
-        window_title=data.window_title,
-        is_idle=data.idle_time_seconds > 60 * 30
+        window_title=sanitized_title,
+        is_idle=presence_state != "active",
+        presence_state=presence_state,
+        screen_state=screen_state,
     )
     db.add(log_entry)
     db.commit()
@@ -397,6 +486,17 @@ def receive_mac_heartbeat(data: MacHeartbeat, background_tasks: BackgroundTasks,
         "mac_status": states["mac_status"],
         "mac_status_reason": states["mac_status_reason"],
         "tracking_enabled": str(states.get("tracking_enabled", "true")).lower() == "true",
+    }
+
+
+@app.post("/api/mac-presence")
+def receive_mac_presence(data: MacPresence, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    background_tasks.add_task(_bg_process_mac_presence, data)
+    states = _build_state_payload(db)
+    return {
+        "status": "ok",
+        "presence_state": states.get("presence_state"),
+        "screen_state": states.get("screen_state"),
     }
 
 
@@ -472,25 +572,36 @@ def get_state(db: Session = Depends(get_db)):
 @app.get("/api/settings")
 def get_settings(db: Session = Depends(get_db)):
     agent_logic.ensure_default_settings(db)
-    polling_str = agent_logic.get_state(db, "polling_interval_seconds", "60")
     tracking_enabled_str = agent_logic.get_state(db, "tracking_enabled", "true")
+    capture_interval_seconds = agent_logic.get_capture_interval_seconds(db)
     return {
-        "polling_interval_seconds": int(polling_str),
+        "capture_interval_seconds": capture_interval_seconds,
+        "polling_interval_seconds": capture_interval_seconds,
         "tracking_enabled": tracking_enabled_str.lower() == "true",
         "backend_mode": agent_logic.get_state(db, "backend_mode", "railway_primary"),
         "ai_provider": agent_logic.get_state(db, "ai_provider", "auto"),
-        "llm_mode": agent_logic.get_state(db, "llm_mode", "ultra_save"),
-        "hourly_summaries_enabled": agent_logic.get_state(db, "hourly_summaries_enabled", "false").lower() == "true",
-        "classification_interval_seconds": int(agent_logic.get_state(db, "classification_interval_seconds", "1800")),
+        "llm_mode": agent_logic.get_state(db, "llm_mode", "balanced"),
+        "hourly_summaries_enabled": agent_logic.get_state(db, "hourly_summaries_enabled", "true").lower() == "true",
+        "classification_interval_seconds": max(300, capture_interval_seconds),
         "llm_daily_cap": int(agent_logic.get_state(db, "llm_daily_cap", "30")),
         "user_timezone": agent_logic.get_state(db, "user_timezone", "America/Los_Angeles"),
+        "privacy_mode": agent_logic.get_state(db, "privacy_mode", agent_logic.DEFAULTS["privacy_mode"]),
+        "calendar_sync_enabled": agent_logic.get_state(db, "calendar_sync_enabled", agent_logic.DEFAULTS["calendar_sync_enabled"]).lower() == "true",
     }
 
 @app.post("/api/settings")
 def update_settings(payload: Dict[str, Any], db: Session = Depends(get_db)):
     agent_logic.ensure_default_settings(db)
+    if "capture_interval_seconds" in payload:
+        try:
+            agent_logic.set_capture_interval_seconds(db, int(payload["capture_interval_seconds"]))
+        except Exception:
+            raise HTTPException(status_code=400, detail="capture_interval_seconds must be an integer >= 60")
     if "polling_interval_seconds" in payload:
-        agent_logic.set_state(db, "polling_interval_seconds", str(payload["polling_interval_seconds"]))
+        try:
+            agent_logic.set_capture_interval_seconds(db, int(payload["polling_interval_seconds"]))
+        except Exception:
+            raise HTTPException(status_code=400, detail="polling_interval_seconds must be an integer >= 60")
     if "tracking_enabled" in payload:
         agent_logic.set_state(db, "tracking_enabled", str(payload["tracking_enabled"]).lower())
     if "backend_mode" in payload and payload["backend_mode"] in {"railway_primary", "local_primary", "hybrid_auto"}:
@@ -502,18 +613,19 @@ def update_settings(payload: Dict[str, Any], db: Session = Depends(get_db)):
         agent_logic.set_state(db, "llm_mode", payload["llm_mode"])
     if "hourly_summaries_enabled" in payload:
         agent_logic.set_state(db, "hourly_summaries_enabled", str(bool(payload["hourly_summaries_enabled"])).lower())
-    if "classification_interval_seconds" in payload:
-        try:
-            val = max(300, int(payload["classification_interval_seconds"]))
-            agent_logic.set_state(db, "classification_interval_seconds", str(val))
-        except Exception:
-            raise HTTPException(status_code=400, detail="classification_interval_seconds must be an integer >= 300")
     if "llm_daily_cap" in payload:
         try:
             val = max(1, int(payload["llm_daily_cap"]))
             agent_logic.set_state(db, "llm_daily_cap", str(val))
         except Exception:
             raise HTTPException(status_code=400, detail="llm_daily_cap must be an integer >= 1")
+    if "privacy_mode" in payload:
+        privacy_mode = str(payload["privacy_mode"]).strip().lower()
+        if privacy_mode not in {"private", "detailed"}:
+            raise HTTPException(status_code=400, detail="privacy_mode must be 'private' or 'detailed'")
+        agent_logic.set_state(db, "privacy_mode", privacy_mode)
+    if "calendar_sync_enabled" in payload:
+        agent_logic.set_state(db, "calendar_sync_enabled", str(bool(payload["calendar_sync_enabled"])).lower())
     if "user_timezone" in payload:
         from zoneinfo import ZoneInfo
         tz_name = str(payload["user_timezone"])
@@ -639,8 +751,8 @@ async def mcp_http_transport(payload: Dict[str, Any], db: Session = Depends(get_
         return {"result": {"tracking_enabled": enabled}}
     if method == "set_polling_interval":
         seconds = max(60, int(params.get("seconds", 60)))
-        agent_logic.set_state(db, "polling_interval_seconds", str(seconds))
-        return {"result": {"polling_interval_seconds": seconds}}
+        agent_logic.set_capture_interval_seconds(db, seconds)
+        return {"result": {"capture_interval_seconds": seconds, "polling_interval_seconds": seconds}}
     if method == "send_checkin":
         message = str(params.get("message") or "").strip()
         if not message:
@@ -664,7 +776,23 @@ async def mcp_http_transport(payload: Dict[str, Any], db: Session = Depends(get_
 @app.get("/api/logs")
 def get_logs(limit: int = 50, db: Session = Depends(get_db)):
     logs = db.query(ActivityLog).order_by(desc(ActivityLog.timestamp)).limit(limit).all()
-    return logs
+    return [
+        {
+            "id": entry.id,
+            "timestamp": entry.timestamp.isoformat() if entry.timestamp else "",
+            "device": entry.device,
+            "app_name": entry.app_name,
+            "window_title": entry.window_title,
+            "is_idle": entry.is_idle,
+            "location_label": entry.location_label,
+            "activity_type": entry.activity_type,
+            "steps_today": entry.steps_today,
+            "battery_pct": entry.battery_pct,
+            "presence_state": entry.presence_state,
+            "screen_state": entry.screen_state,
+        }
+        for entry in logs
+    ]
 
 @app.get("/api/summary/{log_id}")
 async def get_log_summary(log_id: int, db: Session = Depends(get_db)):
@@ -790,7 +918,7 @@ async def chat_message(payload: Dict[str, Any], db: Session = Depends(get_db)):
         agent_logic.register_llm_call(db, now)
         import llm_client
         prompt = (
-            f"You are Life Manager, a personal productivity AI. The user just told you:\n"
+            f"You are Vero, a personal productivity AI. The user just told you:\n"
             f'"{message}"\n\n'
             f"Current context: {context_str}\n\n"
             f"Recent chat context:\n{prior_context or '- No recent conversation.'}\n\n"
@@ -1021,27 +1149,52 @@ async def mac_setup_page():
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Mac Setup — Life Manager</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+<title>Mac Setup — Vero</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-  body {{ font-family: 'Inter', sans-serif; background: #0d1117; color: #f0f6fc; padding: 2rem; max-width: 600px; margin: 0 auto; }}
-  h1 {{ font-size: 1.5rem; margin-bottom: 0.5rem; }}
-  h2 {{ font-size: 1.1rem; color: #58a6ff; margin: 2rem 0 0.75rem; }}
-  p {{ color: #8b949e; line-height: 1.6; }}
-  .step {{ background: rgba(22,27,34,0.8); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 1.25rem; margin: 1rem 0; }}
-  .step-num {{ font-size: 0.75rem; color: #58a6ff; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.5rem; }}
-  code {{ background: rgba(88,166,255,0.1); color: #58a6ff; padding: 0.2rem 0.5rem; border-radius: 6px; font-size: 0.9rem; font-family: monospace; }}
-  .action-btn {{ display: inline-block; text-align: center; background: #58a6ff; color: #000; padding: 0.75rem 1.5rem; border-radius: 10px; font-weight: 600; text-decoration: none; font-size: 1rem; border: none; cursor: pointer; }}
-  .action-btn:hover {{ background: #79b8ff; }}
-  .note {{ font-size: 0.85rem; color: #8b949e; margin-top: 0.75rem; }}
-  .divider {{ border: none; border-top: 1px solid rgba(255,255,255,0.08); margin: 2rem 0; }}
-  .badge-remote {{ background: rgba(63,185,80,0.15); color: #3fb950; border: 1px solid rgba(63,185,80,0.3); border-radius: 6px; padding: 0.2rem 0.6rem; font-size: 0.8rem; font-weight: 600; margin-left: 0.5rem; }}
-  .cmd-box {{ background: #161b22; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 1rem 1rem 1rem 1rem; font-family: 'SF Mono', 'Menlo', monospace; font-size: 0.85rem; color: #e6edf3; overflow-x: auto; white-space: pre-wrap; word-break: break-all; position: relative; margin: 0.75rem 0; line-height: 1.6; }}
-  pre.cmd {{ background: #161b22; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 1rem; overflow-x: auto; font-size: 0.85rem; color: #c9d1d9; white-space: pre-wrap; word-break: break-all; position: relative; }}
-  pre.cmd .copy-btn {{ position: absolute; top: 0.5rem; right: 0.5rem; background: rgba(88,166,255,0.2); color: #58a6ff; border: 1px solid rgba(88,166,255,0.3); border-radius: 6px; padding: 0.25rem 0.5rem; font-size: 0.75rem; cursor: pointer; font-family: 'Inter', sans-serif; }}
-  pre.cmd .copy-btn:hover {{ background: rgba(88,166,255,0.4); }}
-  .checklist li {{ color: #8b949e; margin: 0.4rem 0; }}
-  .checklist li span {{ color: #3fb950; margin-right: 0.5rem; }}
+  :root {{
+    color-scheme: light;
+    --bg: #f5efe2;
+    --panel: rgba(255, 251, 244, 0.92);
+    --panel-strong: #fffdf8;
+    --line: rgba(18, 57, 55, 0.12);
+    --text: #123937;
+    --muted: #667a77;
+    --teal: #0f766e;
+    --teal-deep: #0b5a54;
+    --orange: #ea6b2d;
+    --orange-soft: rgba(234, 107, 45, 0.12);
+    --good: #0f766e;
+    --shadow: 0 24px 60px rgba(18, 57, 55, 0.1);
+  }}
+  body {{
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    color: var(--text);
+    padding: 2rem;
+    max-width: 720px;
+    margin: 0 auto;
+    background:
+      radial-gradient(circle at top left, rgba(17, 133, 121, 0.14), transparent 28%),
+      radial-gradient(circle at top right, rgba(234, 107, 45, 0.12), transparent 22%),
+      linear-gradient(180deg, var(--bg) 0%, #efe6d6 100%);
+  }}
+  h1 {{ font-size: 2.1rem; margin-bottom: 0.5rem; letter-spacing: -0.04em; }}
+  h2 {{ font-size: 1.1rem; color: var(--teal); margin: 2rem 0 0.75rem; letter-spacing: -0.02em; }}
+  p {{ color: var(--muted); line-height: 1.65; }}
+  a {{ color: var(--teal); }}
+  .step {{ background: var(--panel); border: 1px solid var(--line); border-radius: 24px; padding: 1.35rem; margin: 1rem 0; box-shadow: var(--shadow); backdrop-filter: blur(18px); }}
+  .step-num {{ font-size: 0.75rem; color: var(--teal); text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 0.5rem; font-weight: 700; }}
+  code {{ background: rgba(15,118,110,0.09); color: var(--teal-deep); padding: 0.2rem 0.5rem; border-radius: 8px; font-size: 0.9rem; font-family: monospace; }}
+  .action-btn {{ display: inline-block; text-align: center; background: var(--teal); color: #fff; padding: 0.75rem 1.5rem; border-radius: 14px; font-weight: 700; text-decoration: none; font-size: 1rem; border: none; cursor: pointer; }}
+  .action-btn:hover {{ background: var(--teal-deep); }}
+  .note {{ font-size: 0.85rem; color: var(--muted); margin-top: 0.75rem; }}
+  .divider {{ border: none; border-top: 1px solid var(--line); margin: 2rem 0; }}
+  .badge-remote {{ background: var(--orange-soft); color: var(--orange); border: 1px solid rgba(234,107,45,0.24); border-radius: 999px; padding: 0.25rem 0.75rem; font-size: 0.78rem; font-weight: 700; margin-left: 0.5rem; text-transform: uppercase; letter-spacing: 0.08em; }}
+  pre.cmd {{ background: var(--panel-strong); border: 1px solid var(--line); border-radius: 18px; padding: 1rem; overflow-x: auto; font-size: 0.85rem; color: var(--text); white-space: pre-wrap; word-break: break-all; position: relative; line-height: 1.65; }}
+  pre.cmd .copy-btn {{ position: absolute; top: 0.5rem; right: 0.5rem; background: rgba(15,118,110,0.1); color: var(--teal); border: 1px solid rgba(15,118,110,0.22); border-radius: 8px; padding: 0.25rem 0.6rem; font-size: 0.75rem; cursor: pointer; font-family: 'Plus Jakarta Sans', sans-serif; }}
+  pre.cmd .copy-btn:hover {{ background: rgba(15,118,110,0.18); }}
+  .checklist li {{ color: var(--muted); margin: 0.45rem 0; }}
+  .checklist li span {{ color: var(--teal); margin-right: 0.5rem; }}
 </style>
 <script>
 function copyCmd(btn) {{
@@ -1065,12 +1218,12 @@ function copyCmd(btn) {{
 </head>
 <body>
 <nav style="margin-bottom:1.5rem;">
-  <a href="/" style="color:#8b949e;text-decoration:none;font-size:0.9rem;display:inline-flex;align-items:center;gap:0.4rem;">
-    ← Dashboard
+  <a href="/" style="text-decoration:none;font-size:0.9rem;display:inline-flex;align-items:center;gap:0.4rem;">
+    ← Companion
   </a>
 </nav>
-<h1>💻 Mac App Setup <span class="badge-remote" style="{remote_only}">☁️ Cloud</span></h1>
-<p>Install the native Life Manager app once, then let the hidden login helper run quietly in the background.</p>
+<h1>Mac Setup <span class="badge-remote" style="{remote_only}">Hosted</span></h1>
+<p>Install Vero once, connect it to your hosted backend, and then let the menu bar companion keep running quietly in the background. The dashboard is where you manage settings and diagnostics.</p>
 
 <h2>Prerequisites</h2>
 <div class="step">
@@ -1079,7 +1232,7 @@ function copyCmd(btn) {{
     <li><span>→</span>Xcode installed from the App Store</li>
     <li><span>→</span>Xcode Command Line Tools ready &nbsp;<code>xcodebuild -version</code></li>
   </ul>
-  <p class="note">You only need to run the visible app once. After that, the login helper should keep the agent alive in the background.</p>
+  <p class="note">You only need to use the visible window for connection or repair. After that, Vero should stay out of the way in the menu bar.</p>
 </div>
 
 <h2>Step 1 — Open the native project</h2>
@@ -1091,9 +1244,9 @@ function copyCmd(btn) {{
 
 <h2>Step 2 — Configure authentication</h2>
 <div class="step" style="{remote_only}">
-  <div class="step-num">Set your dashboard password so the tracker can authenticate</div>
+  <div class="step-num">Set the password/basic-auth value that protects your hosted dashboard</div>
   <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>echo "admin:YOUR_PASSWORD" > ~/.config/life-manager/auth</pre>
-  <p class="note">Replace <code>YOUR_PASSWORD</code> with your actual dashboard password. The tracker uses HTTP Basic Auth to send data securely.</p>
+  <p class="note">Replace <code>YOUR_PASSWORD</code> with the real dashboard password or basic-auth value. The tracker uses HTTP Basic Auth to send data securely.</p>
 </div>
 <div class="step" style="{'display:none' if is_remote else ''}">
   <p>Auth not required for local setup — the tracker connects directly to <code>localhost:8000</code>.</p>
@@ -1102,8 +1255,10 @@ function copyCmd(btn) {{
 <h2>Step 3 — Run it once, then close it</h2>
 <div class="step">
   <div class="step-num">In Xcode, choose the <strong>LifeManager</strong> scheme and press Run once</div>
-  <p>When the app opens, grant the permissions it asks for, then close the window. The goal is to register the hidden login helper, not keep a visible app open.</p>
-  <p class="note">If you already have <code>Life Manager.app</code> in Applications, you can launch it directly with <code>open -a "Life Manager"</code>.</p>
+  <p>When the app opens, grant the permissions it asks for, connect the backend if prompted, then close the window. The goal is to register the menu bar helper, not keep a full app window open.</p>
+  <p class="note">The scheme is still named <code>LifeManager</code> in the project, but the built app launches as <strong>Vero</strong>.</p>
+  <p class="note">If you already have <code>Vero.app</code> in Applications, you can launch it directly with <code>open -a "Vero"</code>.</p>
+  <p class="note">Once connected, use the dashboard for tracking cadence, privacy, zones, and diagnostics.</p>
 </div>
 
 <hr class="divider">
@@ -1111,16 +1266,16 @@ function copyCmd(btn) {{
 <h2>Verify</h2>
 <div class="step">
   <div class="step-num">Check that data is arriving</div>
-  <p>Go back to the <a href="/" style="color:#58a6ff">Control Center</a> — the Mac card should show <strong>Online</strong> within 60 seconds. If the app window is closed and the Mac stays online, the hidden helper is doing its job.</p>
+  <p>Go back to the <a href="/today" style="color:#58a6ff">companion web app</a> — the Mac status should show <strong>Online</strong> within 60 seconds. If the app window is closed and the Mac stays online, the hidden helper is doing its job.</p>
 </div>
 
 <h2>Troubleshooting</h2>
 <div class="step">
-  <p><strong>Mac still offline?</strong> Open Life Manager again and use the diagnostics view to check helper registration and permissions.</p>
+  <p><strong>Mac still offline?</strong> Relaunch Vero or rerun this Mac setup guide to reconnect the menu bar companion and refresh local permissions.</p>
   <p><strong>Missing permissions?</strong> Re-open the app and grant Accessibility, Notifications, and Calendar access.</p>
   <p><strong>Backend offline error?</strong> Check your backend URL is correct: <code>cat ~/.config/life-manager/backend.url</code></p>
   <p><strong>Auth errors?</strong> Check your password: <code>cat ~/.config/life-manager/auth</code></p>
-  <p class="note">If the helper still will not connect, reopen the app and use the built-in diagnostics screen before digging into local logs.</p>
+  <p class="note">If the helper still will not connect, reopen Vero, reconnect the backend, and then verify status from the dashboard before digging into local logs.</p>
 </div>
 </body>
 </html>"""
@@ -1147,32 +1302,55 @@ async def ios_setup_page():
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>iPhone Setup — Life Manager</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+<title>iPhone Setup — Vero</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-  body {{ font-family: 'Inter', sans-serif; background: #0d1117; color: #f0f6fc; padding: 2rem; max-width: 600px; margin: 0 auto; }}
-  h1 {{ font-size: 1.5rem; margin-bottom: 0.5rem; }}
-  h2 {{ font-size: 1.1rem; color: #58a6ff; margin: 2rem 0 0.75rem; }}
-  p {{ color: #8b949e; line-height: 1.6; }}
-  .step {{ background: rgba(22,27,34,0.8); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 1.25rem; margin: 1rem 0; }}
-  .step-num {{ font-size: 0.75rem; color: #58a6ff; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.5rem; }}
-  code {{ background: rgba(88,166,255,0.1); color: #58a6ff; padding: 0.2rem 0.5rem; border-radius: 6px; font-size: 0.9rem; font-family: monospace; }}
-  .url-box {{ background: rgba(88,166,255,0.08); border: 1px solid rgba(88,166,255,0.3); border-radius: 8px; padding: 1rem; font-family: monospace; font-size: 1.1rem; color: #58a6ff; word-break: break-all; margin: 1rem 0; }}
-  .action-btn {{ display: inline-block; text-align: center; background: #58a6ff; color: #000; padding: 0.75rem 1.5rem; border-radius: 10px; font-weight: 600; text-decoration: none; font-size: 1rem; border: none; cursor: pointer; }}
-  .action-btn:hover {{ background: #79b8ff; }}
-  .note {{ font-size: 0.85rem; color: #8b949e; margin-top: 0.75rem; }}
-  .divider {{ border: none; border-top: 1px solid rgba(255,255,255,0.08); margin: 2rem 0; }}
-  .badge-remote {{ background: rgba(63,185,80,0.15); color: #3fb950; border: 1px solid rgba(63,185,80,0.3); border-radius: 6px; padding: 0.2rem 0.6rem; font-size: 0.8rem; font-weight: 600; margin-left: 0.5rem; }}
-  .badge-signed {{ background: rgba(88,166,255,0.15); color: #58a6ff; border: 1px solid rgba(88,166,255,0.3); border-radius: 6px; padding: 0.2rem 0.6rem; font-size: 0.8rem; font-weight: 600; }}
-  .cmd-box {{ background: #161b22; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 1rem 1rem 1rem 1rem; font-family: 'SF Mono', 'Menlo', monospace; font-size: 0.85rem; color: #e6edf3; overflow-x: auto; white-space: pre-wrap; word-break: break-all; position: relative; margin: 0.75rem 0; line-height: 1.6; }}
-  .cmd-box .cmt {{ color: #8b949e; }}
-  .copy-btn {{ position: absolute; top: 0.5rem; right: 0.5rem; background: rgba(88,166,255,0.15); color: #58a6ff; border: 1px solid rgba(88,166,255,0.3); border-radius: 6px; padding: 0.25rem 0.6rem; font-size: 0.75rem; cursor: pointer; font-family: 'Inter', sans-serif; }}
-  .copy-btn:hover {{ background: rgba(88,166,255,0.3); }}
-  pre.cmd {{ background: #161b22; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 1rem; overflow-x: auto; font-size: 0.85rem; color: #c9d1d9; white-space: pre-wrap; word-break: break-all; position: relative; }}
-  pre.cmd .copy-btn {{ position: absolute; top: 0.5rem; right: 0.5rem; background: rgba(88,166,255,0.2); color: #58a6ff; border: 1px solid rgba(88,166,255,0.3); border-radius: 6px; padding: 0.25rem 0.5rem; font-size: 0.75rem; cursor: pointer; font-family: 'Inter', sans-serif; }}
-  pre.cmd .copy-btn:hover {{ background: rgba(88,166,255,0.4); }}
-  .signing-note {{ background: rgba(210,153,34,0.1); border: 1px solid rgba(210,153,34,0.3); border-radius: 8px; padding: 1rem; margin: 1rem 0; }}
-  .signing-note strong {{ color: #d29922; }}
+  :root {{
+    color-scheme: light;
+    --bg: #f5efe2;
+    --panel: rgba(255, 251, 244, 0.92);
+    --panel-strong: #fffdf8;
+    --line: rgba(18, 57, 55, 0.12);
+    --text: #123937;
+    --muted: #667a77;
+    --teal: #0f766e;
+    --teal-deep: #0b5a54;
+    --orange: #ea6b2d;
+    --orange-soft: rgba(234, 107, 45, 0.12);
+    --shadow: 0 24px 60px rgba(18, 57, 55, 0.1);
+  }}
+  body {{
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    color: var(--text);
+    padding: 2rem;
+    max-width: 720px;
+    margin: 0 auto;
+    background:
+      radial-gradient(circle at top left, rgba(17, 133, 121, 0.14), transparent 28%),
+      radial-gradient(circle at top right, rgba(234, 107, 45, 0.12), transparent 22%),
+      linear-gradient(180deg, var(--bg) 0%, #efe6d6 100%);
+  }}
+  h1 {{ font-size: 2.1rem; margin-bottom: 0.5rem; letter-spacing: -0.04em; }}
+  h2 {{ font-size: 1.1rem; color: var(--teal); margin: 2rem 0 0.75rem; letter-spacing: -0.02em; }}
+  p {{ color: var(--muted); line-height: 1.65; }}
+  a {{ color: var(--teal); }}
+  .step {{ background: var(--panel); border: 1px solid var(--line); border-radius: 24px; padding: 1.35rem; margin: 1rem 0; box-shadow: var(--shadow); backdrop-filter: blur(18px); }}
+  .step-num {{ font-size: 0.75rem; color: var(--teal); text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 0.5rem; font-weight: 700; }}
+  code {{ background: rgba(15,118,110,0.09); color: var(--teal-deep); padding: 0.2rem 0.5rem; border-radius: 8px; font-size: 0.9rem; font-family: monospace; }}
+  .url-box {{ background: var(--panel-strong); border: 1px solid rgba(15,118,110,0.18); border-radius: 18px; padding: 1rem; font-family: monospace; font-size: 1rem; color: var(--teal-deep); word-break: break-all; margin: 1rem 0; }}
+  .action-btn {{ display: inline-block; text-align: center; background: var(--teal); color: #fff; padding: 0.75rem 1.5rem; border-radius: 14px; font-weight: 700; text-decoration: none; font-size: 1rem; border: none; cursor: pointer; }}
+  .action-btn:hover {{ background: var(--teal-deep); }}
+  .note {{ font-size: 0.85rem; color: var(--muted); margin-top: 0.75rem; }}
+  .divider {{ border: none; border-top: 1px solid var(--line); margin: 2rem 0; }}
+  .badge-remote {{ background: var(--orange-soft); color: var(--orange); border: 1px solid rgba(234,107,45,0.24); border-radius: 999px; padding: 0.25rem 0.75rem; font-size: 0.78rem; font-weight: 700; margin-left: 0.5rem; text-transform: uppercase; letter-spacing: 0.08em; }}
+  .badge-signed {{ background: rgba(15,118,110,0.1); color: var(--teal); border: 1px solid rgba(15,118,110,0.22); border-radius: 999px; padding: 0.25rem 0.75rem; font-size: 0.78rem; font-weight: 700; }}
+  .copy-btn {{ position: absolute; top: 0.5rem; right: 0.5rem; background: rgba(15,118,110,0.1); color: var(--teal); border: 1px solid rgba(15,118,110,0.22); border-radius: 8px; padding: 0.25rem 0.6rem; font-size: 0.75rem; cursor: pointer; font-family: 'Plus Jakarta Sans', sans-serif; }}
+  .copy-btn:hover {{ background: rgba(15,118,110,0.18); }}
+  pre.cmd {{ background: var(--panel-strong); border: 1px solid var(--line); border-radius: 18px; padding: 1rem; overflow-x: auto; font-size: 0.85rem; color: var(--text); white-space: pre-wrap; word-break: break-all; position: relative; line-height: 1.65; }}
+  pre.cmd .copy-btn {{ position: absolute; top: 0.5rem; right: 0.5rem; background: rgba(15,118,110,0.1); color: var(--teal); border: 1px solid rgba(15,118,110,0.22); border-radius: 8px; padding: 0.25rem 0.5rem; font-size: 0.75rem; cursor: pointer; font-family: 'Plus Jakarta Sans', sans-serif; }}
+  pre.cmd .copy-btn:hover {{ background: rgba(15,118,110,0.18); }}
+  .signing-note {{ background: var(--orange-soft); border: 1px solid rgba(234,107,45,0.24); border-radius: 18px; padding: 1rem; margin: 1rem 0; }}
+  .signing-note strong {{ color: var(--orange); }}
 </style>
 <script>
 function copyCmd(btn) {{
@@ -1198,12 +1376,12 @@ function copyCmd(btn) {{
 </head>
 <body>
 <nav style="margin-bottom:1.5rem;">
-  <a href="/" style="color:#8b949e;text-decoration:none;font-size:0.9rem;display:inline-flex;align-items:center;gap:0.4rem;">
-    ← Dashboard
+  <a href="/" style="text-decoration:none;font-size:0.9rem;display:inline-flex;align-items:center;gap:0.4rem;">
+    ← Companion
   </a>
 </nav>
-<h1>📱 iPhone Setup <span class="badge-remote" style="{remote_only}">☁️ Cloud</span></h1>
-<p>Follow these steps to set up low-battery iPhone automations. The default model is zone enter/leave events, not periodic GPS polling.</p>
+<h1>iPhone Setup <span class="badge-remote" style="{remote_only}">Hosted</span></h1>
+<p>Follow these steps to set up low-battery iPhone automations for Vero. The default model is zone enter/leave events, not periodic GPS polling.</p>
 
 <!-- ── Step 1: Download ─────────────────────────────── -->
 <h2>Step 1 — Download only the helper shortcuts you actually need</h2>
@@ -1219,9 +1397,9 @@ function copyCmd(btn) {{
     <strong style="color:#f0f6fc;">GPS Ping / Arrive</strong> <span style="color:#8b949e;">— Legacy helpers only. Zone enter/leave automations in Step 4 are the recommended default.</span>
   </p>
   <p style="margin-top:1rem">
-    <a class="action-btn" href="/setup/shortcut/download?kind=walking">⬇ Walking</a>&nbsp;
-    <a class="action-btn" href="/setup/shortcut/download?kind=charge_on">⬇ Charging On</a>&nbsp;
-    <a class="action-btn" href="/setup/shortcut/download?kind=charge_off">⬇ Charging Off</a>
+    <a class="action-btn" href="/setup/shortcut/download?kind=walking">Download Walking</a>&nbsp;
+    <a class="action-btn" href="/setup/shortcut/download?kind=charge_on">Download Charging On</a>&nbsp;
+    <a class="action-btn" href="/setup/shortcut/download?kind=charge_off">Download Charging Off</a>
   </p>
   <p class="note" style="margin-top:0.75rem;">Only download the legacy helpers if you intentionally want them:</p>
   <p style="margin-top:0.5rem">
@@ -1230,7 +1408,7 @@ function copyCmd(btn) {{
   </p>
   <!-- One-click sign all — only shows when running locally on Mac -->
   <div style="{sign_all_display}; margin-top:1rem;">
-    <a class="action-btn" href="/setup/shortcut/sign-all" style="background:#3fb950;color:#000;">⚡ Download &amp; Sign All to Desktop</a>
+    <a class="action-btn" href="/setup/shortcut/sign-all" style="background:var(--orange);">Download &amp; Sign All to Desktop</a>
     <p class="note">Saves all 5 signed shortcuts to your Desktop and opens Finder. Then AirDrop to iPhone.</p>
   </div>
 </div>
@@ -1239,13 +1417,13 @@ function copyCmd(btn) {{
 <div style="{signing_section_display}">
 <h2>Step 2 — Download &amp; sign shortcuts on your Mac</h2>
 <div class="signing-note">
-  <strong>⚠️ Required when using Railway:</strong> iOS will not import unsigned shortcuts. Run this one-liner in Terminal — it downloads all 5 and signs them in one step.
+  <strong>Required when using Railway:</strong> iOS will not import unsigned shortcuts. Run this one-liner in Terminal. It downloads all 5 and signs them in one step.
 </div>
 <div class="step">
   <div class="step-num">Open Terminal on your Mac and paste this command</div>
   <pre class="cmd"><button class="copy-btn" onclick="copyCmd(this)">Copy</button>cd ~/Desktop && for kind in gps arrive walking charge_on charge_off; do
-  curl -s "{backend_url}/setup/shortcut/download?kind=$kind" -o "LifeManager-$kind.shortcut" && \\
-  shortcuts sign -m anyone -i "LifeManager-$kind.shortcut" -o "LifeManager-$kind.shortcut" && \\
+  curl -s "{backend_url}/setup/shortcut/download?kind=$kind" -o "Vero-$kind.shortcut" && \\
+  shortcuts sign -m anyone -i "Vero-$kind.shortcut" -o "Vero-$kind.shortcut" && \\
   echo "Signed: $kind"
 done && echo "All 5 shortcuts ready on your Desktop."</pre>
   <p class="note">This saves 5 signed <code>.shortcut</code> files to your Desktop. Then AirDrop them to your iPhone.</p>
@@ -1261,7 +1439,7 @@ done && echo "All 5 shortcuts ready on your Desktop."</pre>
 <div class="step" style="{local_only}">
   <div class="step-num">Method B — iCloud Drive (no AirDrop needed)</div>
   <p><a class="action-btn" href="/setup/save-to-icloud" style="font-size:0.9rem;padding:0.5rem 1rem;">Save helper shortcut to iCloud Drive →</a></p>
-  <p class="note">On iPhone: <strong>Files app → iCloud Drive → LifeManager.shortcut → Add Shortcut</strong>. Use this for the walking helper if you do not want to AirDrop.</p>
+  <p class="note">On iPhone: <strong>Files app → iCloud Drive → Vero-walking.shortcut → Add Shortcut</strong>. Use this for the walking helper if you do not want to AirDrop.</p>
 </div>
 
 <hr class="divider">
@@ -1284,10 +1462,10 @@ done && echo "All 5 shortcuts ready on your Desktop."</pre>
   <p class="note">Apple supports automatic run for these trigger types when <strong>Ask Before Running</strong> is turned off, so <em>Arrive</em>, <em>Leave</em>, <em>Workout</em>, and <em>Charger</em> automations can stay hands-off once you set them up.</p>
 
   <p><strong>Apple Watch walking signal</strong></p>
-  <p class="note">Create one more automation: <em>Workout → Walking → Starts</em> → Run Shortcut <strong>Life Manager Walking</strong>. In the Watch app on iPhone, enable <strong>Workout Start Reminder</strong> and <strong>Workout End Reminder</strong>.</p>
+  <p class="note">Create one more automation: <em>Workout → Walking → Starts</em> → Run Shortcut <strong>Vero Walking</strong>. In the Watch app on iPhone, enable <strong>Workout Start Reminder</strong> and <strong>Workout End Reminder</strong>.</p>
 
   <p><strong>Sleep signal</strong></p>
-  <p class="note"><em>Charger connected</em> → Run Shortcut <strong>Life Manager Charging On</strong>; <em>Charger disconnected</em> → Run Shortcut <strong>Life Manager Charging Off</strong>.</p>
+  <p class="note"><em>Charger connected</em> → Run Shortcut <strong>Vero Charging On</strong>; <em>Charger disconnected</em> → Run Shortcut <strong>Vero Charging Off</strong>.</p>
 
   <p><strong>Legacy fallback only</strong></p>
   <p class="note">If you still want a periodic heartbeat, you can keep the old Focus-loop GPS Ping shortcut, but it is no longer the recommended setup.</p>
@@ -1297,8 +1475,8 @@ done && echo "All 5 shortcuts ready on your Desktop."</pre>
 <div class="step">
   <div class="step-num">Recommended</div>
   <p>On your Mac, go to <strong>System Settings → Apple Account → iCloud</strong> and make sure <strong>Calendar</strong> is turned <strong>On</strong>.</p>
-  <p><strong>Detected target:</strong> the Mac helper writes to Apple Calendar locally. For cloud sync, the <strong>Life Manager</strong> calendar should live under the <strong>iCloud</strong> section in Calendar.app, not only under <strong>On My Mac</strong>.</p>
-  <p><strong>Fix this if needed:</strong> if you want Google visibility too, add Google under <strong>System Settings → Internet Accounts</strong>, enable Calendar for that account, and let Apple Calendar handle the sync. Life Manager still writes only to Apple Calendar on the Mac.</p>
+  <p><strong>Detected target:</strong> the Mac helper writes to Apple Calendar locally. For cloud sync, the <strong>Vero</strong> calendar should live under the <strong>iCloud</strong> section in Calendar.app, not only under <strong>On My Mac</strong>.</p>
+  <p><strong>Fix this if needed:</strong> if you want Google visibility too, add Google under <strong>System Settings → Internet Accounts</strong>, enable Calendar for that account, and let Apple Calendar handle the sync. Vero still writes only to Apple Calendar on the Mac.</p>
 </div>
 
 <h2>Your backend URL</h2>
@@ -1360,35 +1538,35 @@ def _build_shortcut_bytes(kind: str = "gps", sign: bool = True) -> bytes:
     kind = (kind or "gps").lower()
     templates = {
         "gps": {
-            "name": "Life Manager GPS",
+            "name": "Vero GPS",
             "activity": "ios_ping",
             "is_charging": None,
             "use_location_action": True,
             "location_label": "current_location",
         },
         "arrive": {
-            "name": "Life Manager Arrive",
+            "name": "Vero Arrive",
             "activity": "Arrive",
             "is_charging": "false",
             "use_location_action": False,
             "location_label": "arrive_trigger",
         },
         "walking": {
-            "name": "Life Manager Walking",
+            "name": "Vero Walking",
             "activity": "Walking",
             "is_charging": "false",
             "use_location_action": False,
             "location_label": "walking_trigger",
         },
         "charge_on": {
-            "name": "Life Manager Charging On",
+            "name": "Vero Charging On",
             "activity": "Stationary",
             "is_charging": "true",
             "use_location_action": False,
             "location_label": "charging_trigger",
         },
         "charge_off": {
-            "name": "Life Manager Charging Off",
+            "name": "Vero Charging Off",
             "activity": "Stationary",
             "is_charging": "false",
             "use_location_action": False,
@@ -1499,17 +1677,17 @@ async def save_shortcut_to_icloud():
     icloud_path = os.path.expanduser("~/Library/Mobile Documents/com~apple~CloudDocs")
     if not os.path.isdir(icloud_path):
         return HR("<p style='font-family:sans-serif;color:#f85149'>iCloud Drive not found. Make sure iCloud Drive is enabled in System Settings → Apple ID → iCloud.</p>")
-    dest = os.path.join(icloud_path, "LifeManager-walking.shortcut")
+    dest = os.path.join(icloud_path, "Vero-walking.shortcut")
     with open(dest, "wb") as f:
         f.write(_build_shortcut_bytes(kind="walking"))
     subprocess.run(["open", icloud_path])
     return HR("""<html><head><meta charset='UTF-8'><style>
-      body{font-family:sans-serif;background:#0d1117;color:#f0f6fc;display:flex;align-items:center;
-           justify-content:center;min-height:100vh;margin:0;flex-direction:column;gap:1rem;}
-      p{color:#8b949e;} a{color:#58a6ff;}
+      body{font-family:'Plus Jakarta Sans',sans-serif;background:#f5efe2;color:#123937;display:flex;align-items:center;
+           justify-content:center;min-height:100vh;margin:0;flex-direction:column;gap:1rem;padding:2rem;}
+      p{color:#667a77;} a{color:#0f766e;}
     </style></head><body>
-    <h2 style='color:#3fb950'>✅ Saved to iCloud Drive!</h2>
-    <p>Finder opened. On your iPhone: open <strong>Files → iCloud Drive → LifeManager-walking.shortcut</strong></p>
+    <h2 style='color:#0f766e'>Saved to iCloud Drive</h2>
+    <p>Finder opened. On your iPhone: open <strong>Files → iCloud Drive → Vero-walking.shortcut</strong></p>
     <a href='/setup/ios'>← Back to setup</a>
     </body></html>""")
 
@@ -1519,16 +1697,16 @@ async def save_shortcut_to_desktop():
     """Save the walking helper shortcut to the Mac Desktop and reveal it in Finder."""
     import subprocess, os
     from fastapi.responses import HTMLResponse as HR
-    dest = os.path.expanduser("~/Desktop/LifeManager-walking.shortcut")
+    dest = os.path.expanduser("~/Desktop/Vero-walking.shortcut")
     with open(dest, "wb") as f:
         f.write(_build_shortcut_bytes(kind="walking"))
     subprocess.run(["open", "-R", dest])  # Reveal in Finder
     return HR("""<html><head><meta charset='UTF-8'><style>
-      body{font-family:sans-serif;background:#0d1117;color:#f0f6fc;display:flex;align-items:center;
-           justify-content:center;min-height:100vh;margin:0;flex-direction:column;gap:1rem;}
-      p{color:#8b949e;} a{color:#58a6ff;}
+      body{font-family:'Plus Jakarta Sans',sans-serif;background:#f5efe2;color:#123937;display:flex;align-items:center;
+           justify-content:center;min-height:100vh;margin:0;flex-direction:column;gap:1rem;padding:2rem;}
+      p{color:#667a77;} a{color:#0f766e;}
     </style></head><body>
-    <h2 style='color:#3fb950'>✅ Saved to Desktop!</h2>
+    <h2 style='color:#0f766e'>Saved to Desktop</h2>
     <p>Finder opened with the file selected.<br>Right-click it → <strong>Share → AirDrop</strong> → select your iPhone.</p>
     <a href='/setup/ios'>← Back to setup</a>
     </body></html>""")
@@ -1537,7 +1715,7 @@ async def save_shortcut_to_desktop():
 @app.get("/setup/shortcut/download")
 async def download_shortcut(kind: str = "gps"):
     from fastapi.responses import Response
-    filename = f"LifeManager-{kind}.shortcut"
+    filename = f"Vero-{kind}.shortcut"
     try:
         shortcut_bytes = _build_shortcut_bytes(kind)
     except ValueError:
@@ -1563,10 +1741,10 @@ async def sign_all_shortcuts():
     for kind in kinds:
         try:
             signed_bytes = _build_shortcut_bytes(kind, sign=True)
-            dest = os.path.join(desktop, f"LifeManager-{kind}.shortcut")
+            dest = os.path.join(desktop, f"Vero-{kind}.shortcut")
             with open(dest, "wb") as f:
                 f.write(signed_bytes)
-            saved.append(f"LifeManager-{kind}.shortcut")
+            saved.append(f"Vero-{kind}.shortcut")
         except Exception as e:
             failed.append(f"{kind}: {e}")
     # Reveal Desktop in Finder
@@ -1574,11 +1752,11 @@ async def sign_all_shortcuts():
     items_html = "".join(f"<li>✅ {s}</li>" for s in saved)
     items_html += "".join(f"<li style='color:#f85149'>❌ {f}</li>" for f in failed)
     return HR(f"""<html><head><meta charset='UTF-8'><style>
-      body{{font-family:sans-serif;background:#0d1117;color:#f0f6fc;padding:2rem;max-width:500px;margin:0 auto;}}
-      li{{margin:0.5rem 0;color:#8b949e;}} a{{color:#58a6ff;text-decoration:none;}}
-      h2{{color:#3fb950;}} p{{color:#8b949e;}}
+      body{{font-family:'Plus Jakarta Sans',sans-serif;background:#f5efe2;color:#123937;padding:2rem;max-width:560px;margin:0 auto;}}
+      li{{margin:0.5rem 0;color:#667a77;}} a{{color:#0f766e;text-decoration:none;}}
+      h2{{color:#0f766e;}} p{{color:#667a77;}}
     </style></head><body>
-    <h2>⚡ All shortcuts saved to Desktop!</h2>
+    <h2>All shortcuts saved to Desktop</h2>
     <p>Finder opened. AirDrop each file to your iPhone and tap <strong>Add Shortcut</strong>.</p>
     <ul>{items_html}</ul>
     <p style='margin-top:1.5rem'><a href='/setup/ios'>← Back to setup</a></p>
@@ -1601,7 +1779,7 @@ async def analytics_today(db: Session = Depends(get_db)):
 
     # Compute time per category using log intervals
     states = agent_logic.get_all_states(db)
-    polling_secs = max(60, int(states.get("polling_interval_seconds", "60")))
+    polling_secs = agent_logic.get_capture_interval_seconds(db)
     category_minutes = {}
     total_active_minutes = 0
     for entry in logs:

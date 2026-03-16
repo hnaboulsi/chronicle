@@ -4,6 +4,6 @@ enum AppConstants {
     static let appGroupIdentifier = "group.com.naboulsi.lifemanager"
     static let mainBundleIdentifier = "com.naboulsi.lifemanager"
     static let agentBundleIdentifier = "com.naboulsi.lifemanager.agent"
-    static let urlScheme = "lifemanager"
-    static let calendarName = "Life Manager"
+    static let urlScheme = "vero"
+    static let calendarName = "Vero"
 }
