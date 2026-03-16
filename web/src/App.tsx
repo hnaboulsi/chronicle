@@ -106,6 +106,13 @@ type CheckinResponse = {
   guess?: string | null;
 };
 
+type HourlySummary = {
+  id: number;
+  hour_start_local: string;
+  summary_text: string;
+  productivity_score: number | null;
+};
+
 type ZoneRecord = {
   id?: number;
   slug: string;
@@ -394,6 +401,7 @@ function TodayPage({
   captureIntervalSeconds,
   initialLoading,
   onRefreshLogs,
+  hourlySummaries,
 }: {
   state: DashboardState | null;
   analytics: Analytics | null;
@@ -403,6 +411,7 @@ function TodayPage({
   captureIntervalSeconds?: number;
   initialLoading: boolean;
   onRefreshLogs: () => void;
+  hourlySummaries: HourlySummary[];
 }) {
   const deferredLogs = useDeferredValue(logs);
   const [loggedMsg, setLoggedMsg] = useState("");
@@ -434,7 +443,8 @@ function TodayPage({
                 {initialLoading ? <Skeleton h="0.9rem" w="40%" /> : (
                   <>
                     Presence: <strong>{presenceLabel(state?.presence_state)}</strong> ·
-                    Last capture: <strong>{captureAgeMinutes != null ? `${captureAgeMinutes}m ago` : "Unknown"}</strong>
+                    Last capture: <strong>{captureAgeMinutes != null ? `${captureAgeMinutes}m ago` : "Unknown"}</strong> ·
+                    Active: <strong>{analytics?.total_active_minutes ?? 0} min</strong>
                   </>
                 )}
               </p>
@@ -465,23 +475,24 @@ function TodayPage({
         </Surface>
       </div>
 
-      {/* Row 3: Stats */}
-      <div className="bento-row">
-        <article className={`stat-card tone-good`}>
-          <div className="card-label">Active today</div>
-          <div className="stat-value">
-            {initialLoading ? <Skeleton h="2.2rem" w="55%" /> : `${analytics?.total_active_minutes ?? 0} min`}
-          </div>
-          <p className="card-note">{`${analytics?.log_count ?? 0} captured intervals`}</p>
-        </article>
-        <article className={`stat-card tone-warn`}>
-          <div className="card-label">Productive</div>
-          <div className="stat-value">
-            {initialLoading ? <Skeleton h="2.2rem" w="55%" /> : `${analytics?.productive_pct ?? 0}%`}
-          </div>
-          <p className="card-note">{`${analytics?.productive_minutes ?? 0} productive minutes`}</p>
-        </article>
-      </div>
+      {/* Row 3: AI Recaps */}
+      {hourlySummaries.length > 0 && (
+        <div className="col-span-4">
+          <Surface title="AI recaps" eyebrow="Last few hours">
+            <div className="recap-list">
+              {hourlySummaries.map(s => (
+                <div key={s.id} className="recap-row">
+                  <span className="recap-time">{formatTime(s.hour_start_local, timezone)}</span>
+                  <span className="recap-text">{s.summary_text}</span>
+                  {s.productivity_score != null && (
+                    <span className="recap-score">{Math.round(s.productivity_score * 100)}%</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </Surface>
+        </div>
+      )}
 
       {/* Check-in if pending */}
       {checkin?.checkin ? (
@@ -495,7 +506,7 @@ function TodayPage({
 
       {/* Row 4: Timeline */}
       <div className="col-span-4">
-        <Surface title="Recent timeline" eyebrow="Redacted by default">
+        <Surface title="Recent timeline" eyebrow="Recent activity">
           <div className="timeline">
             {initialLoading ? (
               Array.from({ length: 6 }).map((_, i) => (
@@ -513,7 +524,13 @@ function TodayPage({
                     <strong>{entry.app_name || entry.location_label || entry.activity_type || "Activity"}</strong>
                     <p>{entry.window_title || entry.activity_type || entry.location_label || "No detail available"}</p>
                   </div>
-                  <div className="timeline-meta">{presenceLabel(entry.presence_state)}</div>
+                  <div className="timeline-meta">
+                    {entry.device === "manual"
+                      ? <span className="tag tag-manual">manual</span>
+                      : entry.activity_type && entry.activity_type !== "unknown"
+                        ? <span className="tag">{entry.activity_type}</span>
+                        : presenceLabel(entry.presence_state)}
+                  </div>
                 </article>
               ))
             ) : (
@@ -1031,6 +1048,7 @@ export default function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [checkin, setCheckin] = useState<CheckinResponse | null>(null);
   const [zones, setZones] = useState<ZoneRecord[]>([]);
+  const [hourlySummaries, setHourlySummaries] = useState<HourlySummary[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -1040,7 +1058,7 @@ export default function App() {
     setRefreshing(true);
     setErrorMessage("");
     try {
-      const [nextState, nextSettings, nextAnalytics, nextLogs, nextHealth, nextCheckin] =
+      const [nextState, nextSettings, nextAnalytics, nextLogs, nextHealth, nextCheckin, nextSummaries] =
         await Promise.all([
           fetchJson<DashboardState>("/api/state"),
           fetchJson<BackendSettings>("/api/settings"),
@@ -1048,6 +1066,7 @@ export default function App() {
           fetchJson<ActivityLog[]>("/api/logs?limit=15"),
           fetchJson<HealthResponse>("/api/healthz"),
           fetchJson<CheckinResponse>("/api/checkin"),
+          fetchJson<HourlySummary[]>("/api/hourly-summaries?limit=4").catch(() => [] as HourlySummary[]),
         ]);
 
       startTransition(() => {
@@ -1057,6 +1076,7 @@ export default function App() {
         setLogs(nextLogs);
         setHealth(nextHealth);
         setCheckin(nextCheckin);
+        setHourlySummaries(nextSummaries);
         setInitialLoading(false);
       });
     } catch (error) {
@@ -1146,6 +1166,7 @@ export default function App() {
                 captureIntervalSeconds={settings?.capture_interval_seconds}
                 initialLoading={initialLoading}
                 onRefreshLogs={refreshCore}
+                hourlySummaries={hourlySummaries}
               />
             }
           />

@@ -762,3 +762,22 @@ select:focus-visible {
   margin-top: 10px; height: 1.2em;
 }
 .field-hint { font-size: 0.78rem; color: var(--muted); margin: 2px 0 0; line-height: 1.4; }
+
+/* AI recap list */
+.recap-list { display: flex; flex-direction: column; gap: 10px; }
+.recap-row {
+  display: flex; align-items: baseline; gap: 12px;
+  padding: 10px 0; border-bottom: 1px solid var(--line);
+}
+.recap-row:last-child { border-bottom: none; }
+.recap-time { font-size: 0.78rem; color: var(--muted); white-space: nowrap; flex-shrink: 0; }
+.recap-text { flex: 1; font-size: 0.88rem; color: var(--text); line-height: 1.4; }
+.recap-score { font-size: 0.78rem; font-weight: 700; color: var(--good); white-space: nowrap; }
+
+/* Activity type tags */
+.tag {
+  font-size: 0.72rem; padding: 2px 8px; border-radius: 999px;
+  background: var(--panel-strong); color: var(--muted);
+  border: 1px solid var(--line); white-space: nowrap;
+}
+.tag-manual { color: var(--accent); border-color: var(--accent-dim); }
