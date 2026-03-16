@@ -969,7 +969,15 @@ function SettingsPage({
 
   return (
     <div className="stack">
-      <Surface title="Settings" eyebrow="Tracking & privacy">
+      <Surface
+        title="Settings"
+        eyebrow="Tracking & privacy"
+        action={
+          <button className="primary-button" type="button" onClick={() => onSave(draft)}>
+            Save settings
+          </button>
+        }
+      >
         <div className="form-grid">
           <label className="toggle-field">
             <span>Tracking enabled</span>
@@ -1036,12 +1044,6 @@ function SettingsPage({
             </select>
           </label>
           <p className="field-hint">Used to display times correctly</p>
-        </div>
-
-        <div className="surface-actions">
-          <button className="primary-button" type="button" onClick={() => onSave(draft)}>
-            Save settings
-          </button>
         </div>
       </Surface>
     </div>
