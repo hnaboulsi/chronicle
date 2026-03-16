@@ -145,7 +145,7 @@ function formatAge(seconds?: number) {
   return `${Math.floor(seconds / 86_400)}d ago`;
 }
 
-function formatTime(value?: string) {
+function formatTime(value?: string, timezone?: string) {
   if (!value) return "Unknown";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Unknown";
@@ -154,6 +154,7 @@ function formatTime(value?: string) {
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    ...(timezone ? { timeZone: timezone } : {}),
   });
 }
 
@@ -368,16 +369,21 @@ function TodayPage({
   analytics,
   logs,
   checkin,
+  timezone,
+  captureIntervalSeconds,
 }: {
   state: DashboardState | null;
   analytics: Analytics | null;
   logs: ActivityLog[];
   checkin: CheckinResponse | null;
+  timezone?: string;
+  captureIntervalSeconds?: number;
 }) {
   const deferredLogs = useDeferredValue(logs);
 
   return (
     <div className="today-bento">
+      {/* Row 1: Compact hero + device */}
       <div className="col-span-3">
         <Surface title="Today" eyebrow="Live view">
           <div className="hero-grid">
@@ -387,54 +393,55 @@ function TodayPage({
               </h3>
               <p className="hero-copy">
                 Presence: <strong>{presenceLabel(state?.presence_state)}</strong> ·
-                Capture cadence: <strong>{intervalLabel(state?.capture_interval_seconds)}</strong>
+                Capture cadence: <strong>{intervalLabel(captureIntervalSeconds ?? state?.capture_interval_seconds)}</strong>
               </p>
             </div>
             <div className={`pill tone-${serviceTone(state?.service_health)}`}>
               {state?.mac_status?.replace(/_/g, " ") ?? "unknown"}
             </div>
           </div>
-          <div className="stats-grid">
-            <StatCard
-              label="Active today"
-              value={`${analytics?.total_active_minutes ?? 0} min`}
-              note={`${analytics?.log_count ?? 0} captured intervals`}
-            />
-            <StatCard
-              label="Productive"
-              value={`${analytics?.productive_pct ?? 0}%`}
-              note={`${analytics?.productive_minutes ?? 0} productive minutes`}
-              tone="warn"
-            />
-            <StatCard
-              label="AI budget"
-              value={`${analytics?.llm_used ?? 0}/${analytics?.llm_cap ?? 0}`}
-              note="Summaries fall back gracefully when this cap is reached"
-              tone="good"
-            />
-          </div>
         </Surface>
       </div>
 
-      <div className="col-span-1 device-col">
-        <Surface title="Device status" eyebrow="Mac health">
+      <div className="col-span-1">
+        <Surface title="Device" eyebrow="Mac health">
           <Field label="Status" value={state?.mac_status_reason ?? "Waiting for agent"} />
           <Field label="Presence" value={presenceLabel(state?.presence_state)} />
-          <Field label="Last heartbeat" value={formatAge(state?.last_mac_heartbeat_age_seconds)} />
+          <Field label="Heartbeat" value={formatAge(state?.last_mac_heartbeat_age_seconds)} />
           <Field label="Last capture" value={formatAge(state?.last_mac_capture_age_seconds)} />
-          <Field label="Location" value={state?.current_location ?? "No recent location"} />
+          <Field label="Location" value={state?.current_location ?? "No location"} />
           <Field label="Sleep" value={state?.sleep_status_note ?? "Unknown"} />
         </Surface>
+      </div>
 
-        <Surface title="Privacy posture" eyebrow="Data handling">
+      {/* Row 2: Stats + privacy */}
+      <div className="bento-row">
+        <StatCard
+          label="Active today"
+          value={`${analytics?.total_active_minutes ?? 0} min`}
+          note={`${analytics?.log_count ?? 0} captured intervals`}
+        />
+        <StatCard
+          label="Productive"
+          value={`${analytics?.productive_pct ?? 0}%`}
+          note={`${analytics?.productive_minutes ?? 0} productive minutes`}
+          tone="warn"
+        />
+        <StatCard
+          label="AI budget"
+          value={`${analytics?.llm_used ?? 0}/${analytics?.llm_cap ?? 0}`}
+          note="Falls back gracefully when cap is reached"
+          tone="good"
+        />
+        <Surface title="Privacy" eyebrow="Data handling">
           <p className="lead">{privacyLabel(state?.privacy_mode)}</p>
           <p className="muted">
-            Browser titles and URLs stay redacted unless detailed capture is
-            explicitly enabled in settings.
+            Browser titles stay redacted unless detailed capture is on in settings.
           </p>
         </Surface>
       </div>
 
+      {/* Check-in if pending */}
       {checkin?.checkin ? (
         <div className="col-span-4">
           <Surface title="Pending check-in" eyebrow="Needs input">
@@ -444,13 +451,14 @@ function TodayPage({
         </div>
       ) : null}
 
+      {/* Row 3: Timeline */}
       <div className="col-span-4">
         <Surface title="Recent timeline" eyebrow="Redacted by default">
           <div className="timeline">
             {deferredLogs.length ? (
               deferredLogs.map((entry) => (
                 <article className="timeline-row" key={entry.id}>
-                  <div className="timeline-time">{formatTime(entry.timestamp)}</div>
+                  <div className="timeline-time">{formatTime(entry.timestamp, timezone)}</div>
                   <div className="timeline-copy">
                     <strong>{entry.app_name || entry.location_label || entry.activity_type || "Activity"}</strong>
                     <p>{entry.window_title || entry.activity_type || entry.location_label || "No detail available"}</p>
@@ -477,15 +485,16 @@ function SetupPage({
 }) {
   const heartbeatReady = (state?.last_mac_heartbeat_age_seconds ?? Number.MAX_SAFE_INTEGER) < 3600;
   const captureReady = (state?.last_mac_capture_age_seconds ?? Number.MAX_SAFE_INTEGER) < 3600;
+  const backendUrl = state?.backend_target_url ?? window.location.origin;
 
   return (
     <div className="stack">
-      <Surface title="Setup" eyebrow="Hosted beta onboarding">
+      <Surface title="Setup" eyebrow="Onboarding checklist">
         <div className="step-grid">
           <SetupStep
             title="1. Launch the menu bar companion"
             status={heartbeatReady ? "Done" : "Waiting"}
-            body="Open Vero once, save your backend URL and password/basic-auth value, then let it keep running from the menu bar."
+            body="Open Vero on Mac, paste your backend URL and password, then keep it running from the menu bar."
           />
           <SetupStep
             title="2. Confirm first heartbeat"
@@ -498,53 +507,84 @@ function SetupPage({
             body={`Latest capture: ${formatAge(state?.last_mac_capture_age_seconds)}`}
           />
           <SetupStep
-            title="4. Add optional iPhone zones"
+            title="4. Add optional iPhone shortcuts"
             status={state?.ios_recent_event ? "Active" : "Optional"}
-            body="Use iPhone Shortcuts only if you want zone and sleep context."
+            body="Download the shortcuts below and install them on iPhone for zone and sleep context."
           />
         </div>
       </Surface>
 
-      <div className="page-grid">
-        <Surface
-          title="Mac install & repair"
-          eyebrow="Native app"
-          action={
-            <a className="secondary-link" href="/setup/mac" target="_blank" rel="noreferrer">
-              Open Mac setup
-            </a>
-          }
-        >
-          <p className="lead">
-            Vero on Mac is a lightweight menu bar companion. Use this dashboard
-            for cadence, privacy, diagnostics, zones, and ongoing management.
-          </p>
-          <p className="muted">
-            After the first connection, the Mac side should mostly stay out of
-            the way. Relaunch it only if you need to reconnect the helper or fix
-            local permissions.
-          </p>
-        </Surface>
+      <Surface title="Mac companion" eyebrow="Menu bar app">
+        <div className="field-row">
+          <span>Backend URL</span>
+          <strong style={{ wordBreak: "break-all", textAlign: "right" }}>{backendUrl}</strong>
+        </div>
+        <div className="field-row">
+          <span>Backend health</span>
+          <strong className={`tone-${serviceTone(health?.status)}`}>{health?.status ?? "unknown"}</strong>
+        </div>
+        <div className="field-row">
+          <span>Last heartbeat</span>
+          <strong>{formatAge(state?.last_mac_heartbeat_age_seconds)}</strong>
+        </div>
+        <p className="muted" style={{ marginTop: "14px" }}>
+          Enter the backend URL and your password in the Vero Mac app. Once connected, keep it
+          running in the menu bar — it stays out of the way after the first setup.
+          Relaunch only to reconnect or fix Accessibility / Screen Recording permissions.
+        </p>
+      </Surface>
 
-        <Surface
-          title="Optional iPhone setup"
-          eyebrow="Companion context"
-          action={
-            <a className="secondary-link" href="/setup/ios" target="_blank" rel="noreferrer">
-              Open iPhone setup
-            </a>
-          }
-        >
-          <p className="lead">
-            Zones and sleep signals are optional. Vero should still feel complete
-            with just the Mac menu bar companion.
-          </p>
-          <p className="muted">
-            Current backend health: {health?.status ?? "unknown"}.
-          </p>
-        </Surface>
-      </div>
+      <Surface title="iPhone shortcuts" eyebrow="Optional companion context">
+        <p className="lead">
+          These shortcuts send zone and activity signals to the backend. Tap each link on your iPhone
+          (or AirDrop the file) to install.
+        </p>
+        <div className="step-grid" style={{ marginTop: "16px" }}>
+          <ShortcutCard
+            name="Vero Walking"
+            description="Triggers when you start a walking workout in Apple Health."
+            downloadUrl={`${backendUrl}/setup/shortcut/download?kind=walking`}
+          />
+          <ShortcutCard
+            name="Vero Charging On"
+            description="Signals when your iPhone starts charging — useful as a sleep proxy."
+            downloadUrl={`${backendUrl}/setup/shortcut/download?kind=charge_on`}
+          />
+          <ShortcutCard
+            name="Vero Charging Off"
+            description="Signals when your iPhone stops charging — wakeup proxy."
+            downloadUrl={`${backendUrl}/setup/shortcut/download?kind=charge_off`}
+          />
+        </div>
+        <p className="muted" style={{ marginTop: "14px" }}>
+          After downloading, tap <strong>Add Shortcut</strong> in the iOS Shortcuts app and run it
+          once to grant location permission if prompted. Zones and sleep signals are optional —
+          Vero works without them.
+        </p>
+      </Surface>
     </div>
+  );
+}
+
+function ShortcutCard({
+  name,
+  description,
+  downloadUrl,
+}: {
+  name: string;
+  description: string;
+  downloadUrl: string;
+}) {
+  return (
+    <article className="step-card">
+      <div className="step-topline">
+        <h3>{name}</h3>
+        <a className="secondary-link" href={downloadUrl} download>
+          Download
+        </a>
+      </div>
+      <p className="muted">{description}</p>
+    </article>
   );
 }
 
@@ -1070,6 +1110,8 @@ export default function App() {
                 analytics={analytics}
                 logs={logs}
                 checkin={checkin}
+                timezone={settings?.user_timezone}
+                captureIntervalSeconds={settings?.capture_interval_seconds}
               />
             }
           />

@@ -257,6 +257,14 @@ select:focus-visible {
 .col-span-3 { grid-column: span 3; }
 .col-span-4 { grid-column: span 4; }
 
+/* Full-width nested 4-col row inside a bento (e.g. stats + privacy) */
+.bento-row {
+  grid-column: span 4;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+
 .device-col {
   display: flex;
   flex-direction: column;
@@ -615,6 +623,11 @@ select:focus-visible {
   .col-span-1 {
     grid-column: span 1;
   }
+
+  .bento-row {
+    grid-column: span 2;
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 @media (max-width: 720px) {
@@ -648,6 +661,11 @@ select:focus-visible {
   .col-span-3,
   .col-span-4 {
     grid-column: span 1;
+  }
+
+  .bento-row {
+    grid-column: span 1;
+    grid-template-columns: 1fr;
   }
 }
 
