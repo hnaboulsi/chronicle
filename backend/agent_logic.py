@@ -96,6 +96,29 @@ def set_capture_interval_seconds(db: Session, seconds: int):
     _set_state_if_changed(db, "classification_interval_seconds", str(derived_classification))
 
 
+def get_calendar_ical_urls(db: Session) -> list[str]:
+    """Return list of iCal feed URLs. Reads new multi-URL key with fallback to legacy single-URL key."""
+    multi_raw = get_state(db, "calendar_ical_urls", "")
+    if multi_raw:
+        try:
+            urls = json.loads(multi_raw)
+            if isinstance(urls, list):
+                return [u for u in urls if isinstance(u, str) and u.strip()]
+        except Exception:
+            pass
+    # Fallback: legacy single URL
+    single = get_state(db, "calendar_ical_url", "").strip()
+    return [single] if single else []
+
+
+def set_calendar_ical_urls(db: Session, urls: list[str]):
+    """Save list of iCal feed URLs."""
+    cleaned = [u.strip() for u in urls if isinstance(u, str) and u.strip()]
+    set_state(db, "calendar_ical_urls", json.dumps(cleaned))
+    # Keep legacy key in sync with first URL for backward compat
+    set_state(db, "calendar_ical_url", cleaned[0] if cleaned else "")
+
+
 def ensure_default_settings(db: Session):
     for key, value in DEFAULTS.items():
         if key in {"capture_interval_seconds", "polling_interval_seconds", "classification_interval_seconds"}:
@@ -654,11 +677,10 @@ def _deterministic_hourly_summary(logs: list[dict], hour_label: str) -> dict:
     return {"summary": summary, "productivity_score": score}
 
 
-async def sync_ical_calendar(db: Session) -> dict:
-    """Fetch the user's iCal feed URL and upsert events into user_calendar_events."""
-    url = get_state(db, "calendar_ical_url", "").strip()
-    if not url:
-        return {"synced": 0, "error": "no_url"}
+async def _sync_single_ical(db: Session, url: str, now_utc: datetime) -> tuple[int, str]:
+    """Fetch and upsert one iCal feed. Returns (synced_count, error_string)."""
+    window_start = (now_utc - timedelta(days=1)).replace(tzinfo=None)
+    window_end = (now_utc + timedelta(days=7)).replace(tzinfo=None)
 
     try:
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
@@ -666,24 +688,14 @@ async def sync_ical_calendar(db: Session) -> dict:
             resp.raise_for_status()
         raw = resp.content
     except Exception as exc:
-        err = str(exc)
-        set_state(db, "calendar_sync_error", err[:300])
-        return {"synced": 0, "error": err}
+        return 0, str(exc)
 
     try:
         cal = iCalCalendar.from_ical(raw)
     except Exception as exc:
-        err = f"parse error: {exc}"
-        set_state(db, "calendar_sync_error", err[:300])
-        return {"synced": 0, "error": err}
+        return 0, f"parse error: {exc}"
 
-    now_utc = datetime.now(timezone.utc)
-    window_start = (now_utc - timedelta(days=1)).replace(tzinfo=None)
-    window_end = (now_utc + timedelta(days=7)).replace(tzinfo=None)
-
-    # Try to get calendar name from the feed itself
     feed_cal_name = str(cal.get("X-WR-CALNAME", "")).strip() or None
-
     synced = 0
     for component in cal.walk():
         if component.name != "VEVENT":
@@ -702,13 +714,11 @@ async def sync_ical_calendar(db: Session) -> dict:
             s = dtstart.dt
             e = dtend.dt if dtend else s
 
-            # All-day events (date, not datetime)
             if isinstance(s, _date) and not isinstance(s, datetime):
                 s = datetime(s.year, s.month, s.day, 0, 0, tzinfo=timezone.utc)
             if isinstance(e, _date) and not isinstance(e, datetime):
                 e = datetime(e.year, e.month, e.day, 23, 59, tzinfo=timezone.utc)
 
-            # Normalise to UTC naive for DB
             if s.tzinfo:
                 s = s.astimezone(timezone.utc).replace(tzinfo=None)
             if e.tzinfo:
@@ -740,15 +750,38 @@ async def sync_ical_calendar(db: Session) -> dict:
         except Exception:
             continue
 
+    return synced, ""
+
+
+async def sync_ical_calendar(db: Session) -> dict:
+    """Fetch all configured iCal feed URLs and upsert events into user_calendar_events."""
+    urls = get_calendar_ical_urls(db)
+    if not urls:
+        return {"synced": 0, "error": "no_url"}
+
+    now_utc = datetime.now(timezone.utc)
+    total_synced = 0
+    errors: list[str] = []
+
+    for url in urls:
+        count, err = await _sync_single_ical(db, url, now_utc)
+        total_synced += count
+        if err:
+            errors.append(err)
+
     # Prune events older than 14 days
     cutoff = (now_utc - timedelta(days=14)).replace(tzinfo=None)
     db.query(UserCalendarEvent).filter(UserCalendarEvent.end_at < cutoff).delete()
     db.commit()
 
+    error_str = "; ".join(errors) if errors else ""
+    if error_str:
+        set_state(db, "calendar_sync_error", error_str[:300])
+    else:
+        set_state(db, "calendar_sync_error", "")
     set_state(db, "calendar_last_sync", now_utc.isoformat())
-    set_state(db, "calendar_sync_error", "")
-    log.info("iCal sync complete: %d events upserted", synced)
-    return {"synced": synced, "error": ""}
+    log.info("iCal sync complete: %d events upserted from %d feed(s)", total_synced, len(urls))
+    return {"synced": total_synced, "error": error_str}
 
 
 def get_calendar_events_for_window(db: Session, since: datetime, until: datetime) -> list[dict]:
@@ -898,6 +931,47 @@ async def _generate_and_store_hourly_summary(db: Session, now: datetime, force_c
         db.add(summary)
     db.commit()
     log.info("Hourly summary stored for %s (%s)", hour_label, source)
+
+
+def _maybe_office_hours_nudge(db: Session, now: datetime, current_category: str):
+    """If office hours start within 30 min and user is distracted, set a callout nudge."""
+    UNPRODUCTIVE = {"entertainment", "social_media", "distracted", "idle", "unknown"}
+    if current_category not in UNPRODUCTIVE:
+        return
+    # Only nudge once per office hours event (track last nudge time)
+    last_nudge_str = get_state(db, "last_oh_nudge_at", "")
+    if last_nudge_str:
+        try:
+            from dateutil.parser import parse as _parse_oh
+            last_nudge = _parse_oh(last_nudge_str)
+            if last_nudge.tzinfo is None:
+                last_nudge = last_nudge.replace(tzinfo=timezone.utc)
+            if (now.astimezone(timezone.utc) - last_nudge.astimezone(timezone.utc)).total_seconds() < 1800:
+                return  # Already nudged in last 30 min
+        except Exception:
+            pass
+
+    window_end = (now + timedelta(minutes=30)).replace(tzinfo=None)
+    now_naive = now.replace(tzinfo=None)
+    # Look for upcoming office hours events
+    upcoming_oh = (
+        db.query(UserCalendarEvent)
+        .filter(
+            UserCalendarEvent.start_at > now_naive,
+            UserCalendarEvent.start_at <= window_end,
+        )
+        .all()
+    )
+    for ev in upcoming_oh:
+        title_lower = ev.title.lower()
+        if any(kw in title_lower for kw in ("office hour", " oh ", "ta hour", "instructor hour")):
+            mins_until = int((ev.start_at - now_naive).total_seconds() / 60)
+            nudge = f"📚 {ev.title} starts in {mins_until} min — consider attending while you have time."
+            set_state(db, "callout_summary", nudge)
+            set_state(db, "callout_category", "office_hours_nudge")
+            set_state(db, "last_oh_nudge_at", now.isoformat())
+            log.info("Office hours nudge set: %s", ev.title)
+            return
 
 
 def _guess_activity(location: str, prev_location: str, now: datetime, db: Session) -> str:
@@ -1120,7 +1194,56 @@ def _handle_location_change(db: Session, current_location: str, now: datetime, z
     _update_study_mode(db, current_location, zone_type=zone_type)
 
 
+def _set_sleep_state(db: Session, asleep: bool, confidence: float, reason: str):
+    set_state(db, "likely_asleep", "true" if asleep else "false")
+    set_state(db, "user_asleep", "true" if asleep else "false")
+    set_state(db, "likely_asleep_confidence", f"{min(confidence, 0.99):.2f}")
+    set_state(db, "likely_asleep_reason", reason)
+    set_state(db, "sleep_status_note", reason)
+
+
 def _update_sleep_state(db: Session, now: datetime, activity_type: str, is_charging: bool | None):
+    # Rule 1: explicit user intent → definitely awake
+    current_intent = get_state(db, "context_current_intent", "").strip()
+    if current_intent:
+        _set_sleep_state(db, False, 0.00, f"Awake — intent set: {current_intent[:60]}")
+        return
+
+    # Resolve Mac ping age once
+    mac_age_seconds = 9999.0
+    last_mac_ping_str = get_state(db, "last_mac_ping")
+    if last_mac_ping_str:
+        try:
+            from dateutil.parser import parse as _parse_ping
+            last_ping = _parse_ping(last_mac_ping_str)
+            if last_ping.tzinfo is None:
+                last_ping = last_ping.replace(tzinfo=timezone.utc)
+            mac_age_seconds = (now.astimezone(timezone.utc) - last_ping.astimezone(timezone.utc)).total_seconds()
+        except Exception:
+            pass
+
+    # Rule 2: Mac active in last 10 min → definitely awake
+    if mac_age_seconds < 600:
+        _set_sleep_state(db, False, 0.00, "Awake — Mac active")
+        return
+
+    # Rule 3: Mac screen sleeping (lid closed) → definitely sleeping
+    mac_screen_state = get_state(db, "screen_state", "visible")
+    if mac_screen_state == "sleeping":
+        _set_sleep_state(db, True, 0.95, "Asleep — laptop lid closed")
+        return
+
+    # Rule 4: Mac has been silent for 60+ min → sleeping (no activity for a full hour)
+    if mac_age_seconds >= 3600:
+        _set_sleep_state(db, True, 0.90, f"Asleep — Mac quiet for {int(mac_age_seconds // 60)} min")
+        return
+
+    # Rule 5: Mac silent 20+ min — weigh supporting signals
+    if mac_age_seconds < 1200:
+        # Mac too recent to infer sleep
+        _set_sleep_state(db, False, 0.10, "Awake — Mac recent")
+        return
+
     tz = resolve_user_timezone(db)
     local_hour = now.astimezone(tz).hour
     sleep_start = _safe_int(get_state(db, "sleep_start_hour", DEFAULTS["sleep_start_hour"]), 1) % 24
@@ -1131,59 +1254,26 @@ def _update_sleep_state(db: Session, now: datetime, activity_type: str, is_charg
         else (sleep_start <= local_hour < sleep_end)
     )
 
-    # If user explicitly stated their intent, they are awake
-    current_intent = get_state(db, "context_current_intent", "").strip()
-    if current_intent:
-        set_state(db, "likely_asleep", "false")
-        set_state(db, "user_asleep", "false")
-        set_state(db, "likely_asleep_confidence", "0.00")
-        set_state(db, "likely_asleep_reason", f"Awake — intent set: {current_intent[:60]}")
-        set_state(db, "sleep_status_note", f"Awake — intent set: {current_intent[:60]}")
-        return
+    # Base: Mac has been quiet 20+ min
+    confidence = 0.35
+    reasons: list[str] = [f"mac quiet {int(mac_age_seconds // 60)} min"]
 
-    # If Mac sent telemetry within the last 10 minutes, user is definitely awake
-    last_mac_ping_str = get_state(db, "last_mac_ping")
-    if last_mac_ping_str:
-        try:
-            from dateutil.parser import parse as parse_dt
-            last_ping = parse_dt(last_mac_ping_str)
-            if last_ping.tzinfo is None:
-                last_ping = last_ping.replace(tzinfo=timezone.utc)
-            mac_age_seconds = (now.astimezone(timezone.utc) - last_ping.astimezone(timezone.utc)).total_seconds()
-            if mac_age_seconds < 600:
-                set_state(db, "likely_asleep", "false")
-                set_state(db, "user_asleep", "false")
-                set_state(db, "likely_asleep_confidence", "0.00")
-                set_state(db, "likely_asleep_reason", "Awake — Mac active")
-                set_state(db, "sleep_status_note", "Awake — Mac active")
-                return
-        except Exception:
-            pass
-
-    confidence = 0.05
-    reasons: list[str] = []
+    if mac_screen_state == "locked":
+        confidence += 0.20
+        reasons.append("mac locked")
     if in_sleep_window:
-        confidence += 0.45
-        reasons.append(f"in sleep window ({sleep_start:02d}:00-{sleep_end:02d}:00)")
+        confidence += 0.25
+        reasons.append(f"sleep window ({sleep_start:02d}:00-{sleep_end:02d}:00)")
     if is_charging:
-        confidence += 0.30
+        confidence += 0.10
         reasons.append("charging")
     if (activity_type or "").lower() == "stationary":
-        confidence += 0.20
-        reasons.append("stationary")
-    if get_state(db, "last_mac_idle", "false") == "true":
         confidence += 0.10
-        reasons.append("mac idle")
+        reasons.append("stationary")
 
-    likely_asleep = confidence >= 0.65  # requires sleep window + a signal, not just charging+stationary
-    set_state(db, "user_asleep", "true" if likely_asleep else "false")
-    set_state(db, "likely_asleep", "true" if likely_asleep else "false")
-    set_state(db, "likely_asleep_confidence", f"{min(confidence, 0.99):.2f}")
-    note = "Likely asleep" if likely_asleep else "Likely awake"
-    if reasons:
-        note += f" ({', '.join(reasons)})"
-    set_state(db, "likely_asleep_reason", note)
-    set_state(db, "sleep_status_note", note)
+    likely_asleep = confidence >= 0.65
+    note = ("Likely asleep" if likely_asleep else "Likely awake") + f" ({', '.join(reasons)})"
+    _set_sleep_state(db, likely_asleep, confidence, note)
 
 
 def compute_mac_status(states: dict, now: datetime | None = None) -> dict:
@@ -1349,9 +1439,9 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session):
     stored_is_charging = None if not stored_charging_str else (stored_charging_str == "true")
     _update_sleep_state(db, now, stored_activity_type, stored_is_charging)
 
-    if presence_state != "active":
-        # Don't override zone-set category when user is physically at a known location.
-        # zone_activity_until is set on zone enter and cleared on zone exit.
+    # "idle" means paused < 30 min — user likely still at desk reading/watching, so continue classifying.
+    # Only skip classification for truly absent states (away = 30+ min, locked, sleeping).
+    if presence_state in ("away", "locked", "sleeping"):
         zone_until = _parse_iso_dt(get_state(db, "zone_activity_until"))
         current_location = get_state(db, "current_location", "")
         at_named_location = bool(
@@ -1420,6 +1510,9 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session):
         else:
             set_state(db, "callout_category", "")
             set_state(db, "callout_summary", "")
+
+        # Nudge for upcoming office hours when user is distracted or unproductive
+        _maybe_office_hours_nudge(db, now, new_category)
 
         # Refresh AI-driven app category cache (at most once per hour)
         await _refresh_app_category_cache(db, now)

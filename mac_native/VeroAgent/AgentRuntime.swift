@@ -221,6 +221,9 @@ final class AgentRuntime {
             if let serverTracking = response.tracking_enabled {
                 store.trackingEnabled = serverTracking
             }
+            if let interval = response.capture_interval_seconds, interval >= 60 {
+                store.captureInterval = interval
+            }
         } catch {
             consecutiveHeartbeatFailures += 1
             store.helperLastError = error.localizedDescription
@@ -286,7 +289,10 @@ final class AgentRuntime {
         guard store.isConfigured else { return }
 
         do {
-            _ = try await backend.fetchState()
+            let state = try await backend.fetchState()
+            if let interval = state.capture_interval_seconds, interval >= 60 {
+                store.captureInterval = interval
+            }
 
             let callout = try? await backend.fetchCallout()
             if let calloutText = callout?.callout, !calloutText.isEmpty {
@@ -330,9 +336,9 @@ final class AgentRuntime {
         case "locked":
             nextPresenceState = "locked"
         default:
-            if idleSeconds < 60 {
+            if idleSeconds < 300 {
                 nextPresenceState = "active"
-            } else if idleSeconds < 300 {
+            } else if idleSeconds < 1800 {
                 nextPresenceState = "idle"
             } else {
                 nextPresenceState = "away"

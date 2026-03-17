@@ -168,6 +168,7 @@ struct HeartbeatResponse: Codable {
     let mac_status: String?
     let mac_status_reason: String?
     let tracking_enabled: Bool?
+    let capture_interval_seconds: Int?
 }
 
 struct HealthResponse: Codable {

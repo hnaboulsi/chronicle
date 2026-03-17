@@ -58,6 +58,7 @@ type BackendSettings = {
   privacy_mode: "private" | "detailed";
   calendar_sync_enabled: boolean;
   calendar_ical_url: string;
+  calendar_ical_urls: string[];
   calendar_last_sync: string;
   calendar_sync_error: string;
 };
@@ -587,18 +588,26 @@ function TodayPage({
               <p className="cal-ai-insight">✦ {aiDayInsight}</p>
             )}
             <div className="cal-strip">
-              {calendarEvents.map(ev => (
-                <div key={ev.id} className={`cal-event cal-type-${ev.event_type ?? "other"}${ev.is_current ? " cal-current" : ev.is_past ? " cal-past" : ""}`}>
-                  <span className="cal-time">{formatTimeOnly(ev.start_at, timezone)}</span>
-                  <span className="cal-title">{ev.title}</span>
-                  {ev.event_type && ev.event_type !== "other" && (
-                    <span className={`cal-type-badge cal-type-badge-${ev.event_type}`}>{ev.event_type}</span>
-                  )}
-                  {ev.calendar_name && <span className="cal-name">{ev.calendar_name}</span>}
-                  {ev.is_current && <span className="cal-badge">Now</span>}
-                  {(() => { const m = minutesUntil(ev.start_at); return m != null && m <= 30 ? <span className="cal-countdown">in {m}m</span> : null; })()}
-                </div>
-              ))}
+              {calendarEvents.map(ev => {
+                const typeIcon: Record<string, string> = {
+                  lecture: "🏫", assignment: "📝", office_hours: "🙋", exam: "📋",
+                  meeting: "🤝", focus: "🎯", personal: "🌿",
+                };
+                const icon = typeIcon[ev.event_type ?? ""] ?? null;
+                const minsAway = minutesUntil(ev.start_at);
+                return (
+                  <div key={ev.id} className={`cal-event cal-type-${ev.event_type ?? "other"}${ev.is_current ? " cal-current" : ev.is_past ? " cal-past" : ""}`}>
+                    <span className="cal-time">{formatTimeOnly(ev.start_at, timezone)}</span>
+                    <span className="cal-title">{icon && <span className="cal-type-icon">{icon}</span>}{ev.event_type === "assignment" ? `Due: ${ev.title}` : ev.title}</span>
+                    {ev.event_type && ev.event_type !== "other" && (
+                      <span className={`cal-type-badge cal-type-badge-${ev.event_type}`}>{ev.event_type.replace("_", " ")}</span>
+                    )}
+                    {ev.calendar_name && <span className="cal-name">{ev.calendar_name}</span>}
+                    {ev.is_current && <span className="cal-badge">Now</span>}
+                    {minsAway != null && minsAway <= 30 ? <span className="cal-countdown">in {minsAway}m</span> : null}
+                  </div>
+                );
+              })}
             </div>
           </Surface>
         </div>
@@ -1145,7 +1154,12 @@ function CalendarSettingsPanel({
   settings: BackendSettings;
   onSave: (s: BackendSettings) => Promise<void>;
 }) {
-  const [url, setUrl] = useState(settings.calendar_ical_url ?? "");
+  const initialUrls = settings.calendar_ical_urls?.length
+    ? settings.calendar_ical_urls
+    : settings.calendar_ical_url
+    ? [settings.calendar_ical_url]
+    : [""];
+  const [urls, setUrls] = useState<string[]>(initialUrls);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState("");
 
@@ -1153,8 +1167,23 @@ function CalendarSettingsPanel({
     ? formatAge(Math.floor((Date.now() - new Date(settings.calendar_last_sync).getTime()) / 1000))
     : null;
 
+  function updateUrl(index: number, value: string) {
+    const next = [...urls];
+    next[index] = value;
+    setUrls(next);
+  }
+
+  function removeUrl(index: number) {
+    setUrls(urls.filter((_, i) => i !== index));
+  }
+
+  function addUrl() {
+    setUrls([...urls, ""]);
+  }
+
   async function handleSave() {
-    await onSave({ ...settings, calendar_ical_url: url });
+    const cleaned = urls.filter(u => u.trim());
+    await onSave({ ...settings, calendar_ical_urls: cleaned, calendar_ical_url: cleaned[0] ?? "" });
   }
 
   async function handleSyncNow() {
@@ -1171,28 +1200,44 @@ function CalendarSettingsPanel({
     }
   }
 
+  const hasAnyUrl = urls.some(u => u.trim());
+
   return (
     <Surface
       title="Calendar"
       eyebrow="iCal sync"
       action={
-        <button className="secondary-button" type="button" onClick={handleSyncNow} disabled={syncing || !url.trim()}>
+        <button className="secondary-button" type="button" onClick={handleSyncNow} disabled={syncing || !hasAnyUrl}>
           {syncing ? "Syncing…" : "Sync now"}
         </button>
       }
     >
-      <label className="field">
-        <span>Private iCal feed URL</span>
-        <input
-          type="url"
-          value={url}
-          placeholder="webcal:// or https://..."
-          onChange={(e) => setUrl(e.target.value)}
-          style={{ fontFamily: "monospace", fontSize: "0.82rem" }}
-        />
-      </label>
-      <p className="field-hint">
-        Google Calendar: open calendar settings → "Secret address in iCal format". iCloud: share calendar → copy link. Paste it here — Vero syncs every 30 min automatically.
+      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+        {urls.map((url, i) => (
+          <div key={i} style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+            <input
+              type="url"
+              value={url}
+              placeholder="webcal:// or https://..."
+              onChange={(e) => updateUrl(i, e.target.value)}
+              style={{ fontFamily: "monospace", fontSize: "0.82rem", flex: 1 }}
+            />
+            {urls.length > 1 && (
+              <button
+                type="button"
+                onClick={() => removeUrl(i)}
+                style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", fontSize: "1rem" }}
+                aria-label="Remove"
+              >✕</button>
+            )}
+          </div>
+        ))}
+        <button type="button" className="secondary-button" onClick={addUrl} style={{ alignSelf: "flex-start", fontSize: "0.82rem" }}>
+          + Add calendar
+        </button>
+      </div>
+      <p className="field-hint" style={{ marginTop: "8px" }}>
+        Google Calendar: calendar settings → "Secret address in iCal format". iCloud: share calendar → copy link. Vero syncs every 30 min.
       </p>
       {settings.calendar_sync_error && (
         <p className="field-hint" style={{ color: "var(--bad)", marginTop: "8px" }}>
@@ -1204,7 +1249,7 @@ function CalendarSettingsPanel({
       )}
       {syncMsg && <p className="field-hint" style={{ color: syncMsg.startsWith("Error") ? "var(--bad)" : "var(--good)", marginTop: "8px" }}>{syncMsg}</p>}
       <div className="surface-actions">
-        <button className="primary-button" type="button" onClick={handleSave}>Save URL</button>
+        <button className="primary-button" type="button" onClick={handleSave}>Save</button>
       </div>
     </Surface>
   );
@@ -1478,7 +1523,7 @@ export default function App() {
           user_timezone: nextSettings.user_timezone,
           privacy_mode: nextSettings.privacy_mode,
           calendar_sync_enabled: nextSettings.calendar_sync_enabled,
-          calendar_ical_url: nextSettings.calendar_ical_url,
+          calendar_ical_urls: nextSettings.calendar_ical_urls ?? (nextSettings.calendar_ical_url ? [nextSettings.calendar_ical_url] : []),
         }),
       });
       setStatusMessage("Settings saved.");
@@ -1503,10 +1548,10 @@ export default function App() {
       if (!document.hidden) void refreshAnalytics();
     }, 2 * 60_000);
 
-    // 5 min — health + summaries. Skip when tab hidden.
+    // 2 min — health + summaries. Skip when tab hidden.
     const slowInterval = window.setInterval(() => {
       if (!document.hidden) void refreshSlow();
-    }, 5 * 60_000);
+    }, 2 * 60_000);
 
     return () => {
       window.clearInterval(liveInterval);

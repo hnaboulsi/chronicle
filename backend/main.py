@@ -520,7 +520,7 @@ async def _hourly_summary_scheduler():
     await asyncio.sleep(10)  # Wait 10s for DB to stabilize on startup
     while True:
         try:
-            await asyncio.sleep(300)  # Check every 5 minutes
+            await asyncio.sleep(180)  # Check every 3 minutes so recaps appear shortly after the hour boundary
             now = datetime.now(timezone.utc)
             # Skip the expensive work if we're well into the hour and already
             # have a good LLM summary for the previous hour.
@@ -551,8 +551,8 @@ async def _calendar_sync_scheduler():
         try:
             db = SessionLocal()
             try:
-                url = agent_logic.get_state(db, "calendar_ical_url", "").strip()
-                if url:
+                urls = agent_logic.get_calendar_ical_urls(db)
+                if urls:
                     await agent_logic.sync_ical_calendar(db)
             finally:
                 db.close()
@@ -906,7 +906,7 @@ def receive_mac_telemetry(data: MacTelemetry, background_tasks: BackgroundTasks,
         device="mac",
         app_name=data.app_name,
         window_title=sanitized_title,
-        is_idle=presence_state != "active",
+        is_idle=(data.idle_time_seconds or 0) >= 300,  # idle only after 5 min of no input
         presence_state=presence_state,
         screen_state=screen_state,
     )
@@ -927,6 +927,7 @@ def receive_mac_heartbeat(data: MacHeartbeat, background_tasks: BackgroundTasks,
         "mac_status": states["mac_status"],
         "mac_status_reason": states["mac_status_reason"],
         "tracking_enabled": str(states.get("tracking_enabled", "true")).lower() == "true",
+        "capture_interval_seconds": states.get("capture_interval_seconds"),
     }
 
 
@@ -1085,6 +1086,7 @@ def get_settings(db: Session = Depends(get_db)):
         "privacy_mode": agent_logic.get_state(db, "privacy_mode", agent_logic.DEFAULTS["privacy_mode"]),
         "calendar_sync_enabled": agent_logic.get_state(db, "calendar_sync_enabled", agent_logic.DEFAULTS["calendar_sync_enabled"]).lower() == "true",
         "calendar_ical_url": agent_logic.get_state(db, "calendar_ical_url", ""),
+        "calendar_ical_urls": agent_logic.get_calendar_ical_urls(db),
         "calendar_last_sync": agent_logic.get_state(db, "calendar_last_sync", ""),
         "calendar_sync_error": agent_logic.get_state(db, "calendar_sync_error", ""),
     }
@@ -1126,8 +1128,20 @@ def update_settings(payload: Dict[str, Any], db: Session = Depends(get_db)):
         agent_logic.set_state(db, "privacy_mode", privacy_mode)
     if "calendar_sync_enabled" in payload:
         agent_logic.set_state(db, "calendar_sync_enabled", str(_coerce_bool(payload["calendar_sync_enabled"])).lower())
-    if "calendar_ical_url" in payload:
-        agent_logic.set_state(db, "calendar_ical_url", str(payload["calendar_ical_url"]).strip())
+    if "calendar_ical_urls" in payload:
+        raw = payload["calendar_ical_urls"]
+        if isinstance(raw, list):
+            agent_logic.set_calendar_ical_urls(db, raw)
+        elif isinstance(raw, str):
+            agent_logic.set_calendar_ical_urls(db, [raw] if raw.strip() else [])
+    elif "calendar_ical_url" in payload:
+        # Legacy single-URL key — wrap in list
+        single = str(payload["calendar_ical_url"]).strip()
+        existing = agent_logic.get_calendar_ical_urls(db)
+        if single and single not in existing:
+            agent_logic.set_calendar_ical_urls(db, [single])
+        elif not single:
+            agent_logic.set_calendar_ical_urls(db, [])
     if "user_timezone" in payload:
         from zoneinfo import ZoneInfo
         tz_name = str(payload["user_timezone"])
