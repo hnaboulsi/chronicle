@@ -686,6 +686,16 @@ def _build_state_payload(db: Session) -> dict:
         states["presence_display"] = "away_from_location"
     else:
         states["presence_display"] = states.get("presence_state") or "unknown"
+    # Human-readable label — replaces generic "At location" / "In transit" in the hero
+    if _is_walking:
+        states["presence_display_label"] = "Walking"
+    elif states["presence_display"] == "at_location":
+        states["presence_display_label"] = f"At {_cur_loc}"
+    elif states["presence_display"] == "away_from_location":
+        _bare = _cur_loc[len("Outside "):] if _cur_loc.startswith("Outside ") else _cur_loc
+        states["presence_display_label"] = f"Left {_bare}"
+    else:
+        states["presence_display_label"] = None
     states["last_presence_change_at"] = states.get("last_presence_change_at", "")
     states["last_capture_at"] = states.get("last_capture_at", states.get("last_mac_ping", ""))
     states["last_heartbeat_at"] = states.get("last_mac_heartbeat", "")
@@ -1533,8 +1543,7 @@ async def chat_message(payload: Dict[str, Any], db: Session = Depends(get_db)):
     now = datetime.now(timezone.utc)
     agent_logic.ensure_default_settings(db)
 
-    # Store the user's message as self-report
-    agent_logic.set_state(db, "user_self_report", message)
+    # Store check-in time; user_self_report is written conditionally below
     agent_logic.set_state(db, "last_user_checkin", now.isoformat())
 
     # Clear any pending check-in since user proactively told us
@@ -1577,6 +1586,7 @@ async def chat_message(payload: Dict[str, Any], db: Session = Depends(get_db)):
     )
 
     # Use LLM to generate a smart response and extract context if budget allows
+    _llm_handled_location = False
     if agent_logic.can_use_llm(db, now):
         agent_logic.register_llm_call(db, now)
         import llm_client
@@ -1585,9 +1595,11 @@ async def chat_message(payload: Dict[str, Any], db: Session = Depends(get_db)):
             f'"{message}"\n\n'
             f"Current context: {context_str}\n\n"
             f"Recent chat context:\n{prior_context or '- No recent conversation.'}\n\n"
-            "Respond ONLY with a JSON object containing two keys:\n"
+            "Respond ONLY with a JSON object containing these keys:\n"
             "1. 'reply': 1-2 short sentences. Be direct, helpful, and specific. Acknowledge what they said, confirm tracking next, and suggest likely state.\n"
             "2. 'extracted_context': If the user mentions working on a specific project, class, intent or rule (e.g. 'ChipChop is an unpaid internship' or 'I am studying for CS161'), extract this fact as a short phrase to remember permanently. Otherwise, set this to null.\n"
+            "3. 'location': Named place if the user mentions arriving at, being at, or leaving one (e.g. 'just got to Anchor', 'leaving the library'). Otherwise null.\n"
+            "4. 'location_action': 'arrived' if they just got there or are there now, 'leaving' if departing. Null if no location.\n"
         )
         result_text = await llm_client.ask_gemini(prompt)
         reply = "Got it. I'll track that and update your context."
@@ -1607,6 +1619,17 @@ async def chat_message(payload: Dict[str, Any], db: Session = Depends(get_db)):
                     if len(facts) > 4:
                         facts = facts[-4:]
                     agent_logic.set_state(db, "global_chat_context", " | ".join(facts))
+                llm_location = parsed.get("location")
+                llm_location_action = parsed.get("location_action")
+                if llm_location:
+                    _llm_handled_location = True
+                    if llm_location_action == "leaving":
+                        agent_logic.set_state(db, "current_location", f"Outside {llm_location}")
+                        agent_logic.set_state(db, "zone_activity_until", "")
+                    else:
+                        agent_logic.set_state(db, "current_location", llm_location)
+                        agent_logic.set_state(db, "zone_activity_until",
+                            (now + timedelta(hours=2)).isoformat())
             except Exception:
                 pass
     else:
@@ -1616,19 +1639,21 @@ async def chat_message(payload: Dict[str, Any], db: Session = Depends(get_db)):
     msg_lower = message.lower()
 
     # Detect "I'm at X" / "I am at X" / "at X" / "in X" to update current location
+    # Only run heuristic if the LLM didn't already handle location
     _at_location: str | None = None
-    for prefix in ["i'm at ", "i am at ", "im at ", "i'm in ", "i am in ", "im in ", "at "]:
-        if msg_lower.startswith(prefix) or f" {prefix}" in msg_lower:
-            idx = msg_lower.find(prefix)
-            candidate = message[idx + len(prefix):].strip().rstrip(".,!")
-            # Sanity: ignore very short/generic words that aren't real place names
-            if len(candidate) >= 3 and candidate.lower() not in {"home", "work", "school", "class"}:
-                _at_location = candidate
-                break
-    if _at_location:
-        agent_logic.set_state(db, "current_location", _at_location)
-        zone_until = (now + timedelta(hours=2)).isoformat()
-        agent_logic.set_state(db, "zone_activity_until", zone_until)
+    if not _llm_handled_location:
+        for prefix in ["i'm at ", "i am at ", "im at ", "i'm in ", "i am in ", "im in ", "at "]:
+            if msg_lower.startswith(prefix) or f" {prefix}" in msg_lower:
+                idx = msg_lower.find(prefix)
+                candidate = message[idx + len(prefix):].strip().rstrip(".,!")
+                # Sanity: ignore very short/generic words that aren't real place names
+                if len(candidate) >= 3 and candidate.lower() not in {"home", "work", "school", "class"}:
+                    _at_location = candidate
+                    break
+        if _at_location:
+            agent_logic.set_state(db, "current_location", _at_location)
+            zone_until = (now + timedelta(hours=2)).isoformat()
+            agent_logic.set_state(db, "zone_activity_until", zone_until)
 
     if any(w in msg_lower for w in ["going to", "headed to", "walking to", "heading to"]):
         # Extract destination
@@ -1648,6 +1673,21 @@ async def chat_message(payload: Dict[str, Any], db: Session = Depends(get_db)):
     elif any(w in msg_lower for w in ["gym", "workout", "exercise", "running"]):
         agent_logic.set_state(db, "current_activity_category", "break")
         agent_logic.set_state(db, "current_activity_summary", message[:80])
+
+    # Write user_self_report only if this isn't a location-only message
+    _ACTIVITY_KEYWORDS = {
+        "studying", "study", "homework", "class", "lecture",
+        "working", "coding", "meeting", "email", "work",
+        "gym", "workout", "exercise", "running",
+        "watching", "gaming", "reading", "writing",
+        "break", "eating", "lunch", "dinner",
+    }
+    _is_location_only = (
+        (_llm_handled_location or _at_location is not None)
+        and not any(kw in msg_lower for kw in _ACTIVITY_KEYWORDS)
+    )
+    if not _is_location_only:
+        agent_logic.set_state(db, "user_self_report", message)
 
     # Store in chat history
     history.append({"time": now.isoformat() + "Z", "user": message, "reply": reply})

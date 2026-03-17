@@ -31,6 +31,7 @@ type DashboardState = {
   capture_interval_seconds?: number;
   presence_state?: string;
   presence_display?: string;
+  presence_display_label?: string | null;
   last_presence_change_at?: string;
   screen_state?: string;
   privacy_mode?: string;
@@ -508,10 +509,16 @@ function TodayPage({
               <p className="hero-copy">
                 {initialLoading ? <Skeleton h="0.9rem" w="40%" /> : (
                   <>
-                    {state?.current_location && (
-                      <><strong>{state.current_location}</strong> · </>
+                    {state?.presence_display_label != null ? (
+                      <><strong>{state.presence_display_label}</strong> · </>
+                    ) : (
+                      <>
+                        {state?.current_location && (
+                          <><strong>{state.current_location}</strong> · </>
+                        )}
+                        Presence: <strong>{presenceLabel(state?.presence_display ?? state?.presence_state)}</strong> ·{" "}
+                      </>
                     )}
-                    Presence: <strong>{presenceLabel(state?.presence_display ?? state?.presence_state)}</strong> ·
                     Last capture: <strong>{captureAgeMinutes != null ? `${captureAgeMinutes}m ago` : "Unknown"}</strong> ·
                     Active: <strong>{analytics?.total_active_minutes ?? 0} min</strong>
                   </>
