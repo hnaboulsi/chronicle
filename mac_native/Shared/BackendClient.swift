@@ -245,6 +245,20 @@ final class BackendClient {
         _ = try await perform(try request(path: "api/chat", method: "POST", jsonBody: ["message": message]))
     }
 
+    func sendCalendarEvents(_ events: [[String: Any]]) async throws {
+        guard !events.isEmpty else { return }
+        let configuration = try resolvedConfiguration()
+        let url = configuration.baseURL.appendingPathComponent("api/mac-calendar-events")
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.timeoutInterval = 10
+        let token = Data(configuration.authValue.utf8).base64EncodedString()
+        req.setValue("Basic \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONSerialization.data(withJSONObject: events, options: [])
+        _ = try await perform(req)
+    }
+
     func clearLogs(minutes: Int?) async throws -> Int {
         struct ClearResponse: Decodable { let count: Int }
         var body: [String: Any] = [:]

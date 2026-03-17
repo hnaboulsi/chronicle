@@ -155,6 +155,8 @@ final class AgentRuntime {
             await refreshBackendState()
             if store.calendarSyncEnabled {
                 await CalendarSyncEngine.shared.syncPendingJobs(client: backend)
+                let todayEvents = CalendarSyncEngine.shared.readTodayEvents()
+                try? await backend.sendCalendarEvents(todayEvents)
             }
             try? await Task.sleep(for: .seconds(60))
         }

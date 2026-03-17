@@ -58,6 +58,35 @@ final class CalendarSyncEngine {
         return "Turn on System Settings > Apple Account > iCloud > Calendar, then create or move the Vero calendar under the iCloud section in Calendar.app."
     }
 
+    func readTodayEvents() -> [[String: Any]] {
+        let status = authorizationStatus()
+        if #available(macOS 14.0, *) {
+            guard status == .fullAccess else { return [] }
+        } else {
+            guard status == .authorized else { return [] }
+        }
+        let now = Date()
+        let cal = Foundation.Calendar.current
+        let dayStart = cal.startOfDay(for: now)
+        guard let dayEnd = cal.date(byAdding: .day, value: 1, to: dayStart) else { return [] }
+        let predicate = store.predicateForEvents(withStart: dayStart, end: dayEnd, calendars: nil)
+        let events = store.events(matching: predicate)
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return events.compactMap { event -> [String: Any]? in
+            guard let start = event.startDate, let end = event.endDate, let title = event.title else { return nil }
+            var dict: [String: Any] = [
+                "event_uid": event.eventIdentifier ?? "",
+                "title": title,
+                "start_at": formatter.string(from: start),
+                "end_at": formatter.string(from: end),
+            ]
+            if let calName = event.calendar?.title { dict["calendar_name"] = calName }
+            if let notes = event.notes, !notes.isEmpty { dict["notes"] = String(notes.prefix(500)) }
+            return dict
+        }
+    }
+
     func syncPendingJobs(client: BackendClient = .shared) async {
         await requestAccessIfNeeded()
         let status = authorizationStatus()
