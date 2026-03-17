@@ -610,6 +610,31 @@ def _maybe_start_session(db: Session, category: str, summary: str, now: datetime
     log.info("Session started: %s - %s", category, summary)
 
 
+# Zone name keywords → activity category inference
+_ZONE_NAME_KEYWORDS: list[tuple[list[str], str]] = [
+    (["campus", "library", "school", "class", "lecture", "university", "college"], "studying"),
+    (["gym", "park", "trail", "fitness", "workout", "rec"], "break"),
+    (["office", "coworking", "work", "studio", "lab"], "working"),
+]
+_ZONE_TYPE_CATEGORY: dict[str, str] = {
+    "study": "studying",
+    "work": "working",
+    "gym": "break",
+}
+
+
+def _infer_zone_category(zone_type: str, zone_name: str) -> tuple[str, str] | None:
+    """Return (category, summary) inferred from zone type/name, or None if ambiguous."""
+    name_lower = zone_name.lower()
+    for keywords, cat in _ZONE_NAME_KEYWORDS:
+        if any(kw in name_lower for kw in keywords):
+            return (cat, f"At {zone_name}")
+    cat = _ZONE_TYPE_CATEGORY.get(zone_type or "")
+    if cat:
+        return (cat, f"At {zone_name}")
+    return None
+
+
 _CATEGORY_SCORES = {
     "working": 7.0, "studying": 7.0, "creative": 6.5,
     "break": 5.0, "entertainment": 3.0, "social_media": 3.0,
@@ -1323,8 +1348,19 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session):
     _update_sleep_state(db, now, stored_activity_type, stored_is_charging)
 
     if presence_state != "active":
-        set_state(db, "current_activity_category", "idle")
-        set_state(db, "current_activity_summary", presence_summary(presence_state))
+        # Don't override zone-set category when user is physically at a known location.
+        # zone_activity_until is set on zone enter and cleared on zone exit.
+        zone_until = _parse_iso_dt(get_state(db, "zone_activity_until"))
+        current_location = get_state(db, "current_location", "")
+        at_named_location = bool(
+            current_location
+            and not current_location.startswith("Outside ")
+            and zone_until
+            and now < zone_until
+        )
+        if not at_named_location:
+            set_state(db, "current_activity_category", "idle")
+            set_state(db, "current_activity_summary", presence_summary(presence_state))
         return
 
     last_check_str = get_state(db, "last_vagueness_check")
@@ -1488,6 +1524,15 @@ async def process_ios_zone_event(data: iOSZoneEvent, db: Session):
         _handle_location_change(db, zone_label, now, zone_type=zone_type)
         set_state(db, "last_zone_enter", zone.slug if zone else data.zone_slug)
 
+        # Infer activity category from zone and lock it for 2 hours so Mac idle won't override
+        inferred = _infer_zone_category(zone_type, zone_label)
+        if inferred:
+            cat, summary = inferred
+            set_state(db, "current_activity_category", cat)
+            set_state(db, "current_activity_summary", summary)
+        zone_until = (now + timedelta(hours=2)).isoformat()
+        set_state(db, "zone_activity_until", zone_until)
+
         if get_state(db, "commute_start") and zone_type != "home":
             commute_start = _parse_iso_dt(get_state(db, "commute_start"))
             commute_from = get_state(db, "commute_from")
@@ -1507,6 +1552,12 @@ async def process_ios_zone_event(data: iOSZoneEvent, db: Session):
         _close_current_location_visit(db, now, explicit_location=zone_label)
     if zone_type == "home":
         set_state(db, "study_mode", "inactive")
+
+    # Set "outside" context so UI shows where user left, not blank
+    set_state(db, "current_location", f"Outside {zone_label}")
+    set_state(db, "current_activity_category", "away")
+    set_state(db, "current_activity_summary", f"Left {zone_label}")
+    set_state(db, "zone_activity_until", "")  # clear zone lock on exit
 
 
 def get_context_preferences(db: Session) -> dict:

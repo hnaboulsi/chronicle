@@ -869,4 +869,4 @@ select:focus-visible {
 .cat-entertainment, .cat-social_media, .cat-gaming {
   color: #f87171; background: rgba(248,113,113,0.1); border-color: rgba(248,113,113,0.25);
 }
-.cat-break, .cat-idle { color: var(--muted); }
+.cat-break, .cat-idle, .cat-away { color: var(--muted); }

@@ -509,6 +509,9 @@ function TodayPage({
               <p className="hero-copy">
                 {initialLoading ? <Skeleton h="0.9rem" w="40%" /> : (
                   <>
+                    {state?.current_location && (
+                      <><strong>{state.current_location}</strong> · </>
+                    )}
                     Presence: <strong>{presenceLabel(state?.presence_state)}</strong> ·
                     Last capture: <strong>{captureAgeMinutes != null ? `${captureAgeMinutes}m ago` : "Unknown"}</strong> ·
                     Active: <strong>{analytics?.total_active_minutes ?? 0} min</strong>
