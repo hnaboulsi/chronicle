@@ -708,6 +708,33 @@ def _build_state_payload(db: Session) -> dict:
     states["likely_asleep_reason"] = agent_logic.get_state(db, "likely_asleep_reason", "")
     states["likely_asleep_confidence"] = agent_logic.get_state(db, "likely_asleep_confidence", "0.0")
     states["current_intent"] = agent_logic.get_state(db, "context_current_intent", "")
+
+    # Calendar-derived signals — next/current event, no LLM needed
+    tz = agent_logic.resolve_user_timezone(db)
+    now_local = now.astimezone(tz)
+    day_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc).replace(tzinfo=None)
+    day_end = now_local.replace(hour=23, minute=59, second=59, microsecond=0).astimezone(timezone.utc).replace(tzinfo=None)
+    now_utc_naive = now.replace(tzinfo=None)
+    from models import UserCalendarEvent as _UCE
+    cal_events = (
+        db.query(_UCE)
+        .filter(_UCE.start_at < day_end, _UCE.end_at > day_start)
+        .order_by(_UCE.start_at)
+        .all()
+    )
+    states["current_event_title"] = None
+    states["next_event_title"] = None
+    states["next_event_starts_in_minutes"] = None
+    for ev in cal_events:
+        if ev.start_at <= now_utc_naive <= ev.end_at:
+            states["current_event_title"] = ev.title
+        elif ev.start_at > now_utc_naive:
+            mins = int((ev.start_at - now_utc_naive).total_seconds() / 60)
+            if mins <= 60:
+                states["next_event_title"] = ev.title
+                states["next_event_starts_in_minutes"] = mins
+            break
+
     return states
 
 def _bg_process_mac(data: MacTelemetry):
@@ -1125,13 +1152,14 @@ async def calendar_sync_now(db: Session = Depends(get_db)):
 
 
 @app.get("/api/calendar/today")
-def get_calendar_today(db: Session = Depends(get_db)):
-    """Return today's calendar events in the user's local timezone, sorted by start time."""
+async def get_calendar_today(db: Session = Depends(get_db)):
+    """Return today's calendar events with AI classification and day insight."""
     tz = agent_logic.resolve_user_timezone(db)
-    now_local = datetime.now(timezone.utc).astimezone(tz)
+    now = datetime.now(timezone.utc)
+    now_local = now.astimezone(tz)
     day_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc).replace(tzinfo=None)
     day_end = now_local.replace(hour=23, minute=59, second=59, microsecond=0).astimezone(timezone.utc).replace(tzinfo=None)
-    now_utc_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+    now_utc_naive = now.replace(tzinfo=None)
 
     events = (
         db.query(UserCalendarEvent)
@@ -1145,18 +1173,55 @@ def get_calendar_today(db: Session = Depends(get_db)):
             return ""
         return dt.replace(tzinfo=timezone.utc).astimezone(tz).isoformat()
 
-    return [
-        {
-            "id": e.id,
-            "title": e.title,
-            "start_at": _local_iso(e.start_at),
-            "end_at": _local_iso(e.end_at),
-            "calendar_name": e.calendar_name,
-            "is_current": e.start_at <= now_utc_naive <= e.end_at,
-            "is_past": e.end_at < now_utc_naive,
-        }
-        for e in events
-    ]
+    # Check cached AI analysis (cache key = date + event count, refreshed hourly)
+    cache_key = f"calendar_ai_cache:{now_local.strftime('%Y-%m-%d')}:{len(events)}:{now_local.hour}"
+    cached_raw = agent_logic.get_state(db, "calendar_ai_cache_key", "")
+    cached_types_raw = agent_logic.get_state(db, "calendar_ai_event_types", "{}")
+    cached_insight = agent_logic.get_state(db, "calendar_ai_day_insight", "")
+
+    event_types: dict = {}
+    ai_day_insight: str = ""
+
+    if cached_raw == cache_key and (cached_types_raw or cached_insight):
+        import json as _json
+        try:
+            event_types = _json.loads(cached_types_raw)
+        except Exception:
+            event_types = {}
+        ai_day_insight = cached_insight
+    elif events and agent_logic.can_use_llm(db, now):
+        agent_logic.register_llm_call(db, now)
+        import llm_client
+        events_text = "\n".join(
+            f"- {e.title} ({_local_iso(e.start_at)[11:16]}–{_local_iso(e.end_at)[11:16]})"
+            + (f" [{e.calendar_name}]" if e.calendar_name else "")
+            for e in events
+        )
+        now_label = now_local.strftime("%I:%M %p")
+        result = await llm_client.analyze_calendar_day(events_text, now_label)
+        event_types = result.get("event_types") or {}
+        ai_day_insight = result.get("day_insight") or ""
+        import json as _json
+        agent_logic.set_state(db, "calendar_ai_cache_key", cache_key)
+        agent_logic.set_state(db, "calendar_ai_event_types", _json.dumps(event_types))
+        agent_logic.set_state(db, "calendar_ai_day_insight", ai_day_insight)
+
+    return {
+        "events": [
+            {
+                "id": e.id,
+                "title": e.title,
+                "start_at": _local_iso(e.start_at),
+                "end_at": _local_iso(e.end_at),
+                "calendar_name": e.calendar_name,
+                "is_current": e.start_at <= now_utc_naive <= e.end_at,
+                "is_past": e.end_at < now_utc_naive,
+                "event_type": event_types.get(e.title, "other"),
+            }
+            for e in events
+        ],
+        "ai_day_insight": ai_day_insight or None,
+    }
 
 
 @app.post("/api/mac-calendar-events")
@@ -1569,6 +1634,29 @@ async def chat_message(payload: Dict[str, Any], db: Session = Depends(get_db)):
         apps = ", ".join(set(l.get("app_name", "") for l in recent_logs if l.get("app_name")))
         if apps:
             context_parts.append(f"Recent apps: {apps}")
+
+    # Include today's calendar for smarter, context-aware replies
+    cal_context_events = agent_logic.get_calendar_events_for_window(
+        db, now - timedelta(minutes=30), now + timedelta(hours=3)
+    )
+    if cal_context_events:
+        tz_chat = agent_logic.resolve_user_timezone(db)
+        def _fmt_ev(ev: dict) -> str:
+            start_dt = datetime.fromisoformat(ev["start_at"]).replace(tzinfo=timezone.utc).astimezone(tz_chat)
+            end_dt = datetime.fromisoformat(ev["end_at"]).replace(tzinfo=timezone.utc).astimezone(tz_chat)
+            start_l = start_dt.strftime("%-I:%M %p")
+            end_l = end_dt.strftime("%-I:%M %p")
+            start_naive = datetime.fromisoformat(ev["start_at"])
+            end_naive = datetime.fromisoformat(ev["end_at"])
+            now_naive = now.replace(tzinfo=None)
+            if start_naive <= now_naive <= end_naive:
+                return f"{ev['title']} (NOW, {start_l}–{end_l})"
+            elif start_naive > now_naive:
+                mins = int((start_naive - now_naive).total_seconds() / 60)
+                return f"{ev['title']} (in {mins}m, {start_l}–{end_l})"
+            return f"{ev['title']} ({start_l}–{end_l})"
+        cal_str = "; ".join(_fmt_ev(ev) for ev in cal_context_events[:5])
+        context_parts.append(f"Calendar: {cal_str}")
 
     context_str = "; ".join(context_parts) if context_parts else "No recent context"
     history_key = f"chat_history:{agent_logic.local_day_key(db, now)}"

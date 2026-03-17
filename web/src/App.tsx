@@ -1,4 +1,4 @@
-import {
+import React, {
   startTransition,
   useDeferredValue,
   useEffect,
@@ -32,6 +32,9 @@ type DashboardState = {
   presence_state?: string;
   presence_display?: string;
   presence_display_label?: string | null;
+  current_event_title?: string | null;
+  next_event_title?: string | null;
+  next_event_starts_in_minutes?: number | null;
   last_presence_change_at?: string;
   screen_state?: string;
   privacy_mode?: string;
@@ -66,6 +69,12 @@ type CalendarEventUI = {
   calendar_name: string | null;
   is_current: boolean;
   is_past: boolean;
+  event_type?: string;
+};
+
+type CalendarResponse = {
+  events: CalendarEventUI[];
+  ai_day_insight?: string | null;
 };
 
 type Analytics = {
@@ -443,6 +452,7 @@ function TodayPage({
   onRefreshLogs,
   hourlySummaries,
   calendarEvents,
+  aiDayInsight,
 }: {
   state: DashboardState | null;
   analytics: Analytics | null;
@@ -454,6 +464,7 @@ function TodayPage({
   onRefreshLogs: () => void;
   hourlySummaries: HourlySummary[];
   calendarEvents: CalendarEventUI[];
+  aiDayInsight?: string | null;
 }) {
   const deferredLogs = useDeferredValue(logs);
   const [loggedMsg, setLoggedMsg] = useState("");
@@ -501,11 +512,23 @@ function TodayPage({
               <h3 className="hero-title">
                 {initialLoading ? <Skeleton h="2rem" w="65%" /> : (state?.current_activity_summary ?? "Waiting for your first capture")}
               </h3>
-              {state?.current_activity_category && state.current_activity_category !== "unknown" && (
-                <span className={`category-pill cat-${state.current_activity_category}`}>
-                  {state.current_activity_category.replace(/_/g, " ")}
-                </span>
-              )}
+              <div className="hero-pills">
+                {state?.current_activity_category && state.current_activity_category !== "unknown" && (
+                  <span className={`category-pill cat-${state.current_activity_category}`}>
+                    {state.current_activity_category.replace(/_/g, " ")}
+                  </span>
+                )}
+                {state?.current_event_title && (
+                  <span className="category-pill cal-pill-now">
+                    📅 {state.current_event_title}
+                  </span>
+                )}
+                {!state?.current_event_title && state?.next_event_title && state?.next_event_starts_in_minutes != null && state.next_event_starts_in_minutes <= 30 && (
+                  <span className="category-pill cal-pill-soon">
+                    ⏰ {state.next_event_title} in {state.next_event_starts_in_minutes}m
+                  </span>
+                )}
+              </div>
               <p className="hero-copy">
                 {initialLoading ? <Skeleton h="0.9rem" w="40%" /> : (
                   <>
@@ -540,14 +563,20 @@ function TodayPage({
       {calendarEvents.length > 0 && (
         <div className="col-span-4">
           <Surface title="Today's schedule" eyebrow="Calendar">
+            {aiDayInsight && (
+              <p className="cal-ai-insight">✦ {aiDayInsight}</p>
+            )}
             <div className="cal-strip">
               {calendarEvents.map(ev => (
-                <div key={ev.id} className={`cal-event${ev.is_current ? " cal-current" : ev.is_past ? " cal-past" : ""}`}>
+                <div key={ev.id} className={`cal-event cal-type-${ev.event_type ?? "other"}${ev.is_current ? " cal-current" : ev.is_past ? " cal-past" : ""}`}>
                   <span className="cal-time">{formatTimeOnly(ev.start_at, timezone)}</span>
                   <span className="cal-title">{ev.title}</span>
+                  {ev.event_type && ev.event_type !== "other" && (
+                    <span className={`cal-type-badge cal-type-badge-${ev.event_type}`}>{ev.event_type}</span>
+                  )}
                   {ev.calendar_name && <span className="cal-name">{ev.calendar_name}</span>}
                   {ev.is_current && <span className="cal-badge">Now</span>}
-                  {(() => { const m = minutesUntil(ev.start_at); return m != null ? <span className="cal-countdown">in {m}m</span> : null; })()}
+                  {(() => { const m = minutesUntil(ev.start_at); return m != null && m <= 30 ? <span className="cal-countdown">in {m}m</span> : null; })()}
                 </div>
               ))}
             </div>
@@ -596,14 +625,22 @@ function TodayPage({
               {hourlySummaries.map(s => (
                 <div key={s.id} className="recap-row">
                   <span className="recap-time">{formatTime(s.hour_start_local, timezone)}</span>
-                  <span className="recap-text">{stripSummaryTimePrefix(s.summary_text)}</span>
+                  <div className="recap-body">
+                    <span className="recap-text">{stripSummaryTimePrefix(s.summary_text)}</span>
+                    {s.productivity_score != null && (
+                      <div className="recap-score-bar">
+                        <div
+                          className="recap-score-fill"
+                          style={{ width: `${s.productivity_score * 10}%`, '--score': s.productivity_score } as React.CSSProperties}
+                        />
+                        <span className="recap-score-label">{s.productivity_score.toFixed(1)}</span>
+                      </div>
+                    )}
+                  </div>
                   <div className="recap-right">
                     {s.source === "llm" && !s.fallback_used
                       ? <span className="recap-badge recap-badge-ai">AI</span>
                       : <span className="recap-badge recap-badge-est">est.</span>}
-                    {s.productivity_score != null && (
-                      <span className="recap-score">{s.productivity_score.toFixed(1)}/10</span>
-                    )}
                   </div>
                 </div>
               ))}
@@ -1240,6 +1277,7 @@ export default function App() {
   const [zones, setZones] = useState<ZoneRecord[]>([]);
   const [hourlySummaries, setHourlySummaries] = useState<HourlySummary[]>([]);
   const [calendarEvents, setCalendarEvents] = useState<CalendarEventUI[]>([]);
+  const [aiDayInsight, setAiDayInsight] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -1311,12 +1349,13 @@ export default function App() {
       const [nextHealth, nextSummaries, nextCalendar] = await Promise.all([
         fetchJson<HealthResponse>("/api/healthz"),
         fetchJson<HourlySummary[]>("/api/hourly-summaries?limit=4").catch(() => [] as HourlySummary[]),
-        fetchJson<CalendarEventUI[]>("/api/calendar/today").catch(() => [] as CalendarEventUI[]),
+        fetchJson<CalendarResponse>("/api/calendar/today").catch(() => ({ events: [], ai_day_insight: null })),
       ]);
       startTransition(() => {
         setHealth(nextHealth);
         setHourlySummaries(nextSummaries);
-        setCalendarEvents(nextCalendar);
+        setCalendarEvents(nextCalendar.events ?? []);
+        setAiDayInsight(nextCalendar.ai_day_insight ?? null);
       });
     } catch { /* silent */ }
   }
@@ -1419,6 +1458,7 @@ export default function App() {
                 onRefreshLogs={refreshCore}
                 hourlySummaries={hourlySummaries}
                 calendarEvents={calendarEvents}
+                aiDayInsight={aiDayInsight}
               />
             }
           />

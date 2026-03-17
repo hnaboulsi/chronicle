@@ -441,5 +441,29 @@ async def generate_daily_recap(logs_summary: str) -> str:
     return await ask_llm(prompt, model_kind="default")
 
 
+async def analyze_calendar_day(events_text: str, now_label: str) -> dict:
+    """Classify calendar events by type and generate a one-sentence day insight.
+
+    Returns: {
+      "event_types": {"Event Title": "meeting|focus|class|deadline|personal|other", ...},
+      "day_insight": "Short 1-2 sentence overview of the day.",
+    }
+    """
+    prompt = (
+        f"You are Vero, a personal productivity AI. Here are today's calendar events (current time: {now_label}):\n\n"
+        f"{events_text}\n\n"
+        "Respond ONLY with a JSON object:\n"
+        "1. 'event_types': object mapping each event title to one of: meeting, focus, class, deadline, personal, other\n"
+        "2. 'day_insight': 1-2 sentence summary of the day's shape — e.g. 'Heavy meeting day with a free block 2-4 PM.' "
+        "or 'Looks like a light day, good for deep work.' Keep it under 25 words."
+    )
+    text = await ask_llm(prompt, model_kind="cheap")
+    result = _parse_json_response(text)
+    return {
+        "event_types": result.get("event_types") or {},
+        "day_insight": result.get("day_insight") or "",
+    }
+
+
 async def ask_gemini(prompt: str, context: Optional[str] = None) -> str:
     return await ask_llm(prompt, context=context, model_kind="default")

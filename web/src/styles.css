@@ -870,3 +870,64 @@ select:focus-visible {
   color: #f87171; background: rgba(248,113,113,0.1); border-color: rgba(248,113,113,0.25);
 }
 .cat-break, .cat-idle, .cat-away { color: var(--muted); }
+
+/* Hero pill row */
+.hero-pills {
+  display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; margin-bottom: 2px;
+}
+
+/* Calendar event-in-progress / upcoming pill in hero */
+.cal-pill-now {
+  color: var(--accent); background: rgba(129,140,248,0.12);
+  border-color: rgba(129,140,248,0.3); text-transform: none;
+  letter-spacing: 0; font-size: 0.78rem;
+}
+.cal-pill-soon {
+  color: var(--warn); background: rgba(251,191,36,0.1);
+  border-color: rgba(251,191,36,0.25); text-transform: none;
+  letter-spacing: 0; font-size: 0.78rem;
+}
+
+/* AI day insight above calendar strip */
+.cal-ai-insight {
+  margin: 0 0 12px; font-size: 0.84rem; color: var(--accent);
+  font-style: italic; line-height: 1.45; opacity: 0.9;
+}
+
+/* Calendar event type badge */
+.cal-type-badge {
+  font-size: 0.65rem; font-weight: 700; padding: 2px 7px;
+  border-radius: 999px; text-transform: uppercase; letter-spacing: 0.05em;
+  white-space: nowrap; flex-shrink: 0;
+}
+.cal-type-badge-meeting  { background: rgba(129,140,248,0.15); color: var(--accent); border: 1px solid rgba(129,140,248,0.3); }
+.cal-type-badge-focus    { background: rgba(52,211,153,0.12); color: var(--good); border: 1px solid rgba(52,211,153,0.25); }
+.cal-type-badge-class    { background: rgba(245,158,11,0.12); color: #f59e0b; border: 1px solid rgba(245,158,11,0.25); }
+.cal-type-badge-deadline { background: rgba(248,113,113,0.12); color: var(--bad); border: 1px solid rgba(248,113,113,0.25); }
+.cal-type-badge-personal { background: var(--panel-strong); color: var(--muted); border: 1px solid var(--line); }
+
+/* Cal event left accent by type */
+.cal-type-meeting  { border-left: 3px solid var(--accent); }
+.cal-type-focus    { border-left: 3px solid var(--good); }
+.cal-type-class    { border-left: 3px solid #f59e0b; }
+.cal-type-deadline { border-left: 3px solid var(--bad); }
+
+/* Recap — score bar */
+.recap-body { flex: 1; display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.recap-score-bar {
+  display: flex; align-items: center; gap: 6px; height: 4px;
+}
+.recap-score-fill {
+  height: 4px; border-radius: 2px; flex-shrink: 0;
+  background: linear-gradient(90deg,
+    var(--bad) 0%,
+    var(--warn) 40%,
+    var(--good) 80%
+  );
+  clip-path: inset(0 0 0 0); /* will be overridden by width */
+  transition: width 0.4s ease;
+}
+.recap-score-label {
+  font-size: 0.72rem; font-weight: 700; color: var(--muted);
+  white-space: nowrap; flex-shrink: 0; line-height: 1;
+}
