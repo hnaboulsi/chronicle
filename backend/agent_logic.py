@@ -1200,9 +1200,15 @@ def compute_mac_status(states: dict, now: datetime | None = None) -> dict:
     if heartbeat_age is None or heartbeat_age > 300:
         status = "offline"
         reason = "No recent heartbeat from the Mac agent."
-    elif not tracking_enabled or agent_state == "paused":
+    elif not tracking_enabled:
         status = "paused"
         reason = "The Mac agent is running, but tracking is paused."
+    elif agent_state == "paused":
+        # If the agent says it's paused, but the global state is 'tracking_enabled',
+        # it just hasn't synced the resume command yet. We'll show it as online-but-idle
+        # to the user to make the UI feel reactive.
+        status = "online"
+        reason = "Resuming tracking..."
     elif permissions_state not in {"ok", "granted"}:
         status = "degraded"
         reason = "The agent is alive, but macOS permissions are incomplete."

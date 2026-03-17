@@ -677,6 +677,16 @@ def _build_state_payload(db: Session) -> dict:
     now = datetime.now(timezone.utc)
     capture_interval_seconds = agent_logic.get_capture_interval_seconds(db)
 
+    # Sanitize stale/noisy location data written by old bad AI extractions (e.g. "Anchor Rn In")
+    _pre_cur_loc = states.get("current_location", "")
+    if _pre_cur_loc and not _pre_cur_loc.startswith("Outside "):
+        _noise_words = {"rn", "currently", "right", "now", "in", "at"}
+        _words = _pre_cur_loc.split()
+        if len(_words) > 1 and any(w.lower().rstrip(".") in _noise_words for w in _words[1:]):
+            _cleaned = _words[0].title()
+            agent_logic.set_state(db, "current_location", _cleaned)
+            states["current_location"] = _cleaned
+
     last_ios_event_age_seconds = None
     last_ios_ping_age_seconds = None
     last_ios_event_str = states.get("last_ios_event") or states.get("last_ios_ping") or ""
@@ -804,6 +814,15 @@ def _build_state_payload(db: Session) -> dict:
                 states["next_event_title"] = ev.title
                 states["next_event_starts_in_minutes"] = mins
             break
+
+    # Mac note: surface mac state only when meaningfully notable at a location (used by React hero)
+    states["at_location_mac_note"] = None
+    if _cur_loc and not _cur_loc.startswith("Outside "):
+        if mac_status["mac_status"] == "online" and not mac_status.get("mac_idle", False):
+            states["at_location_mac_note"] = "Mac active"
+        elif mac_status["mac_status"] in {"sleeping", "locked"}:
+            states["at_location_mac_note"] = f"Mac {mac_status['mac_status']}"
+        # idle/away = expected when out, don't surface it
 
     return states
 

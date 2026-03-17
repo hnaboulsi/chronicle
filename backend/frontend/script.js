@@ -279,13 +279,23 @@ function updateUI(logs, states) {
         } else {
             macStatus.textContent = 'Online';
             macStatus.className = 'status-value color-green';
-            macDetail.textContent = latestMacApp || (states.mac_idle ? 'Idle right now' : 'Agent connected');
+            // Suppress "Idle right now" noise when user is confirmed at a location — it's expected
+            const idleNote = states.mac_idle && !states.current_location ? 'Idle right now' : '';
+            macDetail.textContent = latestMacApp || idleNote || 'Agent connected';
         }
     }
 
-    // iOS Card
+    // iOS Card — prefer authoritative current_location from state over raw log
     const latestIos = logs.find(l => l.device === 'ios');
-    if (iosStatus && latestIos) {
+    const currentLoc = states.current_location || '';
+    if (iosStatus && currentLoc) {
+        const isOutside = currentLoc.startsWith('Outside ');
+        iosStatus.textContent = isOutside ? currentLoc : `At ${currentLoc}`;
+        iosStatus.className = 'status-value color-green';
+        const macNote = states.at_location_mac_note ? ` · ${states.at_location_mac_note}` : '';
+        const batt = latestIos && latestIos.battery_pct != null ? ` · ${latestIos.battery_pct}% batt` : '';
+        iosDetail.textContent = (latestIos ? timeAgo(latestIos.timestamp) : '') + macNote + batt;
+    } else if (iosStatus && latestIos) {
         const zone = latestIos.location_label || 'Unknown';
         const trans = (latestIos.activity_type || '').toLowerCase();
         const prefix = trans.includes('enter') ? 'In' : trans.includes('leave') ? 'Left' : 'At';
@@ -749,6 +759,7 @@ if (intervalPillsContainer) {
 // ── Chat ──
 async function sendChat() {
     const input = document.getElementById('chat-input');
+    const btn = document.getElementById('chat-send');
     const msg = input.value.trim();
     if (!msg) return;
     input.value = '';

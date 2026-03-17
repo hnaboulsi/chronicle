@@ -41,6 +41,7 @@ type DashboardState = {
   calendar_sync_enabled?: boolean;
   last_heartbeat_at?: string;
   last_capture_at?: string;
+  at_location_mac_note?: string | null;
 };
 
 type BackendSettings = {
@@ -272,7 +273,7 @@ function AppShell({
         <div>
           <div className="eyebrow">
             {state?.service_health === "ok" && <span className="status-dot" />}
-            Activity intelligence
+            Your day, tracked
           </div>
           <h1>Vero</h1>
         </div>
@@ -470,7 +471,9 @@ function TodayPage({
 }) {
   const deferredLogs = useDeferredValue(logs);
   const [loggedMsg, setLoggedMsg] = useState("");
-  const [customNote, setCustomNote] = useState("");
+  const [chatMessages, setChatMessages] = useState<{user: string; reply: string; time: string}[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatSending, setChatSending] = useState(false);
 
   async function handleQuickLog(activity_type: string, label: string, note?: string) {
     await fetchJson("/api/manual-log", {
@@ -488,17 +491,27 @@ function TodayPage({
     onRefreshLogs();
   };
 
-  async function handleCustomLog() {
-    const note = customNote.trim();
-    if (!note) return;
-    await fetchJson("/api/manual-log", {
-      method: "POST",
-      body: JSON.stringify({ activity_type: "manual", label: note, note }),
-    });
-    setCustomNote("");
-    setLoggedMsg("Logged!");
-    setTimeout(() => setLoggedMsg(""), 2000);
-    onRefreshLogs();
+  useEffect(() => {
+    fetchJson<{messages: {user: string; reply: string; time: string}[]}>("/api/chat/history")
+      .then(r => setChatMessages((r.messages ?? []).slice(-5)))
+      .catch(() => {});
+  }, []);
+
+  async function handleChat() {
+    const msg = chatInput.trim();
+    if (!msg) return;
+    setChatSending(true);
+    setChatInput("");
+    try {
+      const r = await fetchJson<{reply: string}>("/api/chat", {
+        method: "POST",
+        body: JSON.stringify({ message: msg }),
+      });
+      setChatMessages(prev => [...prev.slice(-4), { user: msg, reply: r.reply, time: new Date().toISOString() }]);
+      onRefreshLogs();
+    } finally {
+      setChatSending(false);
+    }
   }
 
   const captureAgeSeconds = state?.last_mac_capture_age_seconds;
@@ -535,8 +548,8 @@ function TodayPage({
                 {initialLoading ? <Skeleton h="0.9rem" w="40%" /> : (
                   <>
                     {state?.presence_display === "at_location" ? (
-                      // Title already shows "At X" — show Mac state in copy instead
-                      <>Mac: <strong>{presenceLabel(state?.presence_state)}</strong> · </>
+                      // Title already shows "At X" — only show mac note if meaningfully active, otherwise nothing
+                      state?.at_location_mac_note ? <><strong>{state.at_location_mac_note}</strong> · </> : null
                     ) : state?.presence_display === "away_from_location" ? (
                       <><strong>{state.presence_display_label}</strong> · </>
                     ) : state?.presence_display === "walking" ? (
@@ -591,9 +604,9 @@ function TodayPage({
         </div>
       )}
 
-      {/* Row 3: Quick-log */}
+      {/* Row 3: Vero chat */}
       <div className="col-span-4">
-        <Surface title="What are you up to?" eyebrow="Log a moment">
+        <Surface title="Vero" eyebrow="Tell me what's up">
           <div className="quicklog-row">
             {QUICK_LOG_PRESETS.map(({ emoji, label, activity_type }) => (
               <button key={activity_type} className="quicklog-btn" onClick={() => handleQuickLog(activity_type, label)}>
@@ -602,22 +615,26 @@ function TodayPage({
               </button>
             ))}
           </div>
+          {chatMessages.length > 0 && (
+            <div className="chat-history">
+              {chatMessages.map((m, i) => (
+                <div key={i} className="chat-pair">
+                  <div className="chat-user">{m.user}</div>
+                  <div className="chat-reply">{m.reply}</div>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="quicklog-custom">
             <input
               className="quicklog-input"
-              type="text"
-              placeholder="Or describe what you're doing…"
-              value={customNote}
-              onChange={(e) => setCustomNote(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") void handleCustomLog(); }}
+              placeholder="Tell Vero where you are or what you're doing…"
+              value={chatInput}
+              onChange={e => setChatInput(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter" && !chatSending) void handleChat(); }}
             />
-            <button
-              className="quicklog-submit"
-              type="button"
-              onClick={() => void handleCustomLog()}
-              disabled={!customNote.trim()}
-            >
-              Log
+            <button className="quicklog-submit" type="button" onClick={() => void handleChat()} disabled={!chatInput.trim() || chatSending}>
+              {chatSending ? "…" : "Send"}
             </button>
           </div>
           {loggedMsg && <div className="quicklog-confirm">{loggedMsg}</div>}
@@ -1288,6 +1305,34 @@ function SettingsPage({
             </select>
           </label>
           <p className="field-hint">Used to display times correctly</p>
+        </div>
+      </Surface>
+
+      <Surface title="AI" eyebrow="Intelligence">
+        <div className="form-grid">
+          <label className="toggle-field">
+            <span>Hourly summaries</span>
+            <input
+              type="checkbox"
+              checked={draft.hourly_summaries_enabled}
+              onChange={e => setDraft({ ...draft, hourly_summaries_enabled: e.target.checked })}
+            />
+          </label>
+          <p className="field-hint">AI generates a recap and productivity score each hour</p>
+
+          <label className="field">
+            <span>Daily AI call limit</span>
+            <select
+              value={draft.llm_daily_cap}
+              onChange={e => setDraft({ ...draft, llm_daily_cap: Number(e.target.value) })}
+            >
+              <option value={999}>Unlimited</option>
+              <option value={50}>50 / day</option>
+              <option value={100}>100 / day</option>
+              <option value={200}>200 / day</option>
+            </select>
+          </label>
+          <p className="field-hint">Controls AI usage across summaries, classification, and chat</p>
         </div>
       </Surface>
 

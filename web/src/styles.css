@@ -958,3 +958,9 @@ select:focus-visible {
 /* Nav item — deprioritized (Setup) */
 .nav-item.nav-dim { opacity: 0.55; }
 .nav-item.nav-dim:hover { opacity: 1; }
+
+/* Chat bubbles */
+.chat-history { display: flex; flex-direction: column; gap: 10px; margin: 12px 0; max-height: 200px; overflow-y: auto; }
+.chat-pair { display: flex; flex-direction: column; gap: 3px; }
+.chat-user { font-size: 0.82rem; color: var(--muted); padding: 5px 10px; background: var(--panel-strong); border-radius: 12px 12px 12px 2px; align-self: flex-end; max-width: 85%; }
+.chat-reply { font-size: 0.85rem; color: var(--text); padding: 6px 10px; background: var(--accent-dim); border: 1px solid rgba(129,140,248,0.2); border-radius: 2px 12px 12px 12px; align-self: flex-start; max-width: 85%; line-height: 1.4; }
