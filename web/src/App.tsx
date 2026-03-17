@@ -72,6 +72,7 @@ type CalendarEventUI = {
   is_current: boolean;
   is_past: boolean;
   event_type?: string;
+  event_note?: string | null;
 };
 
 type CalendarResponse = {
@@ -598,7 +599,10 @@ function TodayPage({
                 return (
                   <div key={ev.id} className={`cal-event cal-type-${ev.event_type ?? "other"}${ev.is_current ? " cal-current" : ev.is_past ? " cal-past" : ""}`}>
                     <span className="cal-time">{formatTimeOnly(ev.start_at, timezone)}</span>
-                    <span className="cal-title">{icon && <span className="cal-type-icon">{icon}</span>}{ev.event_type === "assignment" ? `Due: ${ev.title}` : ev.title}</span>
+                    <span className="cal-title-group">
+                      <span className="cal-title">{icon && <span className="cal-type-icon">{icon}</span>}{ev.event_type === "assignment" ? `Due: ${ev.title}` : ev.title}</span>
+                      {ev.event_note && <span className="cal-note">{ev.event_note}</span>}
+                    </span>
                     {ev.event_type && ev.event_type !== "other" && (
                       <span className={`cal-type-badge cal-type-badge-${ev.event_type}`}>{ev.event_type.replace("_", " ")}</span>
                     )}

@@ -1280,9 +1280,11 @@ async def get_calendar_today(db: Session = Depends(get_db)):
     cache_key = f"calendar_ai_cache:{now_local.strftime('%Y-%m-%d')}:{len(events)}:{now_local.hour}"
     cached_raw = agent_logic.get_state(db, "calendar_ai_cache_key", "")
     cached_types_raw = agent_logic.get_state(db, "calendar_ai_event_types", "{}")
+    cached_notes_raw = agent_logic.get_state(db, "calendar_ai_event_notes", "{}")
     cached_insight = agent_logic.get_state(db, "calendar_ai_day_insight", "")
 
     event_types: dict = {}
+    event_notes: dict = {}
     ai_day_insight: str = ""
 
     if cached_raw == cache_key and (cached_types_raw or cached_insight):
@@ -1291,6 +1293,10 @@ async def get_calendar_today(db: Session = Depends(get_db)):
             event_types = _json.loads(cached_types_raw)
         except Exception:
             event_types = {}
+        try:
+            event_notes = _json.loads(cached_notes_raw)
+        except Exception:
+            event_notes = {}
         ai_day_insight = cached_insight
     elif events and agent_logic.can_use_llm(db, now):
         agent_logic.register_llm_call(db, now)
@@ -1298,15 +1304,18 @@ async def get_calendar_today(db: Session = Depends(get_db)):
         events_text = "\n".join(
             f"- {e.title} ({_local_iso(e.start_at)[11:16]}–{_local_iso(e.end_at)[11:16]})"
             + (f" [{e.calendar_name}]" if e.calendar_name else "")
+            + (f" — {e.notes[:120]}" if e.notes else "")
             for e in events
         )
         now_label = now_local.strftime("%I:%M %p")
         result = await llm_client.analyze_calendar_day(events_text, now_label)
         event_types = result.get("event_types") or {}
+        event_notes = result.get("event_notes") or {}
         ai_day_insight = result.get("day_insight") or ""
         import json as _json
         agent_logic.set_state(db, "calendar_ai_cache_key", cache_key)
         agent_logic.set_state(db, "calendar_ai_event_types", _json.dumps(event_types))
+        agent_logic.set_state(db, "calendar_ai_event_notes", _json.dumps(event_notes))
         agent_logic.set_state(db, "calendar_ai_day_insight", ai_day_insight)
 
     return {
@@ -1320,6 +1329,7 @@ async def get_calendar_today(db: Session = Depends(get_db)):
                 "is_current": e.start_at <= now_utc_naive <= e.end_at,
                 "is_past": e.end_at < now_utc_naive,
                 "event_type": event_types.get(e.title, "other"),
+                "event_note": event_notes.get(e.title) or None,
             }
             for e in events
         ],

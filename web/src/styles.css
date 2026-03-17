@@ -801,7 +801,9 @@ select:focus-visible {
   background: var(--accent-dim);
 }
 .cal-time { font-size: 0.75rem; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.cal-title-group { display: flex; flex-direction: column; gap: 1px; min-width: 0; overflow: hidden; }
 .cal-title { font-size: 0.88rem; color: var(--text); font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cal-note { font-size: 0.72rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cal-name { font-size: 0.72rem; color: var(--muted); white-space: nowrap; }
 .cal-badge {
   font-size: 0.7rem; font-weight: 700; padding: 2px 8px;

@@ -466,17 +466,18 @@ async def generate_daily_recap(logs_summary: str) -> str:
 
 
 async def analyze_calendar_day(events_text: str, now_label: str) -> dict:
-    """Classify calendar events by type and generate a one-sentence day insight.
+    """Classify calendar events by type, generate per-event action notes, and a day insight.
 
     Returns: {
-      "event_types": {"Event Title": "meeting|focus|class|deadline|personal|other", ...},
+      "event_types": {"Event Title": "lecture|assignment|...", ...},
+      "event_notes": {"Event Title": "Short action note", ...},
       "day_insight": "Short 1-2 sentence overview of the day.",
     }
     """
     prompt = (
         f"You are Vero, a personal productivity AI. Here are today's calendar events (current time: {now_label}):\n\n"
         f"{events_text}\n\n"
-        "Respond ONLY with a JSON object:\n"
+        "Respond ONLY with a JSON object with these three keys:\n"
         "1. 'event_types': object mapping each event title to one of these exact types:\n"
         "   - 'lecture': class session, lecture, section, discussion, recitation\n"
         "   - 'assignment': homework due, problem set, pset, mini-vitamin, quiz, assignment due, submission\n"
@@ -486,13 +487,17 @@ async def analyze_calendar_day(events_text: str, now_label: str) -> dict:
         "   - 'focus': study block, work block, deep work, focus time\n"
         "   - 'personal': gym, lunch, dinner, sleep, break, personal, social\n"
         "   - 'other': anything else\n"
-        "2. 'day_insight': 1-2 sentence summary of the day's shape — e.g. 'Two lectures and a pset due — front-load the pset before noon.' "
+        "2. 'event_notes': object mapping each event title to a SHORT action note (max 8 words) describing what the user needs to DO for it. "
+        "Examples: 'Submit on Gradescope', 'Attend lecture in-person', 'Drop-in TA help available', 'Midterm — review notes tonight', "
+        "'Team sync on Zoom', 'Deep work block', 'No action needed'. Be specific and use imperative language.\n"
+        "3. 'day_insight': 1-2 sentence summary of the day's shape — e.g. 'Two lectures and a pset due — front-load the pset before noon.' "
         "Keep it under 30 words and be actionable."
     )
     text = await ask_llm(prompt, model_kind="cheap")
     result = _parse_json_response(text)
     return {
         "event_types": result.get("event_types") or {},
+        "event_notes": result.get("event_notes") or {},
         "day_insight": result.get("day_insight") or "",
     }
 
