@@ -363,18 +363,14 @@ def _presence_changed_at(states: dict, now: datetime) -> datetime:
 
 def llm_usage_snapshot(db: Session, now: datetime | None = None) -> dict:
     now = now or datetime.now(timezone.utc)
-    cap = _safe_int(get_state(db, "llm_daily_cap", DEFAULTS["llm_daily_cap"]), 30)
     today = local_day_key(db, now)
     used_raw = get_state(db, f"llm_calls:{today}", "0")
     used = _safe_int(used_raw, 0)
-    return {"daily_cap": cap, "daily_used": used, "daily_remaining": max(cap - used, 0)}
+    return {"daily_cap": None, "daily_used": used, "daily_remaining": None}
 
 
 def can_use_llm(db: Session, now: datetime | None = None) -> bool:
-    if not llm_client.has_llm_provider():
-        return False
-    snap = llm_usage_snapshot(db, now)
-    return snap["daily_used"] < snap["daily_cap"]
+    return llm_client.has_llm_provider()
 
 
 def register_llm_call(db: Session, now: datetime | None = None):
