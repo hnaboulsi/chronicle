@@ -534,14 +534,19 @@ function TodayPage({
               <p className="hero-copy">
                 {initialLoading ? <Skeleton h="0.9rem" w="40%" /> : (
                   <>
-                    {state?.presence_display_label != null ? (
+                    {state?.presence_display === "at_location" ? (
+                      // Title already shows "At X" — show Mac state in copy instead
+                      <>Mac: <strong>{presenceLabel(state?.presence_state)}</strong> · </>
+                    ) : state?.presence_display === "away_from_location" ? (
                       <><strong>{state.presence_display_label}</strong> · </>
+                    ) : state?.presence_display === "walking" ? (
+                      <><strong>Walking</strong> · </>
                     ) : (
                       <>
                         {state?.current_location && (
                           <><strong>{state.current_location}</strong> · </>
                         )}
-                        Presence: <strong>{presenceLabel(state?.presence_display ?? state?.presence_state)}</strong> ·{" "}
+                        <strong>{presenceLabel(state?.presence_display ?? state?.presence_state)}</strong> ·{" "}
                       </>
                     )}
                     Last capture: <strong>{captureAgeMinutes != null ? `${captureAgeMinutes}m ago` : "Unknown"}</strong> ·

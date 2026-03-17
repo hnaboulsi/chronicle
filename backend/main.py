@@ -626,6 +626,51 @@ def _serialize_calendar_job(job: CalendarEventJob) -> dict:
     }
 
 
+def _extract_location(text: str) -> str | None:
+    """Extract a clean location name from free-form text.
+
+    Handles: "in anchor rn", "at the library", "current in anchor", "just got to Cory Hall", etc.
+    Stops at noise/filler words so "anchor rn" → "Anchor" not "Anchor Rn".
+    Returns None if no credible location found.
+    """
+    _NOISE = {
+        "rn", "now", "atm", "lol", "btw", "fyi", "ngl", "tbh", "imo", "irl", "afk",
+        "today", "tonight", "here", "there", "this", "the", "a", "an", "some",
+        "just", "already", "still", "again", "actually", "tbh", "tho", "tho",
+    }
+    _SKIP_LOCATIONS = {"home", "work", "school", "class", "outside", "inside"}
+
+    lowered = text.lower().strip()
+    prefixes = [
+        "current in ", "current at ",
+        "just got to ", "just got to the ", "just arrived at ", "just arrived in ",
+        "heading to ", "headed to ", "going to ",
+        "i'm at ", "i am at ", "im at ",
+        "i'm in ", "i am in ", "im in ",
+        "i'm at the ", "i am at the ", "im at the ",
+        "i'm in the ", "i am in the ", "im in the ",
+        "at the ", "in the ", "at ", "in ",
+    ]
+    for prefix in prefixes:
+        if lowered.startswith(prefix) or f" {prefix}" in lowered:
+            idx = lowered.find(prefix) if lowered.startswith(prefix) else lowered.index(f" {prefix}") + 1
+            raw_after = text[idx + len(prefix):].strip().rstrip(".,!")
+            words = raw_after.split()
+            clean = []
+            for w in words:
+                stripped = w.rstrip(".,!").lower()
+                if stripped in _NOISE or stripped in _SKIP_LOCATIONS:
+                    break
+                clean.append(w.rstrip(".,!"))
+                if len(clean) == 2:  # max 2 words for a location name
+                    break
+            candidate = " ".join(clean).strip()
+            if len(candidate) >= 2 and candidate.lower() not in _SKIP_LOCATIONS:
+                # Title-case if all lowercase
+                return candidate.title() if candidate == candidate.lower() else candidate
+    return None
+
+
 def _build_state_payload(db: Session) -> dict:
     agent_logic.ensure_default_settings(db)
     states = agent_logic.get_all_states(db)
@@ -708,6 +753,19 @@ def _build_state_payload(db: Session) -> dict:
         states["presence_display_label"] = f"Left {_bare}"
     else:
         states["presence_display_label"] = None
+    # When user is at a confirmed location but Mac is idle/away,
+    # let the location win the hero title instead of "Away from your Mac".
+    # We only override the display payload — stored DB values are untouched.
+    if states["presence_display"] == "at_location" and _cur_loc:
+        _mac_idle = states.get("presence_state", "") in {"idle", "away", "locked", "sleeping", "unknown", ""}
+        _summary = states.get("current_activity_summary", "") or ""
+        _away_summary = not _summary or any(
+            kw in _summary.lower() for kw in ("away", "idle", "inactive", "locked", "sleep", "waiting")
+        )
+        if _mac_idle or _away_summary:
+            states["current_activity_summary"] = f"At {_cur_loc}"
+            states["current_activity_category"] = None
+
     states["last_presence_change_at"] = states.get("last_presence_change_at", "")
     states["last_capture_at"] = states.get("last_capture_at", states.get("last_mac_ping", ""))
     states["last_heartbeat_at"] = states.get("last_mac_heartbeat", "")
@@ -1376,28 +1434,8 @@ def create_manual_log(payload: Dict[str, Any], db: Session = Depends(get_db)):
     db.commit()
     db.refresh(entry)
 
-    # Extract location from the note text so "current in anchor" updates current_location.
-    # Manual reports get a 4-hour lock since the user explicitly stated their location.
-    text = f"{label} {note}".lower().strip()
-    _found_location: str | None = None
-    # Broader prefix list: includes "current in/at", "at", "in", etc.
-    for prefix in [
-        "current in ", "current at ",
-        "i'm at ", "i am at ", "im at ",
-        "i'm in ", "i am in ", "im in ",
-        "at ", "in ",
-    ]:
-        if text.startswith(prefix) or f" {prefix}" in text:
-            idx = text.find(prefix)
-            raw = (f"{label} {note}")[idx + len(prefix):].strip().rstrip(".,!")
-            candidate = raw.split()[0] if raw.split() else ""  # first word / phrase
-            # Take up to 3 words as the location name
-            words = raw.split()
-            candidate = " ".join(words[:3]).rstrip(".,!")
-            _SKIP = {"home", "work", "school", "class", "here", "there", "this", "the"}
-            if len(candidate) >= 2 and candidate.lower() not in _SKIP:
-                _found_location = candidate
-                break
+    # Extract location from note text — "in anchor rn" → "Anchor"
+    _found_location = _extract_location(f"{label} {note}")
 
     if _found_location:
         agent_logic.set_state(db, "current_location", _found_location)
@@ -1770,22 +1808,15 @@ async def chat_message(payload: Dict[str, Any], db: Session = Depends(get_db)):
     # Try to extract activity intent from the message using heuristics
     msg_lower = message.lower()
 
-    # Detect "I'm at X" / "I am at X" / "at X" / "in X" to update current location
+    # Detect location from message using shared extraction helper
     # Only run heuristic if the LLM didn't already handle location
     _at_location: str | None = None
     if not _llm_handled_location:
-        for prefix in ["i'm at ", "i am at ", "im at ", "i'm in ", "i am in ", "im in ", "at "]:
-            if msg_lower.startswith(prefix) or f" {prefix}" in msg_lower:
-                idx = msg_lower.find(prefix)
-                candidate = message[idx + len(prefix):].strip().rstrip(".,!")
-                # Sanity: ignore very short/generic words that aren't real place names
-                if len(candidate) >= 3 and candidate.lower() not in {"home", "work", "school", "class"}:
-                    _at_location = candidate
-                    break
+        _at_location = _extract_location(message)
         if _at_location:
             agent_logic.set_state(db, "current_location", _at_location)
-            zone_until = (now + timedelta(hours=2)).isoformat()
-            agent_logic.set_state(db, "zone_activity_until", zone_until)
+            agent_logic.set_state(db, "zone_activity_until",
+                (now + timedelta(hours=2)).isoformat())
 
     if any(w in msg_lower for w in ["going to", "headed to", "walking to", "heading to"]):
         # Extract destination
