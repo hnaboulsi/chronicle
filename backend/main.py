@@ -1614,6 +1614,22 @@ async def chat_message(payload: Dict[str, Any], db: Session = Depends(get_db)):
 
     # Try to extract activity intent from the message using heuristics
     msg_lower = message.lower()
+
+    # Detect "I'm at X" / "I am at X" / "at X" / "in X" to update current location
+    _at_location: str | None = None
+    for prefix in ["i'm at ", "i am at ", "im at ", "i'm in ", "i am in ", "im in ", "at "]:
+        if msg_lower.startswith(prefix) or f" {prefix}" in msg_lower:
+            idx = msg_lower.find(prefix)
+            candidate = message[idx + len(prefix):].strip().rstrip(".,!")
+            # Sanity: ignore very short/generic words that aren't real place names
+            if len(candidate) >= 3 and candidate.lower() not in {"home", "work", "school", "class"}:
+                _at_location = candidate
+                break
+    if _at_location:
+        agent_logic.set_state(db, "current_location", _at_location)
+        zone_until = (now + timedelta(hours=2)).isoformat()
+        agent_logic.set_state(db, "zone_activity_until", zone_until)
+
     if any(w in msg_lower for w in ["going to", "headed to", "walking to", "heading to"]):
         # Extract destination
         for prefix in ["going to ", "headed to ", "walking to ", "heading to "]:
