@@ -678,9 +678,21 @@ def _build_state_payload(db: Session) -> dict:
     _is_walking = states.get("is_walking") == "true"
     _cur_loc = states.get("current_location", "")
     _zone_until = agent_logic._parse_iso_dt(states.get("zone_activity_until"))
+    # Soft fallback: if zone lock just expired but user checked in within 3 hours,
+    # keep showing "At {location}" rather than falling back to mac idle/away state.
+    _last_checkin = agent_logic._parse_iso_dt(states.get("last_user_checkin"))
+    _checkin_recent = _last_checkin is not None and (now - _last_checkin).total_seconds() < 3 * 3600
+    _effective_at_location = (
+        _cur_loc
+        and not _cur_loc.startswith("Outside ")
+        and (
+            (_zone_until and now < _zone_until)
+            or _checkin_recent
+        )
+    )
     if _is_walking:
         states["presence_display"] = "walking"
-    elif _cur_loc and not _cur_loc.startswith("Outside ") and _zone_until and now < _zone_until:
+    elif _effective_at_location:
         states["presence_display"] = "at_location"
     elif _cur_loc.startswith("Outside "):
         states["presence_display"] = "away_from_location"
@@ -1349,19 +1361,51 @@ def clear_logs(payload: Dict[str, Any], db: Session = Depends(get_db)):
 
 @app.post("/api/manual-log")
 def create_manual_log(payload: Dict[str, Any], db: Session = Depends(get_db)):
-    from datetime import datetime, timezone as tz
+    now_log = datetime.now(timezone.utc)
+    note = payload.get("note") or ""
+    label = payload.get("label") or ""
     entry = ActivityLog(
-        timestamp=datetime.now(tz.utc),
+        timestamp=now_log,
         device="manual",
-        app_name=payload.get("label", "Manual entry"),
+        app_name=label or "Manual entry",
         activity_type=payload.get("activity_type", "manual"),
-        window_title=payload.get("note") or "",
+        window_title=note,
         presence_state="active",
     )
     db.add(entry)
     db.commit()
     db.refresh(entry)
-    return {"status": "logged", "id": entry.id}
+
+    # Extract location from the note text so "current in anchor" updates current_location.
+    # Manual reports get a 4-hour lock since the user explicitly stated their location.
+    text = f"{label} {note}".lower().strip()
+    _found_location: str | None = None
+    # Broader prefix list: includes "current in/at", "at", "in", etc.
+    for prefix in [
+        "current in ", "current at ",
+        "i'm at ", "i am at ", "im at ",
+        "i'm in ", "i am in ", "im in ",
+        "at ", "in ",
+    ]:
+        if text.startswith(prefix) or f" {prefix}" in text:
+            idx = text.find(prefix)
+            raw = (f"{label} {note}")[idx + len(prefix):].strip().rstrip(".,!")
+            candidate = raw.split()[0] if raw.split() else ""  # first word / phrase
+            # Take up to 3 words as the location name
+            words = raw.split()
+            candidate = " ".join(words[:3]).rstrip(".,!")
+            _SKIP = {"home", "work", "school", "class", "here", "there", "this", "the"}
+            if len(candidate) >= 2 and candidate.lower() not in _SKIP:
+                _found_location = candidate
+                break
+
+    if _found_location:
+        agent_logic.set_state(db, "current_location", _found_location)
+        agent_logic.set_state(db, "zone_activity_until",
+            (now_log + timedelta(hours=4)).isoformat())
+        agent_logic.set_state(db, "last_user_checkin", now_log.isoformat())
+
+    return {"status": "logged", "id": entry.id, "location_detected": _found_location}
 
 
 def _fallback_summary_payload(entry: ActivityLog, context_logs: list[ActivityLog] | None = None) -> dict:

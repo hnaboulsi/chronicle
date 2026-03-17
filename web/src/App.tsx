@@ -293,10 +293,10 @@ function AppShell({
         <aside className="sidebar">
           <nav className="nav-list">
             <NavItem to="/today" label="Today" />
-            <NavItem to="/setup" label="Setup" />
-            <NavItem to="/diagnostics" label="Diagnostics" />
             <NavItem to="/zones" label="Zones" />
             <NavItem to="/settings" label="Settings" />
+            <NavItem to="/diagnostics" label="Diagnostics" />
+            <NavItem to="/setup" label="Setup" dim />
           </nav>
           <div className="sidebar-status">
             <span className={`sidebar-status-dot bg-${serviceTone(state?.service_health)}`} />
@@ -357,11 +357,13 @@ const NAV_ICONS: Record<string, ReactNode> = {
   ),
 };
 
-function NavItem({ to, label }: { to: string; label: string }) {
+function NavItem({ to, label, dim }: { to: string; label: string; dim?: boolean }) {
   return (
     <NavLink
       to={to}
-      className={({ isActive }) => (isActive ? "nav-item active" : "nav-item")}
+      className={({ isActive }) =>
+        isActive ? "nav-item active" : `nav-item${dim ? " nav-dim" : ""}`
+      }
     >
       {NAV_ICONS[to]}
       {label}
@@ -961,15 +963,15 @@ function ZonesPage({
     <div className="stack">
       <Surface
         title="Zones"
-        eyebrow="Optional iPhone context"
+        eyebrow="Location intelligence"
         action={
           <Link className="secondary-link" to="/setup">
-            Open iPhone setup
+            iPhone setup →
           </Link>
         }
       >
         <p className="muted">
-          Zones are optional. Keep them lean and meaningful so check-ins stay useful.
+          Zones let Vero know where you are using iPhone GPS automations. Mark one zone as <strong>Home</strong> so commutes and sleep detection work correctly. GPS isn't always precise — you can also just tell Vero where you are via the chat or quick-log on the Today page.
         </p>
       </Surface>
 
@@ -1023,8 +1025,17 @@ function ZoneEditor({
     setDraft(zone);
   }, [zone]);
 
+  const zoneTypeInfo = ZONE_TYPES.find(t => t.value === zone.zone_type);
   return (
     <article className="zone-card">
+      <div className="zone-card-header">
+        <div className="zone-card-title">
+          <span className="zone-type-icon">{zoneTypeInfo?.label.split(" ")[0] ?? "📍"}</span>
+          <strong>{zone.name || "Unnamed zone"}</strong>
+          {zone.zone_type === "home" && <span className="zone-home-badge">Home</span>}
+        </div>
+        <span className="zone-radius-hint">{zone.radius_meters}m radius</span>
+      </div>
       <ZoneForm zone={draft} onChange={setDraft} />
       <div className="surface-actions">
         <button className="secondary-button" type="button" onClick={() => onSave(draft)}>
@@ -1037,6 +1048,15 @@ function ZoneEditor({
     </article>
   );
 }
+
+const ZONE_TYPES = [
+  { value: "home",    label: "🏠 Home" },
+  { value: "campus",  label: "🎓 Campus / School" },
+  { value: "work",    label: "💼 Work / Office" },
+  { value: "gym",     label: "🏋️ Gym" },
+  { value: "cafe",    label: "☕ Café" },
+  { value: "custom",  label: "📍 Other" },
+];
 
 function ZoneForm({
   zone,
@@ -1052,20 +1072,44 @@ function ZoneForm({
         <input
           value={zone.name}
           onChange={(event) => onChange({ ...zone, name: event.target.value })}
+          placeholder="e.g. Anchor Café"
         />
+      </label>
+      <label className="field">
+        <span>Type</span>
+        <select
+          value={zone.zone_type}
+          onChange={(event) => onChange({ ...zone, zone_type: event.target.value })}
+        >
+          {ZONE_TYPES.map(t => (
+            <option key={t.value} value={t.value}>{t.label}</option>
+          ))}
+        </select>
       </label>
       <label className="field">
         <span>Slug</span>
         <input
           value={zone.slug}
           onChange={(event) => onChange({ ...zone, slug: slugify(event.target.value) })}
+          placeholder="anchor-cafe"
         />
       </label>
       <label className="field">
-        <span>Focus mode</span>
+        <span>GPS radius (m)</span>
+        <input
+          type="number"
+          min={20}
+          max={500}
+          value={zone.radius_meters}
+          onChange={(event) => onChange({ ...zone, radius_meters: Number(event.target.value) })}
+        />
+      </label>
+      <label className="field">
+        <span>iOS Focus mode</span>
         <input
           value={zone.focus_mode}
           onChange={(event) => onChange({ ...zone, focus_mode: event.target.value })}
+          placeholder="e.g. Do Not Disturb"
         />
       </label>
     </div>
