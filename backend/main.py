@@ -1281,7 +1281,7 @@ async def get_calendar_today(db: Session = Depends(get_db)):
 
     import json as _json
     # Check cached AI analysis (cache key = date + event count, refreshed hourly)
-    cache_key = f"calendar_ai_cache:{now_local.strftime('%Y-%m-%d')}:{len(events)}:{now_local.hour}"
+    cache_key = f"calendar_ai_cache:{now_local.strftime('%Y-%m-%d')}:{now_local.hour}"
     cached_raw = agent_logic.get_state(db, "calendar_ai_cache_key", "")
     cached_types_raw = agent_logic.get_state(db, "calendar_ai_event_types", "{}")
     cached_notes_raw = agent_logic.get_state(db, "calendar_ai_event_notes", "{}")

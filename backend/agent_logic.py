@@ -803,7 +803,10 @@ async def _sync_single_ical(db: Session, url: str, now_utc: datetime) -> tuple[i
             if isinstance(s, _date) and not isinstance(s, datetime):
                 s = datetime(s.year, s.month, s.day, 0, 0, tzinfo=timezone.utc)
             if isinstance(e, _date) and not isinstance(e, datetime):
-                e = datetime(e.year, e.month, e.day, 23, 59, tzinfo=timezone.utc)
+                # iCal all-day end date is exclusive next day — use start of next day
+                import datetime as _dt_mod
+                e_d = _date(e.year, e.month, e.day) + _dt_mod.timedelta(days=1)
+                e = datetime(e_d.year, e_d.month, e_d.day, 0, 0, tzinfo=timezone.utc)
 
             if s.tzinfo:
                 s = s.astimezone(timezone.utc).replace(tzinfo=None)
@@ -836,6 +839,7 @@ async def _sync_single_ical(db: Session, url: str, now_utc: datetime) -> tuple[i
         except Exception:
             continue
 
+    db.commit()
     return synced, ""
 
 
