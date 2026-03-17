@@ -74,6 +74,7 @@ class MacTelemetry(BaseModel):
     app_name: str
     window_title: str
     idle_time_seconds: int
+    seconds_since_window_change: Optional[int] = None
     recent_history: Optional[list] = None
     presence_state: Optional[str] = None
     screen_state: Optional[str] = None

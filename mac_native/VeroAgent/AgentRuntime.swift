@@ -24,6 +24,10 @@ final class AgentRuntime {
     private var sessionLocked = false
     private var observers: [NSObjectProtocol] = []
 
+    // Window-change tracking: any app/tab switch resets the effective idle clock
+    private var lastCapturedWindowKey = ""
+    private var lastWindowChangedAt = Date.distantPast
+
     func start() {
         guard !isRunning else { return }
         isRunning = true
@@ -271,7 +275,8 @@ final class AgentRuntime {
                 idleTimeSeconds: snapshot.idleTimeSeconds,
                 presenceState: snapshot.presenceState,
                 screenState: snapshot.screenState,
-                detailedCaptureEnabled: store.privacyMode == "detailed"
+                detailedCaptureEnabled: store.privacyMode == "detailed",
+                secondsSinceWindowChange: snapshot.secondsSinceWindowChange
             )
             store.helperLastSeenAt = Date()
             if !store.helperLastError.isEmpty {
@@ -362,12 +367,26 @@ final class AgentRuntime {
         let bundleID = app?.bundleIdentifier ?? ""
         let presence = currentPresenceSnapshot()
         let title = browserTabTitle(forBundleIdentifier: bundleID) ?? focusedWindowTitle() ?? appName
+
+        // Track window changes: any app/tab switch is evidence the user is present
+        let windowKey = "\(appName)|\(title)"
+        if windowKey != lastCapturedWindowKey {
+            lastWindowChangedAt = Date()
+            lastCapturedWindowKey = windowKey
+        }
+        let secondsSinceWindowChange = Int(Date().timeIntervalSince(lastWindowChangedAt))
+
+        // Effective idle = min of actual idle time and time since last window change.
+        // If the user switched tabs 2 minutes ago, effective idle is 120s not 1800s.
+        let effectiveIdleSeconds = min(presence.idleTimeSeconds, secondsSinceWindowChange)
+
         return TelemetrySnapshot(
             appName: appName,
             windowTitle: title,
-            idleTimeSeconds: presence.idleTimeSeconds,
+            idleTimeSeconds: effectiveIdleSeconds,
             presenceState: presence.presenceState,
-            screenState: presence.screenState
+            screenState: presence.screenState,
+            secondsSinceWindowChange: secondsSinceWindowChange
         )
     }
 
@@ -452,4 +471,5 @@ private struct TelemetrySnapshot {
     let idleTimeSeconds: Int
     let presenceState: String
     let screenState: String
+    let secondsSinceWindowChange: Int
 }

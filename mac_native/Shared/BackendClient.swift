@@ -221,8 +221,8 @@ final class BackendClient {
         _ = try await perform(try request(path: "api/mac-presence", method: "POST", jsonBody: body))
     }
 
-    func sendTelemetry(appName: String, windowTitle: String, idleTimeSeconds: Int, presenceState: String, screenState: String, detailedCaptureEnabled: Bool) async throws -> TelemetryResponse {
-        let body: [String: Any] = [
+    func sendTelemetry(appName: String, windowTitle: String, idleTimeSeconds: Int, presenceState: String, screenState: String, detailedCaptureEnabled: Bool, secondsSinceWindowChange: Int? = nil) async throws -> TelemetryResponse {
+        var body: [String: Any] = [
             "app_name": appName,
             "window_title": windowTitle,
             "idle_time_seconds": idleTimeSeconds,
@@ -230,6 +230,9 @@ final class BackendClient {
             "screen_state": screenState,
             "detailed_capture_enabled": detailedCaptureEnabled,
         ]
+        if let sswc = secondsSinceWindowChange {
+            body["seconds_since_window_change"] = sswc
+        }
         let data = try await perform(try request(path: "api/mac-telemetry", method: "POST", jsonBody: body))
         return try decode(TelemetryResponse.self, from: data)
     }

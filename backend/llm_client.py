@@ -232,16 +232,35 @@ async def generate_activity_summary_structured(entry, context_logs: list) -> dic
 
 async def classify_activity_context(recent_activities: list, user_self_report: str = "", recent_history: list = None, global_context: str = "") -> dict:
     if not recent_activities:
-        return {"category": "unknown", "summary": ""}
+        return {"category": "unknown", "summary": "", "presence_inference": "unknown"}
 
     lines = []
     for a in recent_activities:
         app = a.get("app_name", "Unknown")
         title = a.get("window_title", "") or ""
         time = a.get("time", "")
+        presence = a.get("presence_state", "")
+        idle_marker = " ⚠️away" if presence in ("away",) else (" ·idle" if a.get("is_idle") else "")
         prefix = f"[{time}] " if time else ""
-        lines.append(f"{prefix}{app}: {title[:80]}")
+        lines.append(f"{prefix}{app}: {title[:80]}{idle_marker}")
     activity_text = "\n".join(lines)
+
+    # Count unique windows — many distinct windows = user was clearly switching tasks
+    unique_windows = len(set(
+        f"{a.get('app_name')}|{a.get('window_title', '')}" for a in recent_activities
+    ))
+    away_count = sum(1 for a in recent_activities if a.get("presence_state") == "away")
+    total = len(recent_activities)
+
+    presence_note = ""
+    if away_count > 0 and unique_windows > 2:
+        presence_note = (
+            f"\nNote: The system marked {away_count}/{total} captures as 'away' (no mouse movement), "
+            f"but {unique_windows} distinct windows were observed — the user was almost certainly present, "
+            f"reading or watching without moving the mouse. Do NOT classify as 'idle' based on system away-status alone.\n"
+        )
+    elif away_count == total and unique_windows <= 1:
+        presence_note = "\nNote: System shows user fully away with no window changes — they may genuinely be absent.\n"
 
     self_report_section = f'\nUser said they are doing: "{user_self_report}"\n' if user_self_report else ""
     history_section = ""
@@ -260,22 +279,27 @@ async def classify_activity_context(recent_activities: list, user_self_report: s
     prompt = (
         "You are analyzing a user's recent Mac activity to understand what they are working on right now.\n\n"
         f"Activity log (oldest to newest):\n{activity_text}\n"
+        f"{presence_note}"
         f"{self_report_section}"
         f"{global_section}"
         f"{history_section}\n"
         "Instructions:\n"
         "- Look at the pattern across entries, not just the last one.\n"
         "- If a title is vague, infer from the app and surrounding entries.\n"
-        "- If the user told you what they are doing, trust that over the logs.\n\n"
-        "Classify as one of: studying, working, entertainment, social_media, gaming, creative, break, idle, unknown.\n"
+        "- If the user told you what they are doing, trust that over the logs.\n"
+        "- '⚠️away' means no mouse movement at capture time — this does NOT mean the user left; "
+        "they may be reading, watching, or thinking.\n\n"
+        "Classify category as one of: studying, working, entertainment, social_media, gaming, creative, break, idle, unknown.\n"
+        "Classify presence_inference as one of: active (clearly at computer), likely_active (probably present), away (genuinely absent).\n"
         "Write a specific 5-8 word description.\n\n"
-        'Respond ONLY with valid JSON: {"category": "...", "summary": "..."}'
+        'Respond ONLY with valid JSON: {"category": "...", "summary": "...", "presence_inference": "..."}'
     )
 
     result = _parse_json_response(await ask_llm(prompt, model_kind="cheap"))
     return {
         "category": str(result.get("category", "unknown")).lower(),
         "summary": result.get("summary", ""),
+        "presence_inference": str(result.get("presence_inference", "unknown")).lower(),
     }
 
 

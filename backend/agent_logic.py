@@ -470,6 +470,8 @@ def get_recent_mac_logs(db: Session, limit: int = 20) -> list:
             "app_name": l.app_name,
             "window_title": l.window_title,
             "time": l.timestamp.strftime("%H:%M") if l.timestamp else "",
+            "is_idle": bool(l.is_idle),
+            "presence_state": l.presence_state or "unknown",
         }
         for l in reversed(logs)
     ]
@@ -1429,6 +1431,25 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session):
     presence_state = normalize_presence_state(data.presence_state, data.idle_time_seconds)
     screen_state = normalize_screen_state(data.screen_state, presence_state)
 
+    # If the window/app changed from the previous log, the user was definitely at their
+    # computer between captures — override "away" regardless of idle_time_seconds.
+    if presence_state in ("away", "idle"):
+        prev_log = (
+            db.query(ActivityLog)
+            .filter(ActivityLog.device == "mac")
+            .order_by(ActivityLog.timestamp.desc())
+            .first()
+        )
+        if prev_log and (
+            (prev_log.app_name or "") != (data.app_name or "")
+            or (prev_log.window_title or "") != (data.window_title or "")
+        ):
+            presence_state = "active"
+
+    # seconds_since_window_change sent by Mac client (Fix 1) overrides as well
+    if data.seconds_since_window_change is not None and data.seconds_since_window_change < 300:
+        presence_state = "active"
+
     set_state(db, "last_capture_at", now.isoformat())
     set_state(db, "last_mac_ping", now.isoformat())
     _record_presence_state(db, presence_state, screen_state, now, data.idle_time_seconds)
@@ -1483,6 +1504,19 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session):
             result = heuristic_classify_activity(recent, idle_time_seconds=data.idle_time_seconds, recent_history=history)
         new_category = result["category"]
         new_summary = result["summary"]
+        presence_inference = result.get("presence_inference", "unknown")
+
+        # If AI says user was present, correct the most recent ActivityLog's is_idle flag
+        if presence_inference in ("active", "likely_active"):
+            latest_log = (
+                db.query(ActivityLog)
+                .filter(ActivityLog.device == "mac")
+                .order_by(ActivityLog.timestamp.desc())
+                .first()
+            )
+            if latest_log and latest_log.is_idle:
+                latest_log.is_idle = False
+                db.commit()
 
         _close_session_to_calendar(db, new_category, now)
         _maybe_start_session(db, new_category, new_summary, now)
@@ -1494,7 +1528,7 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session):
             "last_redacted_window_title",
             sanitize_window_title(data.app_name, data.window_title, privacy_mode, bool(data.detailed_capture_enabled)),
         )
-        log.info("Activity classified: %s - %s", new_category, new_summary)
+        log.info("Activity classified: %s - %s (presence: %s)", new_category, new_summary, presence_inference)
 
         study_mode = get_state(db, "study_mode")
         if study_mode == "active" and new_category in DISTRACTED_CATEGORIES and not get_state(db, "pending_prompt"):
