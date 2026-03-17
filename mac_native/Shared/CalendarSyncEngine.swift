@@ -75,6 +75,7 @@ final class CalendarSyncEngine {
         formatter.formatOptions = [.withInternetDateTime]
         return events.compactMap { event -> [String: Any]? in
             guard let start = event.startDate, let end = event.endDate, let title = event.title else { return nil }
+            guard event.calendar?.title != AppConstants.calendarName else { return nil }
             var dict: [String: Any] = [
                 "event_uid": event.eventIdentifier ?? "",
                 "title": title,

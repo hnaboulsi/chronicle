@@ -1270,6 +1270,7 @@ async def get_calendar_today(db: Session = Depends(get_db)):
     events = (
         db.query(UserCalendarEvent)
         .filter(UserCalendarEvent.start_at < day_end, UserCalendarEvent.end_at > day_start)
+        .filter(UserCalendarEvent.calendar_name != "Vero")
         .order_by(UserCalendarEvent.start_at)
         .all()
     )

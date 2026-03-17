@@ -504,14 +504,16 @@ def get_user_self_report(db: Session) -> str:
     if not value:
         return ""
     set_at_str = get_state(db, "user_self_report_at", "")
-    if set_at_str:
-        try:
-            set_at = datetime.fromisoformat(set_at_str)
-            set_at = set_at if set_at.tzinfo else set_at.replace(tzinfo=timezone.utc)
-            if (datetime.now(timezone.utc) - set_at).total_seconds() > 6 * 3600:
-                return ""
-        except Exception:
-            pass
+    if not set_at_str:
+        # No timestamp means this was set before expiry was added — treat as stale
+        return ""
+    try:
+        set_at = datetime.fromisoformat(set_at_str)
+        set_at = set_at if set_at.tzinfo else set_at.replace(tzinfo=timezone.utc)
+        if (datetime.now(timezone.utc) - set_at).total_seconds() > 6 * 3600:
+            return ""
+    except Exception:
+        return ""
     return value
 
 
@@ -521,6 +523,8 @@ def get_global_chat_context(db: Session) -> str:
     if not value:
         return ""
     set_at_str = get_state(db, "global_chat_context_at", "")
+    if not set_at_str:
+        return ""
     if set_at_str:
         try:
             set_at = datetime.fromisoformat(set_at_str)
@@ -634,7 +638,7 @@ def _queue_session_event(db: Session, category: str, summary: str, start_dt: dat
     }
     label = label_map.get(category, category.replace("_", " ").title())
     display = summary if summary else label
-    title = f"{display} ({duration_min} min)"
+    title = f"{display} · {_fmt_duration(duration_min)}"
     notes = f"Auto-logged by Vero | Category: {category}"
     queue_calendar_job(
         db,
@@ -647,13 +651,21 @@ def _queue_session_event(db: Session, category: str, summary: str, start_dt: dat
     )
 
 
+def _fmt_duration(minutes: int) -> str:
+    m = max(1, minutes)
+    if m < 60:
+        return f"{m}m"
+    h, rem = divmod(m, 60)
+    return f"{h}h {rem}m" if rem else f"{h}h"
+
+
 def _queue_walk_event(db: Session, location_from: str, location_to: str, start_dt: datetime, end_dt: datetime):
     duration_min = max(1, int((end_dt - start_dt).total_seconds() / 60))
     if location_from and location_to and location_from != location_to:
-        title = f"Walk: {location_from} to {location_to} ({duration_min} min)"
+        title = f"Walk: {location_from} → {location_to} · {_fmt_duration(duration_min)}"
     else:
         label = location_from or location_to or "Unknown"
-        title = f"Walk near {label} ({duration_min} min)"
+        title = f"Walk near {label} · {_fmt_duration(duration_min)}"
     queue_calendar_job(
         db,
         kind="walk",
@@ -666,7 +678,7 @@ def _queue_walk_event(db: Session, location_from: str, location_to: str, start_d
 
 def _queue_location_visit(db: Session, location_label: str, arrival_dt: datetime, departure_dt: datetime):
     duration_min = max(1, int((departure_dt - arrival_dt).total_seconds() / 60))
-    title = f"At {location_label} ({duration_min} min)"
+    title = f"{location_label} · {_fmt_duration(duration_min)}"
     queue_calendar_job(
         db,
         kind="location_visit",
@@ -1256,6 +1268,9 @@ def _record_presence_state(
 
 def _close_current_location_visit(db: Session, now: datetime, explicit_location: str | None = None):
     prev_location = explicit_location or get_state(db, "current_location")
+    # Strip "Outside " prefix — the visit title should name the place, not the departure state
+    if prev_location and prev_location.startswith("Outside "):
+        prev_location = prev_location[len("Outside "):]
     arrival_str = get_state(db, "location_arrival")
     if prev_location and arrival_str:
         try:
