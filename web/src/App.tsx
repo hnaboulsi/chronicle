@@ -30,6 +30,7 @@ type DashboardState = {
   tracking_enabled?: string;
   capture_interval_seconds?: number;
   presence_state?: string;
+  presence_display?: string;
   last_presence_change_at?: string;
   screen_state?: string;
   privacy_mode?: string;
@@ -216,21 +217,18 @@ function minutesUntil(isoStr: string): number | null {
   } catch { return null; }
 }
 
-function presenceLabel(value?: string) {
-  switch ((value ?? "").toLowerCase()) {
-    case "active":
-      return "Active";
-    case "idle":
-      return "Idle";
-    case "away":
-      return "Away";
-    case "locked":
-      return "Locked";
-    case "sleeping":
-      return "Sleeping";
-    default:
-      return "Unknown";
-  }
+function presenceLabel(s?: string): string {
+  return ({
+    active: "Active",
+    idle: "Idle",
+    away: "Away",
+    locked: "Mac locked",
+    sleeping: "Mac sleeping",
+    walking: "Walking",
+    at_location: "At location",
+    away_from_location: "In transit",
+    unknown: "Unknown",
+  } as Record<string, string>)[s ?? "unknown"] ?? s ?? "Unknown";
 }
 
 function privacyLabel(value?: string) {
@@ -513,7 +511,7 @@ function TodayPage({
                     {state?.current_location && (
                       <><strong>{state.current_location}</strong> · </>
                     )}
-                    Presence: <strong>{presenceLabel(state?.presence_state)}</strong> ·
+                    Presence: <strong>{presenceLabel(state?.presence_display ?? state?.presence_state)}</strong> ·
                     Last capture: <strong>{captureAgeMinutes != null ? `${captureAgeMinutes}m ago` : "Unknown"}</strong> ·
                     Active: <strong>{analytics?.total_active_minutes ?? 0} min</strong>
                   </>

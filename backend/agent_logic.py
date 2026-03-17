@@ -294,9 +294,9 @@ def normalize_presence_state(value: str | None, idle_time_seconds: int = 0) -> s
     cleaned = (value or "").strip().lower()
     if cleaned in VALID_PRESENCE_STATES:
         return cleaned
-    if idle_time_seconds < 120:
+    if idle_time_seconds < 300:   # 5 min (was 2 min)
         return "active"
-    if idle_time_seconds < 900:
+    if idle_time_seconds < 1800:  # 30 min (was 15 min)
         return "idle"
     return "away"
 
@@ -1201,7 +1201,7 @@ def compute_mac_status(states: dict, now: datetime | None = None) -> dict:
     screen_state = normalize_screen_state(states.get("screen_state"), presence_state)
     is_idle = presence_state != "active"
 
-    if heartbeat_age is None or heartbeat_age > 150:
+    if heartbeat_age is None or heartbeat_age > 300:
         status = "offline"
         reason = "No recent heartbeat from the Mac agent."
     elif not tracking_enabled or agent_state == "paused":
@@ -1358,7 +1358,8 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session):
             and zone_until
             and now < zone_until
         )
-        if not at_named_location:
+        is_currently_walking = get_state(db, "is_walking") == "true"
+        if not at_named_location and not is_currently_walking:
             set_state(db, "current_activity_category", "idle")
             set_state(db, "current_activity_summary", presence_summary(presence_state))
         return
@@ -1459,6 +1460,8 @@ def _handle_walking_transition(db: Session, now: datetime, is_walking: bool, loc
         if not was_walking:
             set_state(db, "walk_start", now.isoformat())
             set_state(db, "walk_from", location_label or get_state(db, "current_location"))
+            set_state(db, "current_activity_category", "break")
+            set_state(db, "current_activity_summary", "Out for a walk")
         set_state(db, "is_walking", "true")
         set_state(db, "walk_current_location", location_label or get_state(db, "current_location"))
         return
@@ -1476,6 +1479,8 @@ def _handle_walking_transition(db: Session, now: datetime, is_walking: bool, loc
             except Exception as exc:
                 log.error("Walk calendar queue error: %s", exc)
         set_state(db, "walk_start", "")
+        set_state(db, "current_activity_category", "unknown")
+        set_state(db, "current_activity_summary", "Just finished a walk")
     set_state(db, "is_walking", "false")
 
 

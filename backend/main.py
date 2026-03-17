@@ -675,6 +675,17 @@ def _build_state_payload(db: Session) -> dict:
     states["mac_idle"] = mac_status.get("mac_idle", False)
     states["presence_state"] = mac_status.get("presence_state")
     states["screen_state"] = mac_status.get("screen_state")
+    _is_walking = states.get("is_walking") == "true"
+    _cur_loc = states.get("current_location", "")
+    _zone_until = agent_logic._parse_iso_dt(states.get("zone_activity_until"))
+    if _is_walking:
+        states["presence_display"] = "walking"
+    elif _cur_loc and not _cur_loc.startswith("Outside ") and _zone_until and now < _zone_until:
+        states["presence_display"] = "at_location"
+    elif _cur_loc.startswith("Outside "):
+        states["presence_display"] = "away_from_location"
+    else:
+        states["presence_display"] = states.get("presence_state") or "unknown"
     states["last_presence_change_at"] = states.get("last_presence_change_at", "")
     states["last_capture_at"] = states.get("last_capture_at", states.get("last_mac_ping", ""))
     states["last_heartbeat_at"] = states.get("last_mac_heartbeat", "")
