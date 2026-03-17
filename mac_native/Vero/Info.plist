@@ -19,6 +19,8 @@
             </array>
         </dict>
     </array>
+    <key>LSUIElement</key>
+    <true/>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>NSCalendarsUsageDescription</key>

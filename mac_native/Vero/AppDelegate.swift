@@ -63,12 +63,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func openSettingsWindow() {
+        // Temporarily allow focus so the settings window can come to front,
+        // then restore .accessory so macOS doesn't treat us as a regular app.
+        NSApp.setActivationPolicy(.regular)
         if NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil) {
             NSApp.activate(ignoringOtherApps: true)
-            return
-        }
-        if NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil) {
+        } else {
+            NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
             NSApp.activate(ignoringOtherApps: true)
+        }
+        DispatchQueue.main.async {
+            NSApp.setActivationPolicy(.accessory)
         }
     }
 }
