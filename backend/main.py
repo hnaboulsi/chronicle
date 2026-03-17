@@ -53,6 +53,7 @@ def _run_migrations() -> list[str]:
                 conn.execute(text("ALTER TABLE hourly_summaries ADD COLUMN IF NOT EXISTS summary_source VARCHAR(32) DEFAULT 'llm'"))
                 conn.execute(text("ALTER TABLE hourly_summaries ADD COLUMN IF NOT EXISTS confidence FLOAT"))
                 conn.execute(text("ALTER TABLE hourly_summaries ADD COLUMN IF NOT EXISTS fallback_used BOOLEAN DEFAULT FALSE"))
+                conn.execute(text("ALTER TABLE user_calendar_events ADD COLUMN IF NOT EXISTS location VARCHAR"))
             else:  # sqlite doesn't support IF NOT EXISTS on ALTER
                 cols = [r[1] for r in conn.execute(text("PRAGMA table_info(activity_logs)"))]
                 if "battery_pct" not in cols:
@@ -68,6 +69,9 @@ def _run_migrations() -> list[str]:
                     conn.execute(text("ALTER TABLE hourly_summaries ADD COLUMN confidence FLOAT"))
                 if "fallback_used" not in summary_cols:
                     conn.execute(text("ALTER TABLE hourly_summaries ADD COLUMN fallback_used BOOLEAN DEFAULT 0"))
+                cal_cols = [r[1] for r in conn.execute(text("PRAGMA table_info(user_calendar_events)"))]
+                if "location" not in cal_cols:
+                    conn.execute(text("ALTER TABLE user_calendar_events ADD COLUMN location VARCHAR"))
 
             # Data migration: rename legacy app names to "Vero"
             conn.execute(text("""
@@ -511,6 +515,7 @@ async def initialize_runtime():
     # Start background task for hourly summary generation (even if Mac is offline)
     loop.create_task(_hourly_summary_scheduler())
     loop.create_task(_calendar_sync_scheduler())
+    loop.create_task(_event_checkin_scheduler())
 
 
 async def _hourly_summary_scheduler():
@@ -559,6 +564,22 @@ async def _calendar_sync_scheduler():
         except Exception as exc:
             log.error("Calendar sync scheduler error: %s", exc)
         await asyncio.sleep(30 * 60)  # Every 30 minutes
+
+
+async def _event_checkin_scheduler():
+    """Background task: fires check-in prompts for upcoming calendar events with locations."""
+    await asyncio.sleep(30)  # Stagger after other schedulers
+    while True:
+        try:
+            db = SessionLocal()
+            try:
+                await agent_logic._maybe_checkin_for_upcoming_events(db)
+                db.commit()
+            finally:
+                db.close()
+        except Exception as exc:
+            log.error("Event check-in scheduler error: %s", exc)
+        await asyncio.sleep(5 * 60)  # Every 5 minutes
 
 
 def _run_async(coro):
@@ -720,6 +741,12 @@ def _build_state_payload(db: Session) -> dict:
     states["last_ios_event_age_seconds"] = last_ios_event_age_seconds
     states["ios_recent_ping"] = (last_ios_ping_age_seconds is not None and last_ios_ping_age_seconds < 3600)
     states["ios_recent_event"] = (last_ios_event_age_seconds is not None and last_ios_event_age_seconds < 3600)
+    states["ios_ever_setup"] = (
+        states.get("seen_arrive_automation") == "true"
+        or states.get("seen_leave_automation") == "true"
+        or states.get("seen_charging_automation") == "true"
+        or states["ios_recent_event"]
+    )
     states["sleep_source"] = agent_logic.get_state(db, "sleep_source", "iphone_only")
     states["sleep_status_note"] = (
         "Sleep detection inactive until iPhone automation pings."
@@ -1111,7 +1138,7 @@ def update_settings(payload: Dict[str, Any], db: Session = Depends(get_db)):
         agent_logic.set_state(db, "tracking_enabled", str(payload["tracking_enabled"]).lower())
     if "backend_mode" in payload and payload["backend_mode"] in {"railway_primary", "local_primary", "hybrid_auto"}:
         agent_logic.set_state(db, "backend_mode", payload["backend_mode"])
-    if "ai_provider" in payload and payload["ai_provider"] in {"auto", "gemini", "openai"}:
+    if "ai_provider" in payload and payload["ai_provider"] in {"auto", "gemini", "openai", "mistral"}:
         agent_logic.set_state(db, "ai_provider", payload["ai_provider"])
         os.environ["VERO_AI_PROVIDER"] = payload["ai_provider"]
     if "llm_mode" in payload and payload["llm_mode"] in {"ultra_save", "balanced", "quality"}:
@@ -1374,6 +1401,7 @@ def upsert_mac_calendar_events(events: list[CalendarEventItem], db: Session = De
                 existing.end_at = end_utc
                 existing.calendar_name = ev.calendar_name
                 existing.notes = ev.notes
+                existing.location = ev.location
                 upserted += 1
                 continue
         db.add(UserCalendarEvent(
@@ -1383,6 +1411,7 @@ def upsert_mac_calendar_events(events: list[CalendarEventItem], db: Session = De
             end_at=end_utc,
             calendar_name=ev.calendar_name,
             notes=ev.notes,
+            location=ev.location,
         ))
         upserted += 1
     db.commit()
@@ -1963,6 +1992,11 @@ def confirm_checkin(payload: Dict[str, Any], db: Session = Depends(get_db)):
     elif correction:
         agent_logic.set_user_self_report(db, correction)
 
+    event_title = agent_logic.get_state(db, "pending_checkin_event_title", "")
+    event_location = agent_logic.get_state(db, "pending_checkin_event_location", "")
+    if event_title and event_location:
+        agent_logic.record_event_attendance(db, event_title, event_location, True)
+
     context_key = agent_logic.get_state(db, "pending_checkin_context_key", "")
     if context_key:
         cooldown_until = now + timedelta(seconds=agent_logic.CHECKIN_COOLDOWN_SECONDS)
@@ -1987,6 +2021,10 @@ def snooze_checkin(payload: Dict[str, Any], db: Session = Depends(get_db)):
 @app.post("/api/checkin/dismiss")
 def dismiss_checkin(db: Session = Depends(get_db)):
     now = datetime.now(timezone.utc)
+    event_title = agent_logic.get_state(db, "pending_checkin_event_title", "")
+    event_location = agent_logic.get_state(db, "pending_checkin_event_location", "")
+    if event_title and event_location:
+        agent_logic.record_event_attendance(db, event_title, event_location, False)
     context_key = agent_logic.get_state(db, "pending_checkin_context_key", "")
     if context_key:
         cooldown_until = now + timedelta(seconds=agent_logic.CHECKIN_COOLDOWN_SECONDS)
@@ -1998,7 +2036,7 @@ def dismiss_checkin(db: Session = Depends(get_db)):
 @app.get("/api/healthz")
 async def healthz():
     now = datetime.now(timezone.utc)
-    llm_configured = bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("OPENAI_API_KEY"))
+    llm_configured = bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("OPENAI_API_KEY") or os.environ.get("MISTRAL_API_KEY"))
     ai_provider = os.environ.get("VERO_AI_PROVIDER") or os.environ.get("LIFE_MANAGER_AI_PROVIDER", "auto")
 
     # --- Non-blocking DB check (3s timeout) ---

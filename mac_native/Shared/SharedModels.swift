@@ -225,6 +225,8 @@ struct CheckinResponse: Codable {
     let age_seconds: Int?
     let can_snooze: Bool?
     let can_dismiss: Bool?
+    let event_title: String?
+    let event_location: String?
 }
 
 struct ContextPreferences: Codable {

@@ -129,6 +129,7 @@ class UserCalendarEvent(Base):
     end_at = Column(DateTime, nullable=False)
     calendar_name = Column(String, nullable=True)
     notes = Column(Text, nullable=True)
+    location = Column(String, nullable=True)
     created_at = Column(DateTime, default=_utc_now)
     updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
 
@@ -140,6 +141,7 @@ class CalendarEventItem(BaseModel):
     end_at: datetime.datetime
     calendar_name: Optional[str] = None
     notes: Optional[str] = None
+    location: Optional[str] = None
 
 
 class iOSZoneEvent(BaseModel):

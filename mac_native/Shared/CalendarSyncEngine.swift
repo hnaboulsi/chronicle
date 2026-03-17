@@ -61,14 +61,14 @@ final class CalendarSyncEngine {
     func readTodayEvents() -> [[String: Any]] {
         let status = authorizationStatus()
         if #available(macOS 14.0, *) {
-            guard status == .fullAccess else { return [] }
+            guard status == .fullAccess || status == .writeOnly else { return [] }
         } else {
             guard status == .authorized else { return [] }
         }
         let now = Date()
         let cal = Foundation.Calendar.current
         let dayStart = cal.startOfDay(for: now)
-        guard let dayEnd = cal.date(byAdding: .day, value: 1, to: dayStart) else { return [] }
+        guard let dayEnd = cal.date(byAdding: .day, value: 2, to: dayStart) else { return [] }
         let predicate = store.predicateForEvents(withStart: dayStart, end: dayEnd, calendars: nil)
         let events = store.events(matching: predicate)
         let formatter = ISO8601DateFormatter()
@@ -84,6 +84,7 @@ final class CalendarSyncEngine {
             ]
             if let calName = event.calendar?.title { dict["calendar_name"] = calName }
             if let notes = event.notes, !notes.isEmpty { dict["notes"] = String(notes.prefix(500)) }
+            if let location = event.location, !location.isEmpty { dict["location"] = location }
             return dict
         }
     }

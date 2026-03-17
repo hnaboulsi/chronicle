@@ -22,10 +22,14 @@ except Exception as exc:
     _gemini_client = None
     log.error("Failed to initialize Gemini client: %s", exc)
 
+_mistral_api_key: str = (os.getenv("MISTRAL_API_KEY") or "").strip()
+if not _mistral_api_key:
+    log.warning("MISTRAL_API_KEY environment variable not set.")
+
 
 def _configured_provider() -> str:
     provider = (os.getenv("VERO_AI_PROVIDER") or os.getenv("LIFE_MANAGER_AI_PROVIDER") or "auto").strip().lower()
-    if provider not in {"auto", "gemini", "openai"}:
+    if provider not in {"auto", "gemini", "openai", "mistral"}:
         provider = "auto"
     return provider
 
@@ -36,13 +40,15 @@ def _provider_order() -> list[str]:
         return ["gemini", "openai"]
     if provider == "openai":
         return ["openai", "gemini"]
+    if provider == "mistral":
+        return ["mistral"]  # strict: no silent fallback, 2 RPM is precious
     if os.getenv("OPENAI_API_KEY"):
         return ["openai", "gemini"]
     return ["gemini", "openai"]
 
 
 def has_llm_provider() -> bool:
-    return bool(_gemini_client or os.getenv("OPENAI_API_KEY", "").strip())
+    return bool(_gemini_client or os.getenv("OPENAI_API_KEY", "").strip() or _mistral_api_key)
 
 
 def _gemini_model(task: str) -> str:
@@ -57,6 +63,14 @@ def _openai_model(task: str) -> str:
     mapping = {
         "default": os.getenv("VERO_OPENAI_MODEL") or os.getenv("LIFE_MANAGER_OPENAI_MODEL", "gpt-4o-mini"),
         "cheap": os.getenv("VERO_OPENAI_CHEAP_MODEL") or os.getenv("LIFE_MANAGER_OPENAI_CHEAP_MODEL", "gpt-4o-mini"),
+    }
+    return mapping.get(task, mapping["default"])
+
+
+def _mistral_model(task: str) -> str:
+    mapping = {
+        "default": os.getenv("VERO_MISTRAL_MODEL") or "mistral-small-latest",
+        "cheap": os.getenv("VERO_MISTRAL_CHEAP_MODEL") or "mistral-small-latest",
     }
     return mapping.get(task, mapping["default"])
 
@@ -118,6 +132,40 @@ async def _ask_openai(prompt: str, model_kind: str = "default") -> str:
         return ""
 
 
+async def _ask_mistral(prompt: str, model_kind: str = "default") -> str:
+    if not _mistral_api_key:
+        return ""
+    model = _mistral_model(model_kind)
+    try:
+        async with httpx.AsyncClient(timeout=90.0) as client:
+            response = await client.post(
+                "https://api.mistral.ai/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {_mistral_api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": "You are Vero, a personal productivity AI assistant."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    "temperature": 0.3,
+                },
+            )
+            response.raise_for_status()
+        data = response.json()
+        return (
+            data.get("choices", [{}])[0]
+            .get("message", {})
+            .get("content", "")
+            .strip()
+        )
+    except Exception as exc:
+        log.error("Error calling Mistral: %s", exc)
+        return ""
+
+
 async def ask_llm(prompt: str, context: Optional[str] = None, model_kind: str = "default") -> str:
     full_prompt = prompt
     if context:
@@ -126,6 +174,8 @@ async def ask_llm(prompt: str, context: Optional[str] = None, model_kind: str = 
     for provider in _provider_order():
         if provider == "openai":
             text = await _ask_openai(full_prompt, model_kind=model_kind)
+        elif provider == "mistral":
+            text = await _ask_mistral(full_prompt, model_kind=model_kind)
         else:
             text = await _ask_gemini(full_prompt, model_kind=model_kind)
         if text:

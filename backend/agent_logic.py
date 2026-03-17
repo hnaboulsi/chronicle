@@ -808,6 +808,7 @@ async def _sync_single_ical(db: Session, url: str, now_utc: datetime) -> tuple[i
             uid = str(component.get("UID", "")).strip()
             cal_name = feed_cal_name or str(component.get("X-WR-CALNAME", "")).strip() or None
             notes = str(component.get("DESCRIPTION", "")).strip() or None
+            location_val = str(component.get("LOCATION", "")).strip() or None
 
             s = dtstart.dt
             e = dtend.dt if dtend else s
@@ -836,6 +837,7 @@ async def _sync_single_ical(db: Session, url: str, now_utc: datetime) -> tuple[i
                     existing.end_at = e
                     existing.calendar_name = cal_name
                     existing.notes = notes[:500] if notes else None
+                    existing.location = location_val[:200] if location_val else None
                     synced += 1
                     continue
 
@@ -846,6 +848,7 @@ async def _sync_single_ical(db: Session, url: str, now_utc: datetime) -> tuple[i
                 end_at=e,
                 calendar_name=cal_name,
                 notes=notes[:500] if notes else None,
+                location=location_val[:200] if location_val else None,
             ))
             synced += 1
         except Exception:
@@ -1146,6 +1149,8 @@ def clear_pending_checkin(db: Session):
     set_state(db, "pending_checkin_created_at", "")
     set_state(db, "pending_checkin_expires_at", "")
     set_state(db, "pending_checkin_context_key", "")
+    set_state(db, "pending_checkin_event_title", "")
+    set_state(db, "pending_checkin_event_location", "")
 
 
 def _checkin_is_active(db: Session, now: datetime | None = None) -> bool:
@@ -1175,6 +1180,8 @@ def get_checkin_payload(db: Session, now: datetime | None = None) -> dict:
         "age_seconds": age_seconds,
         "can_snooze": True,
         "can_dismiss": True,
+        "event_title": get_state(db, "pending_checkin_event_title") or None,
+        "event_location": get_state(db, "pending_checkin_event_location") or None,
     }
 
 
@@ -1215,6 +1222,102 @@ def _is_checkin_stale(db: Session, now: datetime) -> bool:
     if not last_checkin:
         return True
     return (now - last_checkin).total_seconds() > 1800
+
+
+# ---------------------------------------------------------------------------
+# Calendar event attendance tracking
+# ---------------------------------------------------------------------------
+
+def _attendance_key(title: str, location: str) -> str:
+    """Stable slug for event+location pair."""
+    raw = f"{title.lower().strip()}|{location.lower().strip()}"
+    return "event_attendance:" + re.sub(r"[^a-z0-9|]", "_", raw)[:80]
+
+
+def record_event_attendance(db: Session, title: str, location: str, attended: bool) -> None:
+    key = _attendance_key(title, location)
+    history = json.loads(get_state(db, key, "[]"))
+    history.append(attended)
+    set_state(db, key, json.dumps(history[-10:]))  # keep last 10
+
+
+def get_attendance_summary(db: Session, title: str, location: str) -> str:
+    """Return human-readable attendance pattern, e.g. 'usually goes (4/5)'."""
+    key = _attendance_key(title, location)
+    history = json.loads(get_state(db, key, "[]"))
+    if not history:
+        return "no history"
+    attended = sum(1 for x in history if x)
+    total = len(history)
+    if attended / total >= 0.7:
+        return f"usually goes ({attended}/{total})"
+    elif attended / total <= 0.3:
+        return f"usually skips ({attended}/{total})"
+    return f"mixed ({attended}/{total})"
+
+
+def _location_near_zone(event_location: str, current_zone: str) -> bool:
+    """True if event location string suggests the user is already near it."""
+    if not event_location or not current_zone:
+        return False
+    loc = event_location.lower()
+    zone = current_zone.lower()
+    if zone in loc or loc in zone:
+        return True
+    synonyms = [{"home", "house"}, {"office", "work", "studio"}]
+    for group in synonyms:
+        if any(w in loc for w in group) and any(w in zone for w in group):
+            return True
+    return False
+
+
+async def _maybe_checkin_for_upcoming_events(db: Session) -> None:
+    """Fire a check-in prompt for calendar events with locations starting in 15–45 min."""
+    now_utc = datetime.now(timezone.utc)
+    if _checkin_is_active(db, now_utc):
+        return  # existing check-in already pending
+
+    now_naive = now_utc.replace(tzinfo=None)
+    window_start = now_naive + timedelta(minutes=15)
+    window_end = now_naive + timedelta(minutes=45)
+
+    events = (
+        db.query(UserCalendarEvent)
+        .filter(
+            UserCalendarEvent.start_at >= window_start,
+            UserCalendarEvent.start_at <= window_end,
+            UserCalendarEvent.location != None,
+            UserCalendarEvent.calendar_name != "Vero",
+        )
+        .order_by(UserCalendarEvent.start_at)
+        .all()
+    )
+
+    for ev in events:
+        dedup_key = f"calendar_event_checkin_fired:{ev.id}:{now_naive.date()}"
+        if get_state(db, dedup_key):
+            continue  # already fired for this event today
+
+        attendance = get_attendance_summary(db, ev.title, ev.location)
+        current_zone = get_state(db, "current_location", "")
+        mins_away = int((ev.start_at - now_naive).total_seconds() / 60)
+
+        if _location_near_zone(ev.location, current_zone):
+            zone_hint = f"You're near {ev.location}. "
+        else:
+            zone_hint = ""
+
+        history_hint = f" (you {attendance})" if attendance != "no history" else ""
+        msg = (
+            f"{zone_hint}{ev.title} at {ev.location} starts in {mins_away} min{history_hint}. Are you going?"
+        )
+
+        _set_pending_checkin(db, msg, now_utc, f"cal_event:{ev.id}")
+        set_state(db, "pending_checkin_event_title", ev.title)
+        set_state(db, "pending_checkin_event_location", ev.location)
+        set_state(db, dedup_key, now_utc.isoformat())
+        log.info("Calendar event check-in generated: %s", msg)
+        break  # one prompt at a time
 
 
 def _set_resume_checkin(db: Session, now: datetime):

@@ -850,6 +850,7 @@ select:focus-visible {
 }
 .tag-manual { color: var(--accent); border-color: var(--accent-dim); }
 
+.cal-brief { font-size: 0.78rem; color: var(--accent); margin-bottom: 8px; }
 .checkin-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
 .btn-primary {
   background: var(--accent); color: #fff; border: none; border-radius: 8px;

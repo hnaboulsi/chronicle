@@ -25,6 +25,7 @@ type DashboardState = {
   current_activity_summary?: string;
   current_location?: string;
   ios_recent_event?: boolean;
+  ios_ever_setup?: boolean;
   sleep_status_note?: string;
   service_health?: string;
   tracking_enabled?: string;
@@ -132,6 +133,8 @@ type HealthResponse = {
 type CheckinResponse = {
   checkin?: string | null;
   guess?: string | null;
+  event_title?: string | null;
+  event_location?: string | null;
 };
 
 type HourlySummary = {
@@ -692,6 +695,9 @@ function TodayPage({
       {checkin?.checkin ? (
         <div className="col-span-4">
           <Surface title="Check-in" eyebrow="Needs input">
+            {checkin.event_title ? (
+              <p className="cal-brief">📅 {checkin.event_title}{checkin.event_location ? ` · ${checkin.event_location}` : ""}</p>
+            ) : null}
             <p className="lead">{checkin.checkin}</p>
             {checkin.guess ? <p className="muted">Guess: {checkin.guess}</p> : null}
             <div className="checkin-actions">
@@ -779,7 +785,7 @@ function SetupPage({
           />
           <SetupStep
             title="4. Add optional iPhone shortcuts"
-            status={state?.ios_recent_event ? "Active" : "Optional"}
+            status={state?.ios_recent_event ? "Active" : state?.ios_ever_setup ? "Done" : "Optional"}
             body="Download the shortcuts below and install them on iPhone for zone and sleep context."
           />
         </div>
