@@ -470,8 +470,9 @@ function TodayPage({
     onRefreshLogs();
   }
 
-  const handleCheckin = async (action: "confirm" | "snooze" | "dismiss") => {
-    await fetch(`/api/checkin/${action}`, { method: "POST" }).catch(() => {});
+  const handleCheckin = async (action: "confirm" | "no" | "snooze" | "dismiss") => {
+    const endpoint = action === "no" ? "/api/checkin/dismiss" : `/api/checkin/${action}`;
+    await fetch(endpoint, { method: "POST" }).catch(() => {});
     onRefreshLogs();
   };
 
@@ -614,6 +615,7 @@ function TodayPage({
             {checkin.guess ? <p className="muted">Guess: {checkin.guess}</p> : null}
             <div className="checkin-actions">
               <button className="btn-primary" onClick={() => void handleCheckin("confirm")}>Confirm</button>
+              <button className="btn-secondary" onClick={() => void handleCheckin("no")}>No</button>
               <button className="btn-secondary" onClick={() => void handleCheckin("snooze")}>Snooze</button>
               <button className="btn-ghost" onClick={() => void handleCheckin("dismiss")}>Dismiss</button>
             </div>
