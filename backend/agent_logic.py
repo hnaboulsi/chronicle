@@ -35,6 +35,7 @@ DEFAULTS = {
     "capture_interval_seconds": "300",
     "polling_interval_seconds": "300",
     "classification_interval_seconds": "300",
+    "locked_capture_interval_seconds": "1800",
     "llm_daily_cap": "30",   # Gemini free tier is generous; 30 is a safe daily default
     "sleep_source": "iphone_only",
     "user_timezone": "America/Los_Angeles",
@@ -86,6 +87,15 @@ def get_capture_interval_seconds(db: Session) -> int:
         or DEFAULTS["capture_interval_seconds"]
     )
     return max(60, _safe_int(raw, 300))
+
+
+def get_effective_capture_interval_seconds(db: Session, screen_state: str = "visible") -> int:
+    """Return capture interval, extended to 30 min when screen is locked or sleeping."""
+    base = get_capture_interval_seconds(db)
+    if screen_state in ("locked", "sleeping"):
+        raw = get_state(db, "locked_capture_interval_seconds") or DEFAULTS["locked_capture_interval_seconds"]
+        return max(base, _safe_int(raw, 1800))
+    return base
 
 
 def set_capture_interval_seconds(db: Session, seconds: int):
@@ -324,6 +334,37 @@ def normalize_presence_state(value: str | None, idle_time_seconds: int = 0) -> s
     return "away"
 
 
+def apply_mac_presence_overrides(db: Session, data: MacTelemetry, presence_state: str) -> str:
+    """Apply consecutive-log and window-change overrides to presence_state.
+
+    Called synchronously in receive_mac_telemetry (before ActivityLog is written)
+    so the stored presence_state is correct — not just in the background task.
+    """
+    # loginwindow = screen is locked (backend fallback when Mac lock notification missed)
+    if (data.app_name or "").lower() == "loginwindow":
+        return "locked"
+
+    if presence_state in ("away", "idle"):
+        # If the app or window changed since the previous log, the user was active
+        prev_log = (
+            db.query(ActivityLog)
+            .filter(ActivityLog.device == "mac")
+            .order_by(ActivityLog.timestamp.desc())
+            .first()
+        )
+        if prev_log and (
+            (prev_log.app_name or "") != (data.app_name or "")
+            or (prev_log.window_title or "") != (data.window_title or "")
+        ):
+            return "active"
+
+    # Mac client sent window-change elapsed time — if recent, user is active
+    if data.seconds_since_window_change is not None and data.seconds_since_window_change < 300:
+        return "active"
+
+    return presence_state
+
+
 def normalize_screen_state(value: str | None, presence_state: str) -> str:
     cleaned = (value or "").strip().lower()
     if cleaned in VALID_SCREEN_STATES:
@@ -451,8 +492,51 @@ def clear_pending_prompt(db: Session):
     set_state(db, "pending_prompt", "")
 
 
+def set_user_self_report(db: Session, value: str):
+    """Store user self-report with a timestamp so it can be expired after 6 hours."""
+    set_state(db, "user_self_report", value)
+    set_state(db, "user_self_report_at", datetime.now(timezone.utc).isoformat())
+
+
+def get_user_self_report(db: Session) -> str:
+    """Return user_self_report only if it was set within the last 6 hours."""
+    value = get_state(db, "user_self_report", "")
+    if not value:
+        return ""
+    set_at_str = get_state(db, "user_self_report_at", "")
+    if set_at_str:
+        try:
+            set_at = datetime.fromisoformat(set_at_str)
+            set_at = set_at if set_at.tzinfo else set_at.replace(tzinfo=timezone.utc)
+            if (datetime.now(timezone.utc) - set_at).total_seconds() > 6 * 3600:
+                return ""
+        except Exception:
+            pass
+    return value
+
+
+def get_global_chat_context(db: Session) -> str:
+    """Return global_chat_context only if it was set today (local time)."""
+    value = get_state(db, "global_chat_context", "")
+    if not value:
+        return ""
+    set_at_str = get_state(db, "global_chat_context_at", "")
+    if set_at_str:
+        try:
+            set_at = datetime.fromisoformat(set_at_str)
+            set_at = set_at if set_at.tzinfo else set_at.replace(tzinfo=timezone.utc)
+            tz = resolve_user_timezone(db)
+            today_local = datetime.now(timezone.utc).astimezone(tz).date()
+            set_date_local = set_at.astimezone(tz).date()
+            if set_date_local < today_local:
+                return ""
+        except Exception:
+            pass
+    return value
+
+
 def update_context_with_reply(reply: str, db: Session):
-    set_state(db, "user_self_report", reply)
+    set_user_self_report(db, reply)
     set_state(db, "last_user_checkin", datetime.now(timezone.utc).isoformat())
     log.info("User self-reported: %s", reply)
 
@@ -851,7 +935,7 @@ async def _generate_and_store_hourly_summary(db: Session, now: datetime, force_c
     if can_use_llm(db, now):
         try:
             app_cache = json.loads(get_state(db, "app_category_cache") or "{}")
-            global_context = get_state(db, "global_chat_context", "")
+            global_context = get_global_chat_context(db)
             calendar_events = get_calendar_events_for_window(db, hour_start, hour_end)
             upcoming_events = get_calendar_events_for_window(db, hour_end, hour_end + timedelta(hours=2))
             manual_logs = get_manual_logs_for_hour(db, hour_start, hour_end)
@@ -1388,8 +1472,8 @@ async def _refresh_app_category_cache(db: Session, now: datetime):
     app_list = "\n".join(
         f"- {app}: {title}" for app, title in list(app_titles.items())[:30]
     )
-    global_context = get_state(db, "global_chat_context", "")
-    context_str = f"User's permanent context notes:\n{global_context}\n\n" if global_context else ""
+    global_context = get_global_chat_context(db)
+    context_str = f"User's context notes:\n{global_context}\n\n" if global_context else ""
 
     prompt = (
         "Classify these Mac apps for a personal productivity tracker.\n"
@@ -1430,6 +1514,7 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session):
     privacy_mode = get_state(db, "privacy_mode", DEFAULTS["privacy_mode"])
     presence_state = normalize_presence_state(data.presence_state, data.idle_time_seconds)
     screen_state = normalize_screen_state(data.screen_state, presence_state)
+    presence_state = apply_mac_presence_overrides(db, data, presence_state)
 
     # If the window/app changed from the previous log, the user was definitely at their
     # computer between captures — override "away" regardless of idle_time_seconds.
@@ -1485,9 +1570,9 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session):
         set_state(db, "last_vagueness_check", now.isoformat())
 
         recent = get_recent_mac_logs(db, limit=20)
-        user_self_report = get_state(db, "user_self_report")
+        user_self_report = get_user_self_report(db)
         history = getattr(data, "recent_history", None)
-        global_context = get_state(db, "global_chat_context", "")
+        global_context = get_global_chat_context(db)
         low_signal = (
             len(recent) < 3
             or all(

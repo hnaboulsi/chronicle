@@ -73,6 +73,7 @@ type CalendarEventUI = {
   is_past: boolean;
   event_type?: string;
   event_note?: string | null;
+  ai_brief?: string | null;
 };
 
 type CalendarResponse = {
@@ -609,6 +610,7 @@ function TodayPage({
                     {ev.calendar_name && <span className="cal-name">{ev.calendar_name}</span>}
                     {ev.is_current && <span className="cal-badge">Now</span>}
                     {minsAway != null && minsAway <= 30 ? <span className="cal-countdown">in {minsAway}m</span> : null}
+                    {ev.ai_brief && <span className="cal-brief">{ev.ai_brief}</span>}
                   </div>
                 );
               })}

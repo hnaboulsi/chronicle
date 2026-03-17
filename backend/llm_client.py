@@ -502,5 +502,29 @@ async def analyze_calendar_day(events_text: str, now_label: str) -> dict:
     }
 
 
+async def generate_calendar_event_briefs(
+    events_text: str,
+    recent_activity_text: str,
+    global_context: str,
+    now_label: str,
+) -> dict:
+    """Generate a one-sentence AI context brief for each calendar event.
+
+    Returns: {"Event Title": "brief sentence.", ...}
+    """
+    prompt = (
+        f"You are Vero, a personal productivity AI. Current time: {now_label}.\n"
+        + (f"User context: {global_context}\n" if global_context else "")
+        + (f"\nRecent activity (last 2 hours):\n{recent_activity_text}\n" if recent_activity_text else "")
+        + f"\nToday's calendar events:\n{events_text}\n\n"
+        "For each event write a one-sentence brief (under 20 words) grounded in the user's recent activity. "
+        "If no connection is obvious, describe the event's purpose plainly.\n"
+        'Respond ONLY with JSON: {"Event Title": "brief sentence.", ...}'
+    )
+    text = await ask_llm(prompt, model_kind="cheap")
+    result = _parse_json_response(text)
+    return result if isinstance(result, dict) else {}
+
+
 async def ask_gemini(prompt: str, context: Optional[str] = None) -> str:
     return await ask_llm(prompt, context=context, model_kind="default")

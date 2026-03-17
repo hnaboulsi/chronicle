@@ -703,13 +703,15 @@ def _build_state_payload(db: Session) -> dict:
             last_ios_ping_age_seconds = None
 
     mac_status = agent_logic.compute_mac_status(states, now)
+    current_screen_state = states.get("screen_state", "visible") or "visible"
+    effective_interval = agent_logic.get_effective_capture_interval_seconds(db, current_screen_state)
     states["backend_target_url"] = _get_backend_url()
-    states["capture_interval_seconds"] = capture_interval_seconds
-    states["polling_interval_seconds"] = capture_interval_seconds
+    states["capture_interval_seconds"] = effective_interval
+    states["polling_interval_seconds"] = effective_interval
     states["classification_interval_seconds"] = max(300, capture_interval_seconds)
     states["privacy_mode"] = agent_logic.get_state(db, "privacy_mode", agent_logic.DEFAULTS["privacy_mode"])
     states["calendar_sync_enabled"] = agent_logic.get_state(db, "calendar_sync_enabled", agent_logic.DEFAULTS["calendar_sync_enabled"]).lower() == "true"
-    states["mac_online_threshold_seconds"] = max(180, capture_interval_seconds * 2 + 30)
+    states["mac_online_threshold_seconds"] = max(180, effective_interval * 2 + 30)
     states["last_mac_ping_age_seconds"] = mac_status["last_mac_snapshot_age_seconds"]
     states["last_mac_heartbeat_age_seconds"] = mac_status["last_mac_heartbeat_age_seconds"]
     states["last_mac_snapshot_age_seconds"] = mac_status["last_mac_snapshot_age_seconds"]
@@ -896,6 +898,7 @@ def receive_mac_telemetry(data: MacTelemetry, background_tasks: BackgroundTasks,
     privacy_mode = agent_logic.get_state(db, "privacy_mode", agent_logic.DEFAULTS["privacy_mode"])
     presence_state = agent_logic.normalize_presence_state(data.presence_state, data.idle_time_seconds)
     screen_state = agent_logic.normalize_screen_state(data.screen_state, presence_state)
+    presence_state = agent_logic.apply_mac_presence_overrides(db, data, presence_state)
     sanitized_title = agent_logic.sanitize_window_title(
         data.app_name,
         data.window_title,
@@ -906,7 +909,7 @@ def receive_mac_telemetry(data: MacTelemetry, background_tasks: BackgroundTasks,
         device="mac",
         app_name=data.app_name,
         window_title=sanitized_title,
-        is_idle=(data.idle_time_seconds or 0) >= 300,  # idle only after 5 min of no input
+        is_idle=presence_state not in ("active",),
         presence_state=presence_state,
         screen_state=screen_state,
     )
@@ -1276,19 +1279,21 @@ async def get_calendar_today(db: Session = Depends(get_db)):
             return ""
         return dt.replace(tzinfo=timezone.utc).astimezone(tz).isoformat()
 
+    import json as _json
     # Check cached AI analysis (cache key = date + event count, refreshed hourly)
     cache_key = f"calendar_ai_cache:{now_local.strftime('%Y-%m-%d')}:{len(events)}:{now_local.hour}"
     cached_raw = agent_logic.get_state(db, "calendar_ai_cache_key", "")
     cached_types_raw = agent_logic.get_state(db, "calendar_ai_event_types", "{}")
     cached_notes_raw = agent_logic.get_state(db, "calendar_ai_event_notes", "{}")
     cached_insight = agent_logic.get_state(db, "calendar_ai_day_insight", "")
+    cached_briefs_raw = agent_logic.get_state(db, "calendar_ai_event_briefs", "{}")
 
     event_types: dict = {}
     event_notes: dict = {}
     ai_day_insight: str = ""
+    event_briefs: dict = {}
 
     if cached_raw == cache_key and (cached_types_raw or cached_insight):
-        import json as _json
         try:
             event_types = _json.loads(cached_types_raw)
         except Exception:
@@ -1298,8 +1303,11 @@ async def get_calendar_today(db: Session = Depends(get_db)):
         except Exception:
             event_notes = {}
         ai_day_insight = cached_insight
+        try:
+            event_briefs = _json.loads(cached_briefs_raw)
+        except Exception:
+            event_briefs = {}
     elif events and agent_logic.can_use_llm(db, now):
-        agent_logic.register_llm_call(db, now)
         import llm_client
         events_text = "\n".join(
             f"- {e.title} ({_local_iso(e.start_at)[11:16]}–{_local_iso(e.end_at)[11:16]})"
@@ -1308,15 +1316,27 @@ async def get_calendar_today(db: Session = Depends(get_db)):
             for e in events
         )
         now_label = now_local.strftime("%I:%M %p")
-        result = await llm_client.analyze_calendar_day(events_text, now_label)
+        global_context = agent_logic.get_global_chat_context(db)
+        recent_logs = agent_logic.get_recent_mac_logs(db, limit=15)
+        recent_activity_text = "\n".join(
+            f"[{(l.get('timestamp') or '')[:16]}] {l.get('app_name') or ''}: {(l.get('window_title') or '')[:80]}"
+            for l in recent_logs
+            if (l.get('app_name') or l.get('window_title'))
+        )
+        agent_logic.register_llm_call(db, now)
+        agent_logic.register_llm_call(db, now)
+        result, event_briefs = await asyncio.gather(
+            llm_client.analyze_calendar_day(events_text, now_label),
+            llm_client.generate_calendar_event_briefs(events_text, recent_activity_text, global_context, now_label),
+        )
         event_types = result.get("event_types") or {}
         event_notes = result.get("event_notes") or {}
         ai_day_insight = result.get("day_insight") or ""
-        import json as _json
         agent_logic.set_state(db, "calendar_ai_cache_key", cache_key)
         agent_logic.set_state(db, "calendar_ai_event_types", _json.dumps(event_types))
         agent_logic.set_state(db, "calendar_ai_event_notes", _json.dumps(event_notes))
         agent_logic.set_state(db, "calendar_ai_day_insight", ai_day_insight)
+        agent_logic.set_state(db, "calendar_ai_event_briefs", _json.dumps(event_briefs))
 
     return {
         "events": [
@@ -1330,6 +1350,7 @@ async def get_calendar_today(db: Session = Depends(get_db)):
                 "is_past": e.end_at < now_utc_naive,
                 "event_type": event_types.get(e.title, "other"),
                 "event_note": event_notes.get(e.title) or None,
+                "ai_brief": event_briefs.get(e.title) or None,
             }
             for e in events
         ],
@@ -1826,12 +1847,13 @@ async def chat_message(payload: Dict[str, Any], db: Session = Depends(get_db)):
                 reply = parsed.get("reply", reply)
                 extracted = parsed.get("extracted_context")
                 if extracted:
-                    existing_global = agent_logic.get_state(db, "global_chat_context", "")
+                    existing_global = agent_logic.get_global_chat_context(db)
                     facts = [f.strip() for f in existing_global.split('|') if f.strip()]
                     facts.append(extracted.strip())
                     if len(facts) > 4:
                         facts = facts[-4:]
                     agent_logic.set_state(db, "global_chat_context", " | ".join(facts))
+                    agent_logic.set_state(db, "global_chat_context_at", now.isoformat())
                 llm_location = parsed.get("location")
                 llm_location_action = parsed.get("location_action")
                 if llm_location:
@@ -1893,7 +1915,7 @@ async def chat_message(payload: Dict[str, Any], db: Session = Depends(get_db)):
         and not any(kw in msg_lower for kw in _ACTIVITY_KEYWORDS)
     )
     if not _is_location_only:
-        agent_logic.set_state(db, "user_self_report", message)
+        agent_logic.set_user_self_report(db, message)
 
     # Store in chat history
     history.append({"time": now.isoformat() + "Z", "user": message, "reply": reply})
@@ -1936,9 +1958,9 @@ def confirm_checkin(payload: Dict[str, Any], db: Session = Depends(get_db)):
         # Use the guess as the activity
         guess = agent_logic.get_state(db, "checkin_guess")
         if guess:
-            agent_logic.set_state(db, "user_self_report", guess)
+            agent_logic.set_user_self_report(db, guess)
     elif correction:
-        agent_logic.set_state(db, "user_self_report", correction)
+        agent_logic.set_user_self_report(db, correction)
 
     context_key = agent_logic.get_state(db, "pending_checkin_context_key", "")
     if context_key:
