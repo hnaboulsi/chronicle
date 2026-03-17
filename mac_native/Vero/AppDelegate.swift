@@ -59,7 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        true
+        false  // Menu bar app — window close must NOT kill the process
     }
 
     func openSettingsWindow() {

@@ -54,7 +54,6 @@ type BackendSettings = {
   llm_mode: string;
   hourly_summaries_enabled: boolean;
   classification_interval_seconds: number;
-  llm_daily_cap: number;
   user_timezone: string;
   privacy_mode: "private" | "detailed";
   calendar_sync_enabled: boolean;
@@ -62,6 +61,19 @@ type BackendSettings = {
   calendar_ical_urls: string[];
   calendar_last_sync: string;
   calendar_sync_error: string;
+};
+
+type ContextSummary = {
+  facts: string[];
+  current_self_report: string;
+  current_location: string;
+  activity_category: string;
+  activity_summary: string;
+  presence: string;
+  pending_checkin: string | null;
+  zone_lock_active: boolean;
+  zone_lock_until: string | null;
+  chat_message_count: number;
 };
 
 type CalendarEventUI = {
@@ -480,26 +492,45 @@ function TodayPage({
   const [chatMessages, setChatMessages] = useState<{user: string; reply: string; time: string}[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatSending, setChatSending] = useState(false);
+  const [checkinLoading, setCheckinLoading] = useState(false);
+  const [loggingActivity, setLoggingActivity] = useState<string | null>(null);
 
   async function handleQuickLog(activity_type: string, label: string, note?: string) {
-    await fetchJson("/api/manual-log", {
-      method: "POST",
-      body: JSON.stringify({ activity_type, label, note: note || undefined }),
-    });
-    setLoggedMsg(`${label} logged!`);
-    setTimeout(() => setLoggedMsg(""), 2000);
-    onRefreshLogs();
+    if (loggingActivity) return;
+    setLoggingActivity(activity_type);
+    try {
+      await fetchJson("/api/manual-log", {
+        method: "POST",
+        body: JSON.stringify({ activity_type, label, note: note || undefined }),
+      });
+      setLoggedMsg(`${label} logged!`);
+      setTimeout(() => setLoggedMsg(""), 2000);
+      onRefreshLogs();
+    } finally {
+      setLoggingActivity(null);
+    }
   }
 
   const handleCheckin = async (action: "confirm" | "no" | "snooze" | "dismiss") => {
-    const endpoint = action === "no" ? "/api/checkin/dismiss" : `/api/checkin/${action}`;
-    await fetch(endpoint, { method: "POST" }).catch(() => {});
-    onRefreshLogs();
+    if (checkinLoading) return;
+    setCheckinLoading(true);
+    try {
+      const endpoint = action === "no" ? "/api/checkin/dismiss" : `/api/checkin/${action}`;
+      await fetch(endpoint, { method: "POST" }).catch(() => {});
+      onRefreshLogs();
+    } finally {
+      setCheckinLoading(false);
+    }
   };
+
+  async function handleClearChat() {
+    await fetch("/api/chat/history", { method: "DELETE" }).catch(() => {});
+    setChatMessages([]);
+  }
 
   useEffect(() => {
     fetchJson<{messages: {user: string; reply: string; time: string}[]}>("/api/chat/history")
-      .then(r => setChatMessages((r.messages ?? []).slice(-5)))
+      .then(r => setChatMessages(r.messages ?? []))
       .catch(() => {});
   }, []);
 
@@ -513,7 +544,7 @@ function TodayPage({
         method: "POST",
         body: JSON.stringify({ message: msg }),
       });
-      setChatMessages(prev => [...prev.slice(-4), { user: msg, reply: r.reply, time: new Date().toISOString() }]);
+      setChatMessages(prev => [...prev, { user: msg, reply: r.reply, time: new Date().toISOString() }]);
       onRefreshLogs();
     } finally {
       setChatSending(false);
@@ -624,11 +655,22 @@ function TodayPage({
 
       {/* Row 3: Vero chat */}
       <div className="col-span-4">
-        <Surface title="Vero" eyebrow="Tell me what's up">
+        <Surface
+          title="Vero"
+          eyebrow="Tell me what's up"
+          action={chatMessages.length > 0 ? (
+            <button className="secondary-button" style={{ fontSize: "0.8rem", padding: "4px 10px" }} onClick={() => void handleClearChat()}>Clear</button>
+          ) : undefined}
+        >
           <div className="quicklog-row">
             {QUICK_LOG_PRESETS.map(({ emoji, label, activity_type }) => (
-              <button key={activity_type} className="quicklog-btn" onClick={() => handleQuickLog(activity_type, label)}>
-                <span className="quicklog-emoji">{emoji}</span>
+              <button
+                key={activity_type}
+                className="quicklog-btn"
+                onClick={() => void handleQuickLog(activity_type, label)}
+                disabled={!!loggingActivity}
+              >
+                <span className="quicklog-emoji">{loggingActivity === activity_type ? "…" : emoji}</span>
                 <span>{label}</span>
               </button>
             ))}
@@ -701,10 +743,10 @@ function TodayPage({
             <p className="lead">{checkin.checkin}</p>
             {checkin.guess ? <p className="muted">Guess: {checkin.guess}</p> : null}
             <div className="checkin-actions">
-              <button className="btn-primary" onClick={() => void handleCheckin("confirm")}>Confirm</button>
-              <button className="btn-secondary" onClick={() => void handleCheckin("no")}>No</button>
-              <button className="btn-secondary" onClick={() => void handleCheckin("snooze")}>Snooze</button>
-              <button className="btn-ghost" onClick={() => void handleCheckin("dismiss")}>Dismiss</button>
+              <button className="primary-button" disabled={checkinLoading} onClick={() => void handleCheckin("confirm")}>Confirm</button>
+              <button className="secondary-button" disabled={checkinLoading} onClick={() => void handleCheckin("no")}>No</button>
+              <button className="secondary-button" disabled={checkinLoading} onClick={() => void handleCheckin("snooze")}>Snooze</button>
+              <button className="secondary-button" style={{ background: "transparent", border: "none" }} disabled={checkinLoading} onClick={() => void handleCheckin("dismiss")}>Dismiss</button>
             </div>
           </Surface>
         </div>
@@ -896,6 +938,19 @@ function DiagnosticsPage({
   health: HealthResponse | null;
   settings: BackendSettings | null;
 }) {
+  const [contextSummary, setContextSummary] = useState<ContextSummary | null>(null);
+  const [rawState, setRawState] = useState<Record<string, unknown> | null>(null);
+
+  useEffect(() => {
+    fetchJson<ContextSummary>("/api/context-summary").then(setContextSummary).catch(() => {});
+    fetchJson<Record<string, unknown>>("/api/state").then(setRawState).catch(() => {});
+  }, []);
+
+  const handleClearContext = async () => {
+    await fetch("/api/chat/history", { method: "DELETE" }).catch(() => {});
+    setContextSummary(prev => prev ? { ...prev, facts: [], chat_message_count: 0, current_self_report: "" } : null);
+  };
+
   return (
     <div className="page-grid">
       <div className="stack">
@@ -907,6 +962,12 @@ function DiagnosticsPage({
           <Field label="Last heartbeat" value={formatAge(state?.last_mac_heartbeat_age_seconds)} />
           <Field label="Last capture" value={formatAge(state?.last_mac_capture_age_seconds)} />
           <Field label="Last presence change" value={formatTime(state?.last_presence_change_at)} />
+        </Surface>
+
+        <Surface title="AI & Intelligence" eyebrow="LLM status">
+          <Field label="Can use AI" value={health?.status === "ok" ? "Yes" : "No"} />
+          <Field label="AI mode" value={settings?.llm_mode ?? "Unknown"} />
+          <Field label="Hourly summaries" value={settings?.hourly_summaries_enabled ? "Enabled" : "Disabled"} />
         </Surface>
 
         <Surface title="Recovery actions" eyebrow="When something looks wrong">
@@ -932,6 +993,54 @@ function DiagnosticsPage({
           <Field label="Calendar sync" value={settings?.calendar_sync_enabled ? "Enabled" : "Disabled"} />
           <Field label="Tracking" value={settings?.tracking_enabled ? "Enabled" : "Paused"} />
         </Surface>
+
+        {health?.startup_errors && health.startup_errors.length > 0 && (
+          <Surface title="Errors & Pending Work" eyebrow="Needs attention">
+            {health.startup_errors.map((err, i) => (
+              <div key={i} className="muted" style={{ fontSize: "0.85rem", marginBottom: "4px" }}>⚠ {err}</div>
+            ))}
+            {health.calendar?.pending_jobs != null && (
+              <Field label="Pending calendar jobs" value={health.calendar.pending_jobs} />
+            )}
+          </Surface>
+        )}
+
+        <Surface
+          title="What Vero knows"
+          eyebrow="Context state"
+          action={
+            <button className="secondary-button" style={{ fontSize: "0.8rem", padding: "4px 10px", color: "var(--bad)" }} onClick={() => void handleClearContext()}>
+              Clear all
+            </button>
+          }
+        >
+          {contextSummary ? (
+            <>
+              <Field label="Location" value={contextSummary.current_location || "Unknown"} />
+              <Field label="Activity" value={contextSummary.activity_category || "Unknown"} />
+              <Field label="Self-report" value={contextSummary.current_self_report || "None"} />
+              <Field label="Zone lock" value={contextSummary.zone_lock_active ? `Until ${contextSummary.zone_lock_until ?? "?"}` : "None"} />
+              <Field label="Chat messages" value={contextSummary.chat_message_count} />
+              {contextSummary.facts.length > 0 && (
+                <div style={{ marginTop: "12px" }}>
+                  <div className="eyebrow" style={{ marginBottom: "6px" }}>Remembered facts ({contextSummary.facts.length})</div>
+                  <ul className="plain-list" style={{ fontSize: "0.85rem" }}>
+                    {contextSummary.facts.map((f, i) => <li key={i}>{f}</li>)}
+                  </ul>
+                </div>
+              )}
+            </>
+          ) : (
+            <span className="muted">Loading…</span>
+          )}
+        </Surface>
+
+        <details style={{ marginTop: "8px" }}>
+          <summary style={{ cursor: "pointer", color: "var(--muted)", fontSize: "0.85rem" }}>Raw state (debug)</summary>
+          <pre style={{ fontSize: "0.75rem", overflowX: "auto", maxHeight: "400px", marginTop: "8px", padding: "12px", background: "var(--panel)", borderRadius: "8px" }}>
+            {rawState ? JSON.stringify(rawState, null, 2) : "Loading…"}
+          </pre>
+        </details>
       </div>
     </div>
   );
@@ -1063,10 +1172,20 @@ function ZoneEditor({
   onDelete: (zone: ZoneRecord) => Promise<void>;
 }) {
   const [draft, setDraft] = useState(zone);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     setDraft(zone);
   }, [zone]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try { await onSave(draft); } finally { setSaving(false); }
+  };
+  const handleDelete = async () => {
+    setSaving(true);
+    try { await onDelete(draft); } finally { setSaving(false); }
+  };
 
   const zoneTypeInfo = ZONE_TYPES.find(t => t.value === zone.zone_type);
   return (
@@ -1081,10 +1200,10 @@ function ZoneEditor({
       </div>
       <ZoneForm zone={draft} onChange={setDraft} />
       <div className="surface-actions">
-        <button className="secondary-button" type="button" onClick={() => onSave(draft)}>
-          Save
+        <button className="secondary-button" type="button" disabled={saving} onClick={() => void handleSave()}>
+          {saving ? "…" : "Save"}
         </button>
-        <button className="danger-button" type="button" onClick={() => onDelete(draft)}>
+        <button className="danger-button" type="button" disabled={saving} onClick={() => void handleDelete()}>
           Delete
         </button>
       </div>
@@ -1276,6 +1395,7 @@ function SettingsPage({
   onSave: (settings: BackendSettings) => Promise<void>;
 }) {
   const [draft, setDraft] = useState<BackendSettings | null>(settings);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     setDraft(settings);
@@ -1285,14 +1405,23 @@ function SettingsPage({
     return <Surface title="Settings">Loading settings…</Surface>;
   }
 
+  const handleSaveSettings = async () => {
+    setSaving(true);
+    try {
+      await onSave(draft);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="stack">
       <Surface
         title="Settings"
         eyebrow="Tracking & privacy"
         action={
-          <button className="primary-button" type="button" onClick={() => onSave(draft)}>
-            Save settings
+          <button className="primary-button" type="button" disabled={saving} onClick={() => void handleSaveSettings()}>
+            {saving ? "Saving…" : "Save settings"}
           </button>
         }
       >
@@ -1376,20 +1505,6 @@ function SettingsPage({
             />
           </label>
           <p className="field-hint">AI generates a recap and productivity score each hour</p>
-
-          <label className="field">
-            <span>Daily AI call limit</span>
-            <select
-              value={draft.llm_daily_cap}
-              onChange={e => setDraft({ ...draft, llm_daily_cap: Number(e.target.value) })}
-            >
-              <option value={999}>Unlimited</option>
-              <option value={50}>50 / day</option>
-              <option value={100}>100 / day</option>
-              <option value={200}>200 / day</option>
-            </select>
-          </label>
-          <p className="field-hint">Controls AI usage across summaries, classification, and chat</p>
         </div>
       </Surface>
 
@@ -1433,6 +1548,7 @@ export default function App() {
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [initialLoading, setInitialLoading] = useState(true);
+  const [isOffline, setIsOffline] = useState(false);
 
   // Full initial load — all 6 endpoints in parallel
   async function refreshCore() {
@@ -1457,8 +1573,12 @@ export default function App() {
         setHealth(nextHealth);
         setCheckin(nextCheckin);
         setInitialLoading(false);
+        setIsOffline(false);
       });
     } catch (error) {
+      if (initialLoading) {
+        setIsOffline(true);
+      }
       setErrorMessage(error instanceof Error ? error.message : "Failed to refresh data.");
       setInitialLoading(false);
     } finally {
@@ -1531,7 +1651,6 @@ export default function App() {
           ai_provider: nextSettings.ai_provider,
           llm_mode: nextSettings.llm_mode,
           hourly_summaries_enabled: nextSettings.hourly_summaries_enabled,
-          llm_daily_cap: nextSettings.llm_daily_cap,
           user_timezone: nextSettings.user_timezone,
           privacy_mode: nextSettings.privacy_mode,
           calendar_sync_enabled: nextSettings.calendar_sync_enabled,
@@ -1583,6 +1702,17 @@ export default function App() {
     const timer = window.setTimeout(() => setErrorMessage(""), 8000);
     return () => window.clearTimeout(timer);
   }, [errorMessage]);
+
+  if (isOffline) {
+    return (
+      <div className="offline-state">
+        <p>Can't reach the backend.</p>
+        <button className="primary-button" onClick={() => { setIsOffline(false); void refreshCore(); }}>
+          Try again
+        </button>
+      </div>
+    );
+  }
 
   return (
     <BrowserRouter>

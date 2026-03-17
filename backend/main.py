@@ -1111,7 +1111,6 @@ def get_settings(db: Session = Depends(get_db)):
         "llm_mode": agent_logic.get_state(db, "llm_mode", agent_logic.DEFAULTS["llm_mode"]),
         "hourly_summaries_enabled": agent_logic.get_state(db, "hourly_summaries_enabled", agent_logic.DEFAULTS["hourly_summaries_enabled"]).lower() == "true",
         "classification_interval_seconds": max(300, capture_interval_seconds),
-        "llm_daily_cap": int(agent_logic.get_state(db, "llm_daily_cap", agent_logic.DEFAULTS["llm_daily_cap"])),
         "user_timezone": agent_logic.get_state(db, "user_timezone", agent_logic.DEFAULTS["user_timezone"]),
         "privacy_mode": agent_logic.get_state(db, "privacy_mode", agent_logic.DEFAULTS["privacy_mode"]),
         "calendar_sync_enabled": agent_logic.get_state(db, "calendar_sync_enabled", agent_logic.DEFAULTS["calendar_sync_enabled"]).lower() == "true",
@@ -1145,12 +1144,6 @@ def update_settings(payload: Dict[str, Any], db: Session = Depends(get_db)):
         agent_logic.set_state(db, "llm_mode", payload["llm_mode"])
     if "hourly_summaries_enabled" in payload:
         agent_logic.set_state(db, "hourly_summaries_enabled", str(_coerce_bool(payload["hourly_summaries_enabled"])).lower())
-    if "llm_daily_cap" in payload:
-        try:
-            val = max(1, int(payload["llm_daily_cap"]))
-            agent_logic.set_state(db, "llm_daily_cap", str(val))
-        except Exception:
-            raise HTTPException(status_code=400, detail="llm_daily_cap must be an integer >= 1")
     if "privacy_mode" in payload:
         privacy_mode = str(payload["privacy_mode"]).strip().lower()
         if privacy_mode not in {"private", "detailed"}:
@@ -1755,15 +1748,18 @@ def get_callout(db: Session = Depends(get_db)):
     summary = agent_logic.get_state(db, "callout_summary")
     if not category:
         return {"callout": None}
+    # Use stored AI-generated callout if available
+    ai_callout = agent_logic.get_state(db, "callout_ai_message")
+    if ai_callout:
+        return {"callout": ai_callout, "category": category}
+    # Fallback template
     label_map = {
         "entertainment": "Entertainment",
         "social_media": "Social Media",
         "gaming": "Gaming",
     }
     label = label_map.get(category, category.replace("_", " ").title())
-    message = f"You've been on {label} for the past 30 min. What are you actually doing?"
-    if summary:
-        message = f"Looks like {summary}. Is that intentional? What are you actually doing?"
+    message = f"{summary or f'On {label} for 30+ min'} — still intentional?"
     return {"callout": message, "category": category}
 
 
@@ -1771,6 +1767,7 @@ def get_callout(db: Session = Depends(get_db)):
 def dismiss_callout(db: Session = Depends(get_db)):
     agent_logic.set_state(db, "callout_category", "")
     agent_logic.set_state(db, "callout_summary", "")
+    agent_logic.set_state(db, "callout_ai_message", "")
     return {"status": "dismissed"}
 
 
@@ -1835,14 +1832,14 @@ async def chat_message(payload: Dict[str, Any], db: Session = Depends(get_db)):
         context_parts.append(f"Calendar: {cal_str}")
 
     context_str = "; ".join(context_parts) if context_parts else "No recent context"
-    history_key = f"chat_history:{agent_logic.local_day_key(db, now)}"
+    history_key = "chat_history"
     import json
     existing = agent_logic.get_state(db, history_key, "[]")
     try:
         history = json.loads(existing)
     except Exception:
         history = []
-    prior_turns = history[-3:]
+    prior_turns = history[-10:]
     prior_context = "\n".join(
         f'- User: {turn.get("user", "")}\n  Assistant: {turn.get("reply", "")}'
         for turn in prior_turns
@@ -1861,7 +1858,11 @@ async def chat_message(payload: Dict[str, Any], db: Session = Depends(get_db)):
             f"Recent chat context:\n{prior_context or '- No recent conversation.'}\n\n"
             "Respond ONLY with a JSON object containing these keys:\n"
             "1. 'reply': 1-2 short sentences. Be direct, helpful, and specific. Acknowledge what they said, confirm tracking next, and suggest likely state.\n"
-            "2. 'extracted_context': If the user mentions working on a specific project, class, intent or rule (e.g. 'ChipChop is an unpaid internship' or 'I am studying for CS161'), extract this fact as a short phrase to remember permanently. Otherwise, set this to null.\n"
+            "2. 'extracted_context': Extract any useful personal fact, preference, habit, routine, or pattern "
+            "the user reveals about themselves — not just projects. Examples: 'mornings are for deep work', "
+            "'commutes on Tuesdays', 'prefers no interruptions after 9pm', 'ChipChop is an unpaid internship', "
+            "'studying for CS161 finals'. Capture anything that helps Vero understand who they are and how they "
+            "work. If nothing useful is revealed, set this to null.\n"
             "3. 'location': Named place if the user mentions arriving at, being at, or leaving one (e.g. 'just got to Anchor', 'leaving the library'). Otherwise null.\n"
             "4. 'location_action': 'arrived' if they just got there or are there now, 'leaving' if departing. Null if no location.\n"
         )
@@ -1880,8 +1881,8 @@ async def chat_message(payload: Dict[str, Any], db: Session = Depends(get_db)):
                     existing_global = agent_logic.get_global_chat_context(db)
                     facts = [f.strip() for f in existing_global.split('|') if f.strip()]
                     facts.append(extracted.strip())
-                    if len(facts) > 4:
-                        facts = facts[-4:]
+                    if len(facts) > 20:
+                        facts = facts[-20:]
                     agent_logic.set_state(db, "global_chat_context", " | ".join(facts))
                     agent_logic.set_state(db, "global_chat_context_at", now.isoformat())
                 llm_location = parsed.get("location")
@@ -1949,9 +1950,9 @@ async def chat_message(payload: Dict[str, Any], db: Session = Depends(get_db)):
 
     # Store in chat history
     history.append({"time": now.isoformat() + "Z", "user": message, "reply": reply})
-    # Keep last 20 messages per day
-    if len(history) > 20:
-        history = history[-20:]
+    # Keep last 100 messages
+    if len(history) > 100:
+        history = history[-100:]
     agent_logic.set_state(db, history_key, json.dumps(history))
 
     return {"reply": reply, "activity_updated": True}
@@ -1959,16 +1960,51 @@ async def chat_message(payload: Dict[str, Any], db: Session = Depends(get_db)):
 
 @app.get("/api/chat/history")
 def chat_history(db: Session = Depends(get_db)):
-    """Get today's chat history."""
+    """Get chat history (cross-day, last 20 for display)."""
     import json
-    now = datetime.now(timezone.utc)
-    history_key = f"chat_history:{agent_logic.local_day_key(db, now)}"
-    existing = agent_logic.get_state(db, history_key, "[]")
+    existing = agent_logic.get_state(db, "chat_history", "[]")
     try:
         history = json.loads(existing)
     except Exception:
         history = []
-    return {"messages": history}
+    return {"messages": history[-20:]}
+
+
+@app.get("/api/context-summary")
+def context_summary(db: Session = Depends(get_db)):
+    """Return a summary of everything Vero currently knows about the user."""
+    import json as _json
+    states = _build_state_payload(db)
+    now = datetime.now(timezone.utc)
+    global_ctx = agent_logic.get_state(db, "global_chat_context", "")
+    facts = [f.strip() for f in global_ctx.split("|") if f.strip()] if global_ctx else []
+    zone_until = agent_logic._parse_iso_dt(agent_logic.get_state(db, "zone_activity_until"))
+    history_raw = agent_logic.get_state(db, "chat_history", "[]")
+    try:
+        history = _json.loads(history_raw)
+    except Exception:
+        history = []
+    return {
+        "facts": facts,
+        "current_self_report": agent_logic.get_user_self_report(db),
+        "current_location": states.get("current_location", ""),
+        "activity_category": states.get("current_activity_category", ""),
+        "activity_summary": states.get("current_activity_summary", ""),
+        "presence": states.get("presence_state", ""),
+        "pending_checkin": agent_logic.get_state(db, "pending_checkin") or None,
+        "zone_lock_active": bool(zone_until and now < zone_until),
+        "zone_lock_until": zone_until.isoformat() if zone_until and now < zone_until else None,
+        "chat_message_count": len(history),
+    }
+
+
+@app.delete("/api/chat/history")
+def clear_chat_history(db: Session = Depends(get_db)):
+    """Clear all chat history and global context."""
+    agent_logic.set_state(db, "chat_history", "[]")
+    agent_logic.set_state(db, "global_chat_context", "")
+    agent_logic.set_state(db, "global_chat_context_at", "")
+    return {"status": "cleared"}
 
 
 @app.get("/api/checkin")

@@ -443,20 +443,22 @@ final class AgentRuntime {
     }
 
     private func runAppleScript(_ source: String) -> String? {
-        var error: NSDictionary?
-        guard let script = NSAppleScript(source: source) else { return nil }
-        let output = script.executeAndReturnError(&error)
-        store.browserTabsAttempted = true
-        if let err = error {
-            let code = (err[NSAppleScript.errorNumber] as? Int) ?? 0
-            if code == -1743 {
-                store.browserTabsGranted = false
+        // Run on a background thread so the main actor never blocks.
+        let result = DispatchQueue.global(qos: .utility).sync(execute: {
+            var error: NSDictionary?
+            guard let script = NSAppleScript(source: source) else { return "" as String? }
+            let output = script.executeAndReturnError(&error)
+            store.browserTabsAttempted = true
+            if let err = error {
+                let code = (err[NSAppleScript.errorNumber] as? Int) ?? 0
+                if code == -1743 { store.browserTabsGranted = false }
+                return nil as String?
             }
-            return nil
-        }
-        store.browserTabsGranted = true
-        let value = output.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return value.isEmpty ? nil : value
+            store.browserTabsGranted = true
+            let value = output.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return value.isEmpty ? nil : value
+        })
+        return result
     }
 }
 

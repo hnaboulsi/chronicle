@@ -36,7 +36,6 @@ DEFAULTS = {
     "polling_interval_seconds": "300",
     "classification_interval_seconds": "300",
     "locked_capture_interval_seconds": "1800",
-    "llm_daily_cap": "30",   # Gemini free tier is generous; 30 is a safe daily default
     "sleep_source": "iphone_only",
     "user_timezone": "America/Los_Angeles",
     "tracking_enabled": "true",
@@ -518,25 +517,8 @@ def get_user_self_report(db: Session) -> str:
 
 
 def get_global_chat_context(db: Session) -> str:
-    """Return global_chat_context only if it was set today (local time)."""
-    value = get_state(db, "global_chat_context", "")
-    if not value:
-        return ""
-    set_at_str = get_state(db, "global_chat_context_at", "")
-    if not set_at_str:
-        return ""
-    if set_at_str:
-        try:
-            set_at = datetime.fromisoformat(set_at_str)
-            set_at = set_at if set_at.tzinfo else set_at.replace(tzinfo=timezone.utc)
-            tz = resolve_user_timezone(db)
-            today_local = datetime.now(timezone.utc).astimezone(tz).date()
-            set_date_local = set_at.astimezone(tz).date()
-            if set_date_local < today_local:
-                return ""
-        except Exception:
-            pass
-    return value
+    """Return global_chat_context — persists until cleared."""
+    return get_state(db, "global_chat_context", "")
 
 
 def update_context_with_reply(reply: str, db: Session):
@@ -1185,7 +1167,7 @@ def get_checkin_payload(db: Session, now: datetime | None = None) -> dict:
     }
 
 
-def _maybe_generate_checkin(db: Session, current_location: str, prev_location: str, now: datetime):
+async def _maybe_generate_checkin(db: Session, current_location: str, prev_location: str, now: datetime):
     if not current_location or _is_checkin_ignored_location(current_location):
         return
     if _checkin_is_active(db, now):
@@ -1209,7 +1191,23 @@ def _maybe_generate_checkin(db: Session, current_location: str, prev_location: s
 
     if needs_checkin:
         guess = _guess_activity(current_location, prev_location, now, db)
-        if guess and "what are you up to" not in guess.lower():
+        if can_use_llm(db, now):
+            global_context = get_global_chat_context(db)
+            zone_type = get_state(db, f"zone_type:{_location_context_key(current_location)}", "")
+            prompt = (
+                f"User just arrived at: {current_location} (zone type: {zone_type or 'unknown'}).\n"
+                f"Previous location: {prev_location or 'unknown'}.\n"
+                f"User context: {global_context or 'none'}.\n"
+                "Write ONE short check-in question (under 10 words) asking what they're working on. "
+                "Be specific if context hints at a project. No filler. No 'Hey' or 'Hi'."
+            )
+            try:
+                register_llm_call(db, now)
+                ai_msg = await llm_client.ask_llm(prompt)
+                checkin_msg = ai_msg.strip() if ai_msg and ai_msg.strip() else f"At {current_location} — what are you working on?"
+            except Exception:
+                checkin_msg = f"At {current_location} — what are you working on?"
+        elif guess and "what are you up to" not in guess.lower():
             checkin_msg = f"At {current_location} — {guess.rstrip('.')}?"
         else:
             checkin_msg = f"At {current_location} — what are you working on?"
@@ -1392,13 +1390,13 @@ def _start_location_visit(db: Session, location_label: str, now: datetime):
     set_state(db, "location_arrival", now.isoformat())
 
 
-def _handle_location_change(db: Session, current_location: str, now: datetime, zone_type: str = ""):
+async def _handle_location_change(db: Session, current_location: str, now: datetime, zone_type: str = ""):
     prev_location = get_state(db, "current_location")
     if current_location and current_location != prev_location:
         if prev_location:
             _close_current_location_visit(db, now, explicit_location=prev_location)
         _start_location_visit(db, current_location, now)
-        _maybe_generate_checkin(db, current_location, prev_location, now)
+        await _maybe_generate_checkin(db, current_location, prev_location, now)
     _update_study_mode(db, current_location, zone_type=zone_type)
 
 
@@ -1630,9 +1628,29 @@ async def _refresh_app_category_cache(db: Session, now: datetime):
         log.warning("App category cache refresh failed: %s", exc)
 
 
+def _expire_stale_outside_location(db: Session, now: datetime) -> None:
+    """Clear 'Outside X' location if it's been more than 2 hours since arrival."""
+    loc = get_state(db, "current_location", "")
+    if not loc.startswith("Outside "):
+        return
+    arrival_str = get_state(db, "location_arrival", "")
+    if not arrival_str:
+        set_state(db, "current_location", "")
+        return
+    try:
+        arrival = datetime.fromisoformat(arrival_str)
+        arrival = arrival if arrival.tzinfo else arrival.replace(tzinfo=timezone.utc)
+        if (now - arrival).total_seconds() > 2 * 3600:
+            set_state(db, "current_location", "")
+            log.info("Cleared stale Outside location: %s", loc)
+    except Exception:
+        pass
+
+
 async def process_mac_telemetry(data: MacTelemetry, db: Session):
     now = datetime.now(timezone.utc)
     ensure_default_settings(db)
+    _expire_stale_outside_location(db, now)
     privacy_mode = get_state(db, "privacy_mode", DEFAULTS["privacy_mode"])
     presence_state = normalize_presence_state(data.presence_state, data.idle_time_seconds)
     screen_state = normalize_screen_state(data.screen_state, presence_state)
@@ -1746,11 +1764,31 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session):
                 prompt = "You seem distracted. Is this still part of your intended task?"
             set_state(db, "pending_prompt", prompt)
         elif new_category in DISTRACTED_CATEGORIES and not get_state(db, "pending_prompt"):
+            prev_callout_category = get_state(db, "callout_category")
             set_state(db, "callout_category", new_category)
             set_state(db, "callout_summary", new_summary)
+            # Generate AI-driven callout message when category becomes distracted
+            if prev_callout_category != new_category and can_use_llm(db, now):
+                global_context = get_global_chat_context(db)
+                callout_prompt = (
+                    f"User has been on {new_category} ({new_summary}) for 30+ min during a work/study period.\n"
+                    f"User context: {global_context or 'none'}.\n"
+                    "Write ONE short nudge (under 12 words) questioning if this is intentional. "
+                    "Be direct, not preachy. No emojis."
+                )
+                try:
+                    register_llm_call(db, now)
+                    ai_callout = await llm_client.ask_llm(callout_prompt)
+                    if ai_callout and ai_callout.strip():
+                        set_state(db, "callout_ai_message", ai_callout.strip())
+                except Exception:
+                    set_state(db, "callout_ai_message", "")
+            elif prev_callout_category != new_category:
+                set_state(db, "callout_ai_message", "")
         else:
             set_state(db, "callout_category", "")
             set_state(db, "callout_summary", "")
+            set_state(db, "callout_ai_message", "")
 
         # Nudge for upcoming office hours when user is distracted or unproductive
         _maybe_office_hours_nudge(db, now, new_category)
@@ -1837,7 +1875,7 @@ async def process_ios_telemetry(data: iOSTelemetry, db: Session):
 
     current_location = data.location_label or ""
     if current_location:
-        _handle_location_change(db, current_location, now)
+        await _handle_location_change(db, current_location, now)
 
     # Persist so Mac telemetry can recompute sleep state without waiting for next iOS ping
     set_state(db, "last_ios_activity_type", activity_type)
@@ -1862,7 +1900,7 @@ async def process_ios_zone_event(data: iOSZoneEvent, db: Session):
 
     if transition == "enter":
         set_state(db, "seen_arrive_automation", "true")
-        _handle_location_change(db, zone_label, now, zone_type=zone_type)
+        await _handle_location_change(db, zone_label, now, zone_type=zone_type)
         set_state(db, "last_zone_enter", zone.slug if zone else data.zone_slug)
 
         # Infer activity category from zone and lock it for 2 hours so Mac idle won't override
