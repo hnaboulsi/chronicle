@@ -493,6 +493,7 @@ function TodayPage({
   const [chatInput, setChatInput] = useState("");
   const [chatSending, setChatSending] = useState(false);
   const [checkinLoading, setCheckinLoading] = useState(false);
+  const [checkinReply, setCheckinReply] = useState("");
   const [loggingActivity, setLoggingActivity] = useState<string | null>(null);
 
   async function handleQuickLog(activity_type: string, label: string, note?: string) {
@@ -515,8 +516,26 @@ function TodayPage({
     if (checkinLoading) return;
     setCheckinLoading(true);
     try {
-      const endpoint = action === "no" ? "/api/checkin/dismiss" : `/api/checkin/${action}`;
-      await fetch(endpoint, { method: "POST" }).catch(() => {});
+      if (action === "confirm") {
+        const reply = checkinReply.trim();
+        await fetch("/api/checkin/confirm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(reply ? { correction: reply } : { confirmed: true }),
+        }).catch(() => {});
+        // Also send to chat so it's stored in history and updates context
+        if (reply) {
+          await fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: reply }),
+          }).catch(() => {});
+        }
+        setCheckinReply("");
+      } else {
+        const endpoint = action === "no" ? "/api/checkin/dismiss" : `/api/checkin/${action}`;
+        await fetch(endpoint, { method: "POST" }).catch(() => {});
+      }
       onRefreshLogs();
     } finally {
       setCheckinLoading(false);
@@ -741,11 +760,26 @@ function TodayPage({
               <p className="cal-brief">📅 {checkin.event_title}{checkin.event_location ? ` · ${checkin.event_location}` : ""}</p>
             ) : null}
             <p className="lead">{checkin.checkin}</p>
-            {checkin.guess ? <p className="muted">Guess: {checkin.guess}</p> : null}
+            <div className="quicklog-custom" style={{ marginTop: "10px" }}>
+              <input
+                className="quicklog-input"
+                placeholder={checkin.guess ? `Confirm "${checkin.guess}" or type something else…` : "What are you working on?"}
+                value={checkinReply}
+                disabled={checkinLoading}
+                autoFocus
+                onChange={e => setCheckinReply(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter" && !checkinLoading && (checkinReply.trim() || checkin.guess)) void handleCheckin("confirm"); }}
+              />
+              <button
+                className="primary-button"
+                disabled={checkinLoading || (!checkinReply.trim() && !checkin.guess)}
+                onClick={() => void handleCheckin("confirm")}
+              >
+                {checkinLoading ? "Sending…" : "Send"}
+              </button>
+            </div>
             <div className="checkin-actions">
-              <button className="primary-button" disabled={checkinLoading} onClick={() => void handleCheckin("confirm")}>Confirm</button>
-              <button className="secondary-button" disabled={checkinLoading} onClick={() => void handleCheckin("no")}>No</button>
-              <button className="secondary-button" disabled={checkinLoading} onClick={() => void handleCheckin("snooze")}>Snooze</button>
+              <button className="secondary-button" disabled={checkinLoading} onClick={() => void handleCheckin("snooze")}>Remind me later</button>
               <button className="secondary-button" style={{ background: "transparent", border: "none" }} disabled={checkinLoading} onClick={() => void handleCheckin("dismiss")}>Dismiss</button>
             </div>
           </Surface>
