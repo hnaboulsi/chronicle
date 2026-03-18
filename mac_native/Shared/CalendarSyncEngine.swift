@@ -90,7 +90,6 @@ final class CalendarSyncEngine {
     }
 
     func syncPendingJobs(client: BackendClient = .shared) async {
-        await requestAccessIfNeeded()
         let status = authorizationStatus()
         if #available(macOS 14.0, *) {
             guard status == .fullAccess || status == .writeOnly else { return }
