@@ -226,6 +226,7 @@ final class AgentRuntime {
             }
             if let serverTracking = response.tracking_enabled {
                 store.trackingEnabled = serverTracking
+                store.helperDesiredState = serverTracking ? "enabled" : "disabled"
             }
             if let interval = response.capture_interval_seconds, interval >= 60 {
                 store.captureInterval = interval

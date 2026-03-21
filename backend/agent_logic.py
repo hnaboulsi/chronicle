@@ -1017,6 +1017,9 @@ async def _generate_and_store_hourly_summary(db: Session, now: datetime, force_c
                     "activity_type": ios_entry.activity_type,
                 }
 
+            # User intent context
+            intent = get_state(db, "context_current_intent", "")
+
             register_llm_call(db, now)
             llm_result = await llm_client.generate_hourly_summary(
                 logs, hour_label, app_cache,
@@ -1030,6 +1033,7 @@ async def _generate_and_store_hourly_summary(db: Session, now: datetime, force_c
                 ios_context=ios_context,
                 hour_of_day=local_hour_start.hour,
                 day_of_week=local_hour_start.strftime("%A"),
+                intent=intent,
             )
             if llm_result and llm_result.get("summary"):
                 result = llm_result

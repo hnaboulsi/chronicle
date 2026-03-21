@@ -13,10 +13,6 @@ log = logging.getLogger("vero.llm")
 
 _VALID_PROVIDERS = ("mistral", "gemini", "openai")
 _INTERACTIVE_TASKS = {"chat", "activity_summary", "prompt", "recap_feedback", "daily_recap"}
-_MISTRAL_MIN_INTERVAL_SECONDS = float(os.getenv("VERO_MISTRAL_MIN_INTERVAL_SECONDS") or "31")
-_MISTRAL_INTERACTIVE_MAX_WAIT_SECONDS = float(os.getenv("VERO_MISTRAL_INTERACTIVE_MAX_WAIT_SECONDS") or "1.5")
-_mistral_rate_lock = asyncio.Lock()
-_mistral_next_request_at = 0.0
 
 load_dotenv()
 
@@ -218,17 +214,25 @@ async def _ask_openai(prompt: str, model_kind: str = "default") -> str:
         log.error("Error calling OpenAI: %s", exc)
         return ""
 
+_MISTRAL_MIN_INTERVAL_SECONDS = float(os.getenv("VERO_MISTRAL_MIN_INTERVAL_SECONDS") or "31")
+_MISTRAL_INTERACTIVE_MAX_WAIT_SECONDS = float(os.getenv("VERO_MISTRAL_INTERACTIVE_MAX_WAIT_SECONDS") or "2.0")
+_mistral_rate_lock = asyncio.Lock()
+_mistral_next_request_at = 0.0
+
 
 async def _acquire_mistral_slot(task_type: str) -> bool:
     global _mistral_next_request_at
 
-    max_wait = 0.0 if task_type not in _INTERACTIVE_TASKS else _MISTRAL_INTERACTIVE_MAX_WAIT_SECONDS
+    # Background tasks (not in _INTERACTIVE_TASKS) should wait a long time instead of skipping.
+    # User-facing tasks should skip/fallback quickly to keep the UI snappy.
+    max_wait = 300.0 if task_type not in _INTERACTIVE_TASKS else _MISTRAL_INTERACTIVE_MAX_WAIT_SECONDS
     async with _mistral_rate_lock:
         wait_seconds = _mistral_next_request_at - time.monotonic()
         if wait_seconds > max_wait:
             log.info("Skipping Mistral for %s; next slot in %.1fs", task_type, wait_seconds)
             return False
         if wait_seconds > 0:
+            log.info("Mistral rate limit: waiting %.1fs for %s slot", wait_seconds, task_type)
             await asyncio.sleep(wait_seconds)
         _mistral_next_request_at = time.monotonic() + _MISTRAL_MIN_INTERVAL_SECONDS
         return True
@@ -477,6 +481,7 @@ async def generate_hourly_summary(
     ios_context: dict | None = None,
     hour_of_day: int = 12,
     day_of_week: str = "Monday",
+    intent: str = "",
 ) -> dict:
     if not logs:
         return {"summary": "No activity recorded this hour.", "productivity_score": None}
@@ -553,42 +558,45 @@ async def generate_hourly_summary(
     else:
         time_context = "late night / early hours"
 
-    prompt = f"""You are Vero, a precise personal productivity analyst. Analyze this hour of activity and return a JSON object.
+    # --- Intent context ---
+    intent_section = f"\nUSER'S CURRENT INTENT: \"{intent}\"\n" if intent else ""
+
+    prompt = f"""You are Vero, a precise personal productivity analyst. Your goal is to provide a 'smart' and highly contextual summary of the user's hour.
 
 TIME CONTEXT: {day_of_week}, {time_context} ({hour_of_day}:00)
 PRESENCE: {active_pct}% active / {idle_pct}% idle or away this hour
-{trend_section}{global_section}
+{trend_section}{global_section}{intent_section}
 MAC ACTIVITY (app [category] [idle if inactive]: window title):
 {activity_text}
 {manual_section}{calendar_section}{upcoming_section}{ios_section}
 APP CATEGORY KEY: [working]=coding/dev tools/work apps, [studying]=learning, [creative]=design/video, [entertainment]=YouTube/Netflix/Reddit, [social_media]=Twitter/Instagram, [gaming]=games, [break]=confirmed rest
 
 SCORING RUBRIC — be strict, do not inflate:
-10: Exceptional — pure deep focused work/study for the full hour, zero distractions
-9:  Strong — deep work with only brief context switches (< 5 min total off-task)
-8:  Good — mostly focused work, 1-2 short breaks or minor distractions
-7:  Solid — productive work majority of hour, some unrelated browsing
-6:  Moderate — roughly half productive, half distracted or idle
-5:  Below average — more distraction than work, or mostly idle with some work
-4:  Poor — primarily entertainment/social media with minor work activity
-3:  Very poor — almost entirely off-task during work hours
-2:  Wasted — full hour of entertainment/social media during prime hours
-1:  Inactive — present but not engaging (screen on, no meaningful activity)
-0:  Away — no activity at all
+10: Exceptional — pure deep focused work/study for the full hour, zero distractions. Perfectly aligned with intent or calendar.
+9:  Strong — deep work with only brief context switches (< 5 min total off-task).
+8:  Good — mostly focused work, 1-2 short breaks or minor distractions.
+7:  Solid — productive work majority of hour, some unrelated browsing.
+6:  Moderate — roughly half productive, half distracted or idle.
+5:  Below average — more distraction than work, or mostly idle with some work.
+4:  Poor — primarily entertainment/social media with minor work activity.
+3:  Very poor — almost entirely off-task during work hours.
+2:  Wasted — full hour of entertainment/social media during prime hours.
+1:  Inactive — present but not engaging (screen on, no meaningful activity).
+0:  Away — no activity at all.
 
 SCORE ADJUSTMENTS:
-- Late night (22:00+) or early morning (before 7:00): lower expectations, shift score up 1 if activity is reasonable for the time
-- Confirmed break (manual log or calendar block): score 5 is neutral/expected, not penalized
-- Calendar mismatch (calendar says meeting but Mac shows unrelated browsing): note it, penalize 1-2 points
-- Calendar match (working on what calendar says): bonus +0.5
-- High idle% (>50%): cap score at 5 unless idle is during confirmed break
+- Intent Alignment: If the user stated an intent (like "{intent}") and the logs match it, it's a productivity win (+0.5).
+- Intent Disconnect: If logs contradict the stated intent or calendar, penalize significantly (-1.5).
+- Late night (22:00+) or early morning (before 7:00): shift score up 1 if activity is reasonable.
+- Confirmed break: score 5 is neutral/expected.
+- High idle% (>50%): cap score at 5 unless idle is during confirmed break.
 
 INSTRUCTIONS:
-- Write 2-3 sentences: what specifically they did, how focused, and one concrete observation (pattern, concern, or positive)
-- If calendar events exist, explicitly state whether Mac activity matches or contradicts them
-- Do NOT start with a time range — just describe the activity directly
-- Be specific about app names and what they suggest (e.g. "Cursor suggests active coding" not just "used coding tools")
-- productivity_score must be a float to one decimal place, strictly following the rubric above
+- Write 2-3 'smart' sentences. Don't just list apps.
+- Synthesize: e.g., "Instead of 'Using Cursor and Chrome', say 'You made significant progress on the [Project Name] frontend as planned'."
+- Correlate: Explicitly mention how activity aligns with or deviates from the calendar and the user's stated Intent.
+- Be direct: Call out distractions or 'doomscrolling' by name if observed.
+- productivity_score must be a float to one decimal place, strictly following the rubric.
 
 Respond ONLY with valid JSON: {{"summary": "...", "productivity_score": 7.5}}"""
 

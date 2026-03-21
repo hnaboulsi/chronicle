@@ -93,8 +93,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     }
 
     @objc private func toggleTracking() {
-        store.trackingEnabled.toggle()
-        store.helperDesiredState = store.trackingEnabled ? "enabled" : "disabled"
+        let newState = !store.trackingEnabled
+        store.trackingEnabled = newState
+        store.helperDesiredState = newState ? "enabled" : "disabled"
         refreshMenu()
     }
 
