@@ -104,7 +104,14 @@ def _provider_order(task_type: str = "default") -> list[str]:
     elif primary == "auto":
         candidates.extend(_VALID_PROVIDERS)
 
-    if _task_allows_fallback(task_type) or not candidates or not any(_provider_available(p) for p in candidates):
+    # Always include Gemini/OpenAI fallbacks unless strict_primary is set.
+    # Background tasks (hourly_summary, classification) wait longer for Mistral via
+    # _acquire_mistral_slot before falling through, but they must still have Gemini
+    # available as a safety net when Mistral's budget is exhausted.
+    if _routing_mode() != "strict_primary":
+        candidates.extend(fallbacks)
+    elif not any(_provider_available(p) for p in candidates):
+        # strict_primary: only add fallbacks if primary is completely unavailable
         candidates.extend(fallbacks)
 
     ordered: list[str] = []
@@ -158,16 +165,24 @@ def _mistral_model(task: str) -> str:
     return mapping.get(task, mapping["default"])
 
 
+_SYSTEM_PROMPT = (
+    "You are Chronicle, a personal productivity AI with full awareness of the user's day. "
+    "You know their location, calendar, Mac activity, productivity metrics, and long-term goals. "
+    "Be direct, specific, and context-aware. Never give generic advice. No filler."
+)
+
+
 async def _ask_gemini(prompt: str, model_kind: str = "default") -> str:
     if not _gemini_client:
         return ""
     try:
         model = _gemini_model(model_kind)
+        full_prompt = f"{_SYSTEM_PROMPT}\n\n{prompt}"
         response = await asyncio.wait_for(
             asyncio.to_thread(
                 _gemini_client.models.generate_content,
                 model=model,
-                contents=prompt,
+                contents=full_prompt,
             ),
             timeout=60.0,
         )
@@ -196,7 +211,7 @@ async def _ask_openai(prompt: str, model_kind: str = "default") -> str:
                 json={
                     "model": model,
                     "messages": [
-                        {"role": "system", "content": "You are Chronicle, a personal productivity AI assistant."},
+                        {"role": "system", "content": _SYSTEM_PROMPT},
                         {"role": "user", "content": prompt},
                     ],
                     "temperature": 0.3,
@@ -255,7 +270,7 @@ async def _ask_mistral(prompt: str, model_kind: str = "default", task_type: str 
                 json={
                     "model": model,
                     "messages": [
-                        {"role": "system", "content": "You are Chronicle, a personal productivity AI assistant."},
+                        {"role": "system", "content": _SYSTEM_PROMPT},
                         {"role": "user", "content": prompt},
                     ],
                     "temperature": 0.3,
@@ -394,7 +409,15 @@ async def generate_activity_summary_structured(entry, context_logs: list) -> dic
     }
 
 
-async def classify_activity_context(recent_activities: list, user_self_report: str = "", recent_history: list | None = None, global_context: str = "") -> dict:
+async def classify_activity_context(
+    recent_activities: list,
+    user_self_report: str = "",
+    recent_history: list | None = None,
+    global_context: str = "",
+    location: str = "",
+    upcoming_events: list | None = None,
+    intent: str = "",
+) -> dict:
     if not recent_activities:
         return {"category": "unknown", "summary": "", "presence_inference": "unknown"}
 
@@ -439,11 +462,20 @@ async def classify_activity_context(recent_activities: list, user_self_report: s
             history_section = "\nRecent browser history (last 15 min):\n" + "\n".join(history_lines) + "\n"
 
     global_section = f'\nUser long-term context/projects:\n{global_context}\n' if global_context else ""
+    location_section = f"\nCurrent location: {location}\n" if location else ""
+    intent_section = f'\nUser\'s active intent: "{intent}"\n' if intent else ""
+    upcoming_section = ""
+    if upcoming_events:
+        ev_lines = [f"  - {ev.get('title', 'Event')}" for ev in upcoming_events[:3]]
+        upcoming_section = "\nUpcoming calendar events (next 2 hours):\n" + "\n".join(ev_lines) + "\n"
 
     prompt = (
         "You are analyzing a user's recent Mac activity to understand what they are working on right now.\n\n"
         f"Activity log (oldest to newest):\n{activity_text}\n"
         f"{presence_note}"
+        f"{location_section}"
+        f"{intent_section}"
+        f"{upcoming_section}"
         f"{self_report_section}"
         f"{global_section}"
         f"{history_section}\n"
@@ -478,10 +510,13 @@ async def generate_hourly_summary(
     idle_pct: int = 0,
     active_pct: int = 100,
     prev_score: float | None = None,
+    prev_summary_text: str = "",
     ios_context: dict | None = None,
     hour_of_day: int = 12,
     day_of_week: str = "Monday",
     intent: str = "",
+    location: str = "",
+    zone_notes: str = "",
 ) -> dict:
     if not logs:
         return {"summary": "No activity recorded this hour.", "productivity_score": None}
@@ -537,7 +572,18 @@ async def generate_hourly_summary(
     # --- Previous hour trend ---
     trend_section = ""
     if prev_score is not None:
-        trend_section = f"\nPrevious hour productivity score: {prev_score}/10\n"
+        trend_section = f"\nPrevious hour productivity score: {prev_score}/10"
+        if prev_summary_text:
+            trend_section += f"\nPrevious hour summary: {prev_summary_text[:200]}"
+        trend_section += "\n"
+
+    # --- Location context ---
+    location_section = ""
+    if location:
+        location_section = f"\nCurrent location: {location}"
+        if zone_notes:
+            location_section += f" ({zone_notes})"
+        location_section += "\n"
 
     # --- Global context ---
     global_section = f"\nUser's ongoing projects / long-term context:\n{global_context}\n" if global_context else ""
@@ -565,7 +611,7 @@ async def generate_hourly_summary(
 
 TIME CONTEXT: {day_of_week}, {time_context} ({hour_of_day}:00)
 PRESENCE: {active_pct}% active / {idle_pct}% idle or away this hour
-{trend_section}{global_section}{intent_section}
+{trend_section}{global_section}{intent_section}{location_section}
 MAC ACTIVITY (app [category] [idle if inactive]: window title):
 {activity_text}
 {manual_section}{calendar_section}{upcoming_section}{ios_section}
@@ -624,10 +670,14 @@ Respond ONLY with valid JSON: {{"summary": "...", "productivity_score": 7.5}}"""
     }
 
 
-async def generate_daily_recap(logs_summary: str) -> str:
+async def generate_daily_recap(logs_summary: str, global_context: str = "", intent: str = "") -> str:
+    context_section = f"\nUser context/projects: {global_context}\n" if global_context else ""
+    intent_section = f'\nUser\'s intent for today: "{intent}"\n' if intent else ""
     prompt = (
         "You are Chronicle, a personal productivity AI. Based on the following activity logs from today, "
-        "provide a concise daily summary and a productivity score out of 10.\n\n"
+        "provide a concise daily summary (3-4 sentences) and a productivity score out of 10. "
+        "Reference the user's intent and context to assess whether their day went as planned.\n"
+        f"{context_section}{intent_section}\n"
         f"Logs:\n{logs_summary}"
     )
     return await ask_llm(prompt, model_kind="default", task_type="daily_recap")

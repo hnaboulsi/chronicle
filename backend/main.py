@@ -1782,50 +1782,115 @@ async def chat_message(payload: Dict[str, Any], db: Session = Depends(get_db)):
     agent_logic.clear_pending_checkin(db)
     agent_logic.set_state(db, "pending_prompt", "")
 
-    # Build context for the LLM to understand and respond
+    # Build rich context for the LLM
     states = agent_logic.get_all_states(db)
+    tz_chat = agent_logic.resolve_user_timezone(db)
+    local_now_chat = now.astimezone(tz_chat)
     location = states.get("current_location", "")
     activity_cat = states.get("current_activity_category", "unknown")
+    activity_summary = states.get("current_activity_summary", "")
     is_walking = states.get("is_walking") == "true"
+    presence = states.get("presence_state", "")
+    current_intent = states.get("context_current_intent", "")
+    special_mode = states.get("context_special_mode", "normal") or "normal"
+    steps_today = states.get("steps_today", "")
 
-    context_parts = []
+    context_lines = [f"Time: {local_now_chat.strftime('%A %-I:%M %p')}"]
+
+    # Location with freshness
     if location:
-        context_parts.append(f"Current location: {location}")
-    if activity_cat and activity_cat != "unknown":
-        context_parts.append(f"Current detected activity: {activity_cat}")
+        _loc_arrival = states.get("location_arrival", "")
+        _loc_age = ""
+        if _loc_arrival:
+            try:
+                _arr = datetime.fromisoformat(_loc_arrival)
+                _arr = _arr if _arr.tzinfo else _arr.replace(tzinfo=timezone.utc)
+                _age_mins = int((now - _arr).total_seconds() / 60)
+                if _age_mins > 60:
+                    _loc_age = f", here {_age_mins // 60}h {_age_mins % 60}m"
+                elif _age_mins > 5:
+                    _loc_age = f", here {_age_mins}m"
+            except Exception:
+                pass
+        context_lines.append(f"Location: {location}{_loc_age}")
     if is_walking:
-        context_parts.append("Currently walking")
+        context_lines.append("Currently: walking")
 
-    recent_logs = agent_logic.get_recent_mac_logs(db, limit=5)
+    # Activity with data freshness indicator
+    if activity_cat and activity_cat not in ("unknown", ""):
+        _act_line = f"Activity: {activity_cat}"
+        if activity_summary:
+            _act_line += f" — {activity_summary}"
+        _last_capture = states.get("last_capture_at", "")
+        if _last_capture:
+            try:
+                _cap_dt = datetime.fromisoformat(_last_capture)
+                _cap_dt = _cap_dt if _cap_dt.tzinfo else _cap_dt.replace(tzinfo=timezone.utc)
+                _cap_age = int((now - _cap_dt).total_seconds() / 60)
+                if _cap_age > 15:
+                    _act_line += f" [data {_cap_age}m old — may be stale]"
+            except Exception:
+                pass
+        context_lines.append(_act_line)
+
+    if presence and presence not in ("active",):
+        context_lines.append(f"Presence: {presence}")
+    if current_intent:
+        context_lines.append(f"Intent: \"{current_intent}\"")
+    if special_mode != "normal":
+        context_lines.append(f"Mode: {special_mode}")
+    if steps_today and steps_today != "0":
+        context_lines.append(f"Steps today: {steps_today}")
+
+    # Recent apps (deduplicated)
+    recent_logs = agent_logic.get_recent_mac_logs(db, limit=8)
     if recent_logs:
-        apps = ", ".join(set(l.get("app_name", "") for l in recent_logs if l.get("app_name")))
+        apps = list(dict.fromkeys(l.get("app_name", "") for l in recent_logs if l.get("app_name")))[:4]
         if apps:
-            context_parts.append(f"Recent apps: {apps}")
+            context_lines.append(f"Recent apps: {', '.join(apps)}")
 
-    # Include today's calendar for smarter, context-aware replies
+    # Today's calendar (30min back → 3hrs forward)
     cal_context_events = agent_logic.get_calendar_events_for_window(
         db, now - timedelta(minutes=30), now + timedelta(hours=3)
     )
     if cal_context_events:
-        tz_chat = agent_logic.resolve_user_timezone(db)
         def _fmt_ev(ev: dict) -> str:
             start_dt = datetime.fromisoformat(ev["start_at"]).replace(tzinfo=timezone.utc).astimezone(tz_chat)
             end_dt = datetime.fromisoformat(ev["end_at"]).replace(tzinfo=timezone.utc).astimezone(tz_chat)
             start_l = start_dt.strftime("%-I:%M %p")
             end_l = end_dt.strftime("%-I:%M %p")
-            start_naive = datetime.fromisoformat(ev["start_at"])
-            end_naive = datetime.fromisoformat(ev["end_at"])
+            start_naive = datetime.fromisoformat(ev["start_at"]).replace(tzinfo=None)
+            end_naive = datetime.fromisoformat(ev["end_at"]).replace(tzinfo=None)
             now_naive = now.replace(tzinfo=None)
             if start_naive <= now_naive <= end_naive:
                 return f"{ev['title']} (NOW, {start_l}–{end_l})"
             elif start_naive > now_naive:
                 mins = int((start_naive - now_naive).total_seconds() / 60)
                 return f"{ev['title']} (in {mins}m, {start_l}–{end_l})"
-            return f"{ev['title']} ({start_l}–{end_l})"
-        cal_str = "; ".join(_fmt_ev(ev) for ev in cal_context_events[:5])
-        context_parts.append(f"Calendar: {cal_str}")
+            return f"{ev['title']} ({start_l}–{end_l}, past)"
+        cal_str = " | ".join(_fmt_ev(ev) for ev in cal_context_events[:5])
+        context_lines.append(f"Calendar: {cal_str}")
 
-    context_str = "; ".join(context_parts) if context_parts else "No recent context"
+    # Recent hourly summaries for continuity
+    recent_summaries = db.query(HourlySummary).order_by(HourlySummary.hour_start.desc()).limit(3).all()
+    if recent_summaries:
+        sum_lines = []
+        for s in reversed(recent_summaries):
+            try:
+                h_dt = s.hour_start if s.hour_start.tzinfo else s.hour_start.replace(tzinfo=timezone.utc)
+                h_local = h_dt.astimezone(tz_chat).strftime("%-I %p")
+            except Exception:
+                h_local = ""
+            score_str = f" [{round(s.productivity_score * 10)}%]" if s.productivity_score is not None else ""
+            sum_lines.append(f"  {h_local}: {(s.summary_text or '')[:100]}{score_str}")
+        context_lines.append("Recent hours:\n" + "\n".join(sum_lines))
+
+    # Global user context
+    global_ctx = agent_logic.get_global_chat_context(db)
+    if global_ctx:
+        context_lines.append(f"User context: {global_ctx[:400]}")
+
+    context_str = "\n".join(context_lines)
     history_key = "chat_history"
     import json
     existing = agent_logic.get_state(db, history_key, "[]")
@@ -1846,19 +1911,20 @@ async def chat_message(payload: Dict[str, Any], db: Session = Depends(get_db)):
         agent_logic.register_llm_call(db, now)
         import llm_client
         prompt = (
-            f"You are Vero, a personal productivity AI. The user just told you:\n"
+            f"The user just told Chronicle:\n"
             f'"{message}"\n\n'
-            f"Current context: {context_str}\n\n"
-            f"Recent chat context:\n{prior_context or '- No recent conversation.'}\n\n"
-            "Respond ONLY with a JSON object containing these keys:\n"
-            "1. 'reply': 1-2 short sentences. Be direct, helpful, and specific. Acknowledge what they said, confirm tracking next, and suggest likely state.\n"
-            "2. 'extracted_context': Extract any useful personal fact, preference, habit, routine, or pattern "
-            "the user reveals about themselves — not just projects. Examples: 'mornings are for deep work', "
-            "'commutes on Tuesdays', 'prefers no interruptions after 9pm', 'ChipChop is an unpaid internship', "
-            "'studying for CS161 finals'. Capture anything that helps Vero understand who they are and how they "
-            "work. If nothing useful is revealed, set this to null.\n"
-            "3. 'location': Named place if the user mentions arriving at, being at, or leaving one (e.g. 'just got to Anchor', 'leaving the library'). Otherwise null.\n"
-            "4. 'location_action': 'arrived' if they just got there or are there now, 'leaving' if departing. Null if no location.\n"
+            f"--- CURRENT STATE ---\n{context_str}\n--- END STATE ---\n\n"
+            f"Recent conversation:\n{prior_context or '- No prior conversation.'}\n\n"
+            "Important: if any data says '[data X min old — may be stale]', account for that — "
+            "the activity may have changed since the last Mac capture.\n\n"
+            "Respond ONLY with valid JSON with these keys:\n"
+            "1. 'reply': 1-2 sentences. Be direct and specific. Reference their intent, calendar, or location "
+            "when relevant. Confirm what you're now tracking. Do NOT be generic.\n"
+            "2. 'extracted_context': One concise sentence capturing any personal fact, habit, preference, "
+            "or project detail the user revealed (e.g. 'studying for CS161 final', 'mornings are deep work', "
+            "'Anchor is a cafe near campus', 'ChipChop internship is unpaid'). null if nothing new.\n"
+            "3. 'location': Named place if user mentions arriving at, being at, or leaving a location. null otherwise.\n"
+            "4. 'location_action': 'arrived' or 'leaving'. null if no location.\n"
         )
         result_text = await llm_client.ask_llm(prompt, task_type="chat")
         reply = "Got it. I'll track that and update your context."

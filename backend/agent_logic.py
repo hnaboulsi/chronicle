@@ -997,10 +997,31 @@ async def _generate_and_store_hourly_summary(db: Session, now: datetime, force_c
             idle_pct = round(idle_count / total * 100) if total else 0
             active_pct = 100 - idle_pct
 
-            # Previous hour summary score for trend context
+            # Previous hour summary score + text for continuity
             prev_hour_start = (hour_start - timedelta(hours=1))
             prev_summary = db.query(HourlySummary).filter(HourlySummary.hour_start == prev_hour_start).first()
             prev_score = getattr(prev_summary, "productivity_score", None) if prev_summary else None
+            prev_summary_text = (getattr(prev_summary, "summary_text", None) or "") if prev_summary else ""
+
+            # Location context with freshness check
+            _loc = get_state(db, "current_location", "")
+            _loc_arrival_str = get_state(db, "location_arrival", "")
+            _loc_age_note = ""
+            if _loc and _loc_arrival_str:
+                try:
+                    _arrival_dt = datetime.fromisoformat(_loc_arrival_str)
+                    _arrival_dt = _arrival_dt if _arrival_dt.tzinfo else _arrival_dt.replace(tzinfo=timezone.utc)
+                    _loc_age_mins = int((now - _arrival_dt).total_seconds() / 60)
+                    if _loc_age_mins > 120:
+                        _loc_age_note = f"arrived {_loc_age_mins // 60}h ago"
+                    elif _loc_age_mins > 5:
+                        _loc_age_note = f"arrived {_loc_age_mins}m ago"
+                except Exception:
+                    pass
+            _zone_type = get_state(db, f"zone_type:{_loc.lower().replace(' ', '_')}", "") if _loc else ""
+            _zone_notes = _zone_type
+            if _loc_age_note:
+                _zone_notes = f"{_zone_type}, {_loc_age_note}" if _zone_type else _loc_age_note
 
             # iOS context (most recent entry in window)
             ios_entry = (
@@ -1030,10 +1051,13 @@ async def _generate_and_store_hourly_summary(db: Session, now: datetime, force_c
                 idle_pct=idle_pct,
                 active_pct=active_pct,
                 prev_score=prev_score,
+                prev_summary_text=prev_summary_text,
                 ios_context=ios_context,
                 hour_of_day=local_hour_start.hour,
                 day_of_week=local_hour_start.strftime("%A"),
                 intent=intent,
+                location=_loc,
+                zone_notes=_zone_notes,
             )
             if llm_result and llm_result.get("summary"):
                 result = llm_result
@@ -1248,12 +1272,34 @@ async def _maybe_generate_checkin(db: Session, current_location: str, prev_locat
         if can_use_llm(db, now, task_type="checkin"):
             global_context = get_global_chat_context(db)
             zone_type = get_state(db, f"zone_type:{_location_context_key(current_location)}", "")
+            current_intent = get_state(db, "context_current_intent", "")
+            special_mode = get_state(db, "context_special_mode", "normal")
+            tz_ci = resolve_user_timezone(db)
+            local_now_ci = now.astimezone(tz_ci)
+            time_label_ci = local_now_ci.strftime("%A %-I:%M %p")
+            # Upcoming events in the next 90 minutes
+            upcoming_ci = get_calendar_events_for_window(db, now, now + timedelta(minutes=90))
+            upcoming_ci_str = ""
+            if upcoming_ci:
+                ev_strs = []
+                for ev in upcoming_ci[:2]:
+                    start_dt = datetime.fromisoformat(ev["start_at"]).replace(tzinfo=timezone.utc).astimezone(tz_ci)
+                    mins_away = int((start_dt.replace(tzinfo=None) - local_now_ci.replace(tzinfo=None)).total_seconds() / 60)
+                    label = f"in {mins_away}m" if mins_away > 0 else "now"
+                    ev_strs.append(f"{ev['title']} ({label})")
+                upcoming_ci_str = f"\nUpcoming: {', '.join(ev_strs)}"
+
             prompt = (
+                f"Time: {time_label_ci}\n"
                 f"User just arrived at: {current_location} (zone type: {zone_type or 'unknown'}).\n"
                 f"Previous location: {prev_location or 'unknown'}.\n"
-                f"User context: {global_context or 'none'}.\n"
-                "Write ONE short check-in question (under 10 words) asking what they're working on. "
-                "Be specific if context hints at a project. No filler. No 'Hey' or 'Hi'."
+                + (f'Active intent: "{current_intent}"\n' if current_intent else "")
+                + (f"Mode: {special_mode}\n" if special_mode and special_mode != "normal" else "")
+                + (f"User context: {global_context}\n" if global_context else "")
+                + upcoming_ci_str
+                + "\nWrite ONE short check-in question (under 10 words) asking what they're working on. "
+                "Be specific if context hints at a project or upcoming deadline. "
+                "Do NOT start with 'Hey' or 'Hi'. No filler."
             )
             try:
                 register_llm_call(db, now)
@@ -1778,7 +1824,18 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session):
             result = heuristic_classify_activity(recent, idle_time_seconds=data.idle_time_seconds, recent_history=history)
         elif can_use_llm(db, now, task_type="classification"):
             register_llm_call(db, now)
-            result = await llm_client.classify_activity_context(recent, user_self_report, recent_history=history, global_context=global_context)
+            _cls_location = get_state(db, "current_location", "")
+            _cls_intent = get_state(db, "context_current_intent", "")
+            _cls_upcoming = get_calendar_events_for_window(db, now, now + timedelta(hours=2))
+            result = await llm_client.classify_activity_context(
+                recent,
+                user_self_report,
+                recent_history=history,
+                global_context=global_context,
+                location=_cls_location,
+                upcoming_events=_cls_upcoming,
+                intent=_cls_intent,
+            )
         else:
             result = heuristic_classify_activity(recent, idle_time_seconds=data.idle_time_seconds, recent_history=history)
         new_category = result["category"]
@@ -1824,10 +1881,26 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session):
             # Generate AI-driven callout message when category becomes distracted
             if prev_callout_category != new_category and can_use_llm(db, now, task_type="prompt"):
                 global_context = get_global_chat_context(db)
+                _nudge_intent = get_state(db, "context_current_intent", "")
+                _nudge_location = get_state(db, "current_location", "")
+                # Check how stale the last Mac data is
+                _last_capture_str = get_state(db, "last_capture_at", "")
+                _data_age_note = ""
+                if _last_capture_str:
+                    try:
+                        _last_cap = datetime.fromisoformat(_last_capture_str)
+                        _last_cap = _last_cap if _last_cap.tzinfo else _last_cap.replace(tzinfo=timezone.utc)
+                        _data_age_mins = int((now - _last_cap).total_seconds() / 60)
+                        if _data_age_mins > 10:
+                            _data_age_note = f" (data {_data_age_mins}m old)"
+                    except Exception:
+                        pass
                 callout_prompt = (
-                    f"User has been on {new_category} ({new_summary}) for 30+ min during a work/study period.\n"
-                    f"User context: {global_context or 'none'}.\n"
-                    "Write ONE short nudge (under 12 words) questioning if this is intentional. "
+                    f"User has been on {new_category} ({new_summary}){_data_age_note} during a work/study period.\n"
+                    + (f'Their stated intent is: "{_nudge_intent}"\n' if _nudge_intent else "")
+                    + (f"Current location: {_nudge_location}\n" if _nudge_location else "")
+                    + (f"User context: {global_context}\n" if global_context else "")
+                    + "Write ONE short nudge (under 12 words) referencing their intent if set. "
                     "Be direct, not preachy. No emojis."
                 )
                 try:
