@@ -1,5 +1,6 @@
-# Vero Setup (Railway-First)
+# Chronicle Setup Guide
 
+This guide will help you set up and deploy Chronicle.
 ## 1. Deploy backend to Railway
 1. Create Railway project from this repo using `backend/` as service root.
 2. Set env vars:

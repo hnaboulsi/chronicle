@@ -5,7 +5,7 @@
     <key>CFBundleDisplayName</key>
     <string>Vero Helper</string>
     <key>CFBundleName</key>
-    <string>Vero Helper</string>
+    <string>Chronicle Agent</string>
     <key>CFBundleIdentifier</key>
     <string>com.naboulsi.vero.agent</string>
     <key>LSMinimumSystemVersion</key>

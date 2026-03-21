@@ -51,6 +51,8 @@ final class BackendClient {
         request.httpMethod = method
         request.timeoutInterval = 10
         let token = Data(configuration.authValue.utf8).base64EncodedString()
+        let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown"
+        request.setValue("ChronicleAgent/\(appVersion)", forHTTPHeaderField: "User-Agent")
         request.setValue("Basic \(token)", forHTTPHeaderField: "Authorization")
         if let jsonBody {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")

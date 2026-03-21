@@ -1,8 +1,8 @@
-# Vero Native macOS
+# Chronicle Native macOS
 
-This directory contains the native macOS app for Vero:
+This directory contains the native macOS app for Chronicle:
 
-- `LifeManager`: the visible SwiftUI settings app (builds as **Vero.app**)
+- `LifeManager`: the visible SwiftUI settings app (builds as **Chronicle.app**)
 - `LifeManagerAgent`: the hidden login helper (background tracking agent)
 - `Shared`: code compiled into both targets
 
@@ -15,7 +15,7 @@ cd mac_native
 ./install.sh
 ```
 
-This runs XcodeGen, builds, copies to `/Applications/Vero.app`, and launches the app.
+This runs XcodeGen, builds, copies to `/Applications/Chronicle.app`, and launches the app.
 
 ## Manual Xcode workflow
 

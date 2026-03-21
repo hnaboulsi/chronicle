@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct VeroApp: App {
+struct ChronicleApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     init() {

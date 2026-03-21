@@ -30,7 +30,7 @@ logging.basicConfig(
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
-log = logging.getLogger("vero")
+log = logging.getLogger("chronicle")
 
 _STARTUP_STATUS = {
     "process_ready": False,
@@ -174,7 +174,7 @@ def _run_migrations() -> list[str]:
             errors.append(str(exc))
     return errors
 
-app = FastAPI(title="Vero API")
+app = FastAPI(title="Chronicle API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -183,8 +183,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 _STARTED_AT = datetime.now(timezone.utc)
-_BUILD_VERSION = os.environ.get("VERO_BUILD_VERSION") or os.environ.get("LIFE_MANAGER_BUILD_VERSION", "dev")
-_DEPLOYMENT_CHANNEL = os.environ.get("VERO_DEPLOYMENT_CHANNEL") or os.environ.get("LIFE_MANAGER_DEPLOYMENT_CHANNEL", "internal")
+_BUILD_VERSION = os.environ.get("CHRONICLE_BUILD_VERSION") or os.environ.get("VERO_BUILD_VERSION") or os.environ.get("LIFE_MANAGER_BUILD_VERSION", "dev")
+_DEPLOYMENT_CHANNEL = os.environ.get("CHRONICLE_DEPLOYMENT_CHANNEL") or os.environ.get("VERO_DEPLOYMENT_CHANNEL") or os.environ.get("LIFE_MANAGER_DEPLOYMENT_CHANNEL", "internal")
 try:
     _GIT_SHA = (
         subprocess.run(
@@ -288,7 +288,7 @@ async def auth_middleware(request: Request, call_next):
         return Response(content="Too many failed attempts. Try again in 15 minutes.", status_code=429)
 
     # 1. Check session cookie (browser login page)
-    cookie = request.cookies.get("vero_session", "")
+    cookie = request.cookies.get("chronicle_session", "")
     if cookie and _verify_session_cookie(cookie):
         return await call_next(request)
 
@@ -319,7 +319,7 @@ _LOGIN_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Vero</title>
+<title>Chronicle</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: #0f1117; color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
@@ -340,7 +340,7 @@ _LOGIN_HTML = """<!DOCTYPE html>
 </head>
 <body>
 <div class="card">
-  <h1>Vero</h1>
+  <h1>Chronicle</h1>
   <p class="subtitle">Enter your password to continue.</p>
   <form method="post" action="/api/login">
     <label for="pw">Password</label>
@@ -371,7 +371,7 @@ async def do_login(request: Request):
         token = _session_token(password)
         response = RedirectResponse(url="/today", status_code=303)
         response.set_cookie(
-            "vero_session", token,
+            "chronicle_session", token,
             httponly=True, samesite="lax",
             max_age=86400 * 30,  # 30 days
             secure=False,  # Railway terminates TLS upstream

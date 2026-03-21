@@ -138,6 +138,7 @@ final class CalendarSyncEngine {
     }
 
     private func write(job: CalendarJob) throws {
+        log("Chronicle: starting calendar sync...")
         guard let calendar = calendar() else {
             throw SyncError.calendarUnavailable
         }

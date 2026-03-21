@@ -1,6 +1,6 @@
 {
-  "name": "Vero",
-  "short_name": "Vero",
+  "name": "Chronicle",
+  "short_name": "Chronicle",
   "start_url": "/today",
   "display": "standalone",
   "background_color": "#f5efe2",

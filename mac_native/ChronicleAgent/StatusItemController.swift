@@ -16,7 +16,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private lazy var accessibilityItem = NSMenuItem(title: "Request Accessibility Access", action: #selector(requestAccessibilityAccess), keyEquivalent: "")
     private lazy var calendarItem = NSMenuItem(title: "Request Calendar Access", action: #selector(requestCalendarAccess), keyEquivalent: "")
     private lazy var systemSettingsItem = NSMenuItem(title: "Open Privacy Settings", action: #selector(openSystemSettings), keyEquivalent: "")
-    private lazy var quitItem = NSMenuItem(title: "Quit Vero", action: #selector(quitApp), keyEquivalent: "q")
+    private lazy var quitItem = NSMenuItem(title: "Quit Chronicle", action: #selector(quitApp), keyEquivalent: "q")
 
     private weak var appDelegate: AppDelegate?
 

@@ -8,13 +8,14 @@ xcodegen generate --quiet
 
 xcodebuild \
   -project Vero.xcodeproj \
-  -scheme Vero \
+  -project Chronicle.xcodeproj \
+  -scheme Chronicle \
   -configuration Debug \
-  -derivedDataPath /tmp/vero-build \
+  -derivedDataPath /tmp/chronicle-build \
   build \
   2>&1 | grep -E "(error:|warning:|Build succeeded|Build FAILED)" || true
 
-APP="/tmp/vero-build/Build/Products/Debug/Vero.app"
+APP="/tmp/chronicle-build/Build/Products/Debug/Chronicle.app"
 
 if [ ! -d "$APP" ]; then
   echo "Build failed — no app found at $APP"

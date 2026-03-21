@@ -1,11 +1,12 @@
 import AppKit
 import Foundation
 
+let title = "Chronicle"
 let fileManager = FileManager.default
 let repoRoot = URL(fileURLWithPath: fileManager.currentDirectoryPath)
 let iconDirectory = repoRoot
     .appendingPathComponent("mac_native", isDirectory: true)
-    .appendingPathComponent("Vero/Assets.xcassets/AppIcon.appiconset", isDirectory: true)
+    .appendingPathComponent("Chronicle/Assets.xcassets/AppIcon.appiconset", isDirectory: true)
 
 let iconSizes = [16, 32, 64, 128, 256, 512, 1024]
 

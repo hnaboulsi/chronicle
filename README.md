@@ -1,13 +1,15 @@
-# Vero
+# Chronicle
 
 AI-powered personal productivity tracker that understands your day. It watches what you're doing on your Mac, tracks your iPhone location, logs everything to your calendar, and proactively asks what you're up to when it doesn't know.
+
+Chronicle is currently in internal alpha.
 
 ## What It Does
 
 - **Tracks your Mac activity** — A silent native macOS agent knows what app you're using and classifies it (studying, working, entertainment, etc.)
 - **Tracks your iPhone location** — Uses iOS Shortcut geofences (Zones) to detect when you arrive at or leave a location, with zero background battery drain.
 - **Asks you when it doesn't know** — If you arrive somewhere new or come back to your laptop after being away, it sends a check-in prompt. Snooze or dismiss directly from the dashboard.
-- **Understands context** — Set your current intent, sleep window, and day mode (travel/exam/rest) from the macOS app. Vero adjusts its interpretation of your activity accordingly.
+- **Understands context** — Set your current intent, sleep window, and day mode (travel/exam/rest) from the macOS app. Chronicle adjusts its interpretation of your activity accordingly.
 - **Logs to Apple Calendar** — Productive sessions and location visits automatically appear as events on your calendar.
 - **AI insights** — Hourly recaps with source transparency (LLM vs deterministic fallback). Click any activity log for an AI summary.
 - **Real-time dashboard** — Live updates, KPI cards, activity timeline, check-in prompts, and full settings.

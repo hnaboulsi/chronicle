@@ -33,13 +33,13 @@ struct SetupView: View {
                     }
                 }
 
-                Text("Use your hosted HTTPS backend URL and the same dashboard password or Basic Auth value you use on the web.")
+                Text("Welcome to Chronicle. Use your hosted HTTPS backend URL and the same dashboard password or Basic Auth value you use on the web.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
-            Section("How Vero Works") {
-                Text("Vero lives in your menu bar after setup. Use the dashboard for tracking cadence, privacy, zones, and diagnostics.")
+            Section("How Chronicle Works") {
+                Text("Chronicle lives in your menu bar after setup. Use the dashboard for tracking cadence, privacy, zones, and diagnostics.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 

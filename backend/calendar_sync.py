@@ -11,9 +11,9 @@ import subprocess
 import sys
 import datetime
 
-log = logging.getLogger("vero.calendar")
+log = logging.getLogger("chronicle.calendar")
 
-CALENDAR_NAME = "Vero"
+CALENDAR_NAME = "Chronicle"
 
 _IS_MACOS = sys.platform == "darwin"
 

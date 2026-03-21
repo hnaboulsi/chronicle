@@ -60,17 +60,17 @@ class AIRoutingTests(unittest.TestCase):
 
         self.assertEqual(prefs["primary_provider"], "mistral")
         self.assertEqual(prefs["fallback_providers"], ["gemini", "openai"])
-        self.assertEqual(os.environ["VERO_AI_PROVIDER"], "mistral")
-        self.assertEqual(json.loads(os.environ["VERO_AI_FALLBACK_PROVIDERS"]), ["gemini", "openai"])
-        self.assertEqual(os.environ["VERO_AI_ROUTING_MODE"], "task_aware")
+        self.assertEqual(os.environ["CHRONICLE_AI_PROVIDER"], "mistral")
+        self.assertEqual(json.loads(os.environ["CHRONICLE_AI_FALLBACK_PROVIDERS"]), ["gemini", "openai"])
+        self.assertEqual(os.environ["CHRONICLE_AI_ROUTING_MODE"], "task_aware")
 
     def test_task_aware_fallback_is_interactive_only(self):
         self.llm_client._mistral_api_key = "test-key"
         self.llm_client._gemini_client = object()
         os.environ["OPENAI_API_KEY"] = ""
-        os.environ["VERO_AI_PROVIDER"] = "mistral"
-        os.environ["VERO_AI_FALLBACK_PROVIDERS"] = json.dumps(["gemini"])
-        os.environ["VERO_AI_ROUTING_MODE"] = "task_aware"
+        os.environ["CHRONICLE_AI_PROVIDER"] = "mistral"
+        os.environ["CHRONICLE_AI_FALLBACK_PROVIDERS"] = json.dumps(["gemini"])
+        os.environ["CHRONICLE_AI_ROUTING_MODE"] = "task_aware"
 
         self.assertEqual(self.llm_client._provider_order(task_type="chat"), ["mistral", "gemini"])
         self.assertEqual(self.llm_client._provider_order(task_type="hourly_summary"), ["mistral"])

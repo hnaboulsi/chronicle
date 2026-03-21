@@ -1,9 +1,9 @@
 import Foundation
 
 enum AppConstants {
-    static let appGroupIdentifier = "group.com.naboulsi.vero"
-    static let mainBundleIdentifier = "com.naboulsi.vero"
-    static let agentBundleIdentifier = "com.naboulsi.vero.agent"
-    static let urlScheme = "vero"
-    static let calendarName = "Vero"
+    static let appGroupIdentifier = "group.com.naboulsi.chronicle"
+    static let mainBundleIdentifier = "com.naboulsi.chronicle"
+    static let agentBundleIdentifier = "com.naboulsi.chronicle.agent"
+    static let urlScheme = "chronicle"
+    static let calendarName = "Chronicle"
 }

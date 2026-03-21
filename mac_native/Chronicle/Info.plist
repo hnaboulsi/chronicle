@@ -3,11 +3,11 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleDisplayName</key>
-    <string>Vero</string>
+    <string>Chronicle</string>
     <key>CFBundleName</key>
-    <string>Vero</string>
+    <string>Chronicle</string>
     <key>CFBundleIdentifier</key>
-    <string>com.naboulsi.vero</string>
+    <string>com.naboulsi.chronicle</string>
     <key>CFBundleURLTypes</key>
     <array>
         <dict>

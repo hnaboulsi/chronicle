@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let statusItemController = StatusItemController()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        log("Chronicle starting up")
         NSApp.setActivationPolicy(.accessory)
 
         let store = AppGroupStore.shared

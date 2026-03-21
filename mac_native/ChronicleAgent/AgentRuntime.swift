@@ -297,6 +297,7 @@ final class AgentRuntime {
         guard store.isConfigured else { return }
 
         do {
+            log("Chronicle Agent: syncing with backend...")
             let state = try await backend.fetchState()
             if let interval = state.capture_interval_seconds, interval >= 60 {
                 store.captureInterval = interval

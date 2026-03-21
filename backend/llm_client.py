@@ -9,7 +9,7 @@ import httpx
 from dotenv import load_dotenv
 from google import genai
 
-log = logging.getLogger("vero.llm")
+log = logging.getLogger("chronicle.llm")
 
 _VALID_PROVIDERS = ("mistral", "gemini", "openai")
 _INTERACTIVE_TASKS = {"chat", "activity_summary", "prompt", "recap_feedback", "daily_recap"}
@@ -37,7 +37,7 @@ def _normalize_provider(provider: str | None, default: str = "auto") -> str:
 
 
 def _configured_provider() -> str:
-    return _normalize_provider(os.getenv("VERO_AI_PROVIDER") or os.getenv("LIFE_MANAGER_AI_PROVIDER") or "auto")
+    return _normalize_provider(os.getenv("CHRONICLE_AI_PROVIDER") or os.getenv("VERO_AI_PROVIDER") or os.getenv("LIFE_MANAGER_AI_PROVIDER") or "auto")
 
 
 def _parse_fallback_providers(raw: str | None) -> list[str]:
@@ -61,7 +61,7 @@ def _parse_fallback_providers(raw: str | None) -> list[str]:
 
 
 def _routing_mode() -> str:
-    mode = (os.getenv("VERO_AI_ROUTING_MODE") or "task_aware").strip().lower()
+    mode = (os.getenv("CHRONICLE_AI_ROUTING_MODE") or os.getenv("VERO_AI_ROUTING_MODE") or "task_aware").strip().lower()
     return mode if mode in {"task_aware", "aggressive_fallback", "strict_primary"} else "task_aware"
 
 
@@ -96,7 +96,7 @@ def _task_allows_fallback(task_type: str) -> bool:
 
 def _provider_order(task_type: str = "default") -> list[str]:
     primary = _primary_provider()
-    fallbacks = _parse_fallback_providers(os.getenv("VERO_AI_FALLBACK_PROVIDERS"))
+    fallbacks = _parse_fallback_providers(os.getenv("CHRONICLE_AI_FALLBACK_PROVIDERS") or os.getenv("VERO_AI_FALLBACK_PROVIDERS"))
 
     candidates: list[str] = []
     if primary in _VALID_PROVIDERS:
@@ -196,7 +196,7 @@ async def _ask_openai(prompt: str, model_kind: str = "default") -> str:
                 json={
                     "model": model,
                     "messages": [
-                        {"role": "system", "content": "You are Vero, a personal productivity AI assistant."},
+                        {"role": "system", "content": "You are Chronicle, a personal productivity AI assistant."},
                         {"role": "user", "content": prompt},
                     ],
                     "temperature": 0.3,
@@ -255,7 +255,7 @@ async def _ask_mistral(prompt: str, model_kind: str = "default", task_type: str 
                 json={
                     "model": model,
                     "messages": [
-                        {"role": "system", "content": "You are Vero, a personal productivity AI assistant."},
+                        {"role": "system", "content": "You are Chronicle, a personal productivity AI assistant."},
                         {"role": "user", "content": prompt},
                     ],
                     "temperature": 0.3,
@@ -361,7 +361,7 @@ async def generate_activity_summary_structured(entry, context_logs: list) -> dic
     context_text = "\n".join(lines) if lines else "- no nearby context"
 
     prompt = (
-        "You are Vero. Generate a concise actionable brief for one activity log.\n\n"
+        "You are Chronicle. Generate a concise actionable brief for one activity log.\n\n"
         f"Selected log app: {app_name}\n"
         f"Selected log title: {title}\n"
         f"Nearby context logs:\n{context_text}\n\n"
@@ -561,7 +561,7 @@ async def generate_hourly_summary(
     # --- Intent context ---
     intent_section = f"\nUSER'S CURRENT INTENT: \"{intent}\"\n" if intent else ""
 
-    prompt = f"""You are Vero, a precise personal productivity analyst. Your goal is to provide a 'smart' and highly contextual summary of the user's hour.
+    prompt = f"""You are Chronicle, a precise personal productivity analyst. Your goal is to provide a 'smart' and highly contextual summary of the user's hour.
 
 TIME CONTEXT: {day_of_week}, {time_context} ({hour_of_day}:00)
 PRESENCE: {active_pct}% active / {idle_pct}% idle or away this hour
@@ -626,7 +626,7 @@ Respond ONLY with valid JSON: {{"summary": "...", "productivity_score": 7.5}}"""
 
 async def generate_daily_recap(logs_summary: str) -> str:
     prompt = (
-        "You are Vero, a personal productivity AI. Based on the following activity logs from today, "
+        "You are Chronicle, a personal productivity AI. Based on the following activity logs from today, "
         "provide a concise daily summary and a productivity score out of 10.\n\n"
         f"Logs:\n{logs_summary}"
     )
@@ -643,7 +643,7 @@ async def analyze_calendar_day(events_text: str, now_label: str) -> dict:
     }
     """
     prompt = (
-        f"You are Vero, a personal productivity AI. Here are today's calendar events (current time: {now_label}):\n\n"
+        f"You are Chronicle, a personal productivity AI. Here are today's calendar events (current time: {now_label}):\n\n"
         f"{events_text}\n\n"
         "Respond ONLY with a JSON object with these three keys:\n"
         "1. 'event_types': object mapping each event title to one of these exact types:\n"
@@ -681,7 +681,7 @@ async def generate_calendar_event_briefs(
     Returns: {"Event Title": "brief sentence.", ...}
     """
     prompt = (
-        f"You are Vero, a personal productivity AI. Current time: {now_label}.\n"
+        f"You are Chronicle, a personal productivity AI. Current time: {now_label}.\n"
         + (f"User context: {global_context}\n" if global_context else "")
         + (f"\nRecent activity (last 2 hours):\n{recent_activity_text}\n" if recent_activity_text else "")
         + f"\nToday's calendar events:\n{events_text}\n\n"

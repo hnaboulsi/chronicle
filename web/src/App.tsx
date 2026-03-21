@@ -194,6 +194,7 @@ function AppShell({
           <NavItem to="/diagnostics" label="History" />
           <NavItem to="/settings" label="Archive" />
         </nav>
+        <div className="sidebar-header">CHRONICLE</div>
         <div className="sidebar-footer">
           <NavItem to="/setup" label="Support" dim />
           <NavItem to="/settings" label="Settings" dim />
@@ -228,7 +229,7 @@ function AppShell({
               <span className={`sidebar-status-dot bg-${serviceTone(state?.service_health)}`} />
               <span>{state?.service_health === "ok" ? "SYSTEM UPLINK ACTIVE" : "SYSTEM OFFLINE"}</span>
             </div>
-            <span>VERO OBSERVATORY</span>
+            <span>CHRONICLE OBSERVATORY</span>
           </div>
           <div className="app-footer-right">
             <span>{state?.current_location?.toUpperCase() ?? "AWAITING PLACE CONTEXT"}</span>
@@ -255,6 +256,10 @@ function TodayPage({
 }) {
   const [chatInput, setChatInput] = useState("");
   const [chatSending, setChatSending] = useState(false);
+
+  useEffect(() => {
+    document.title = state?.mac_idle ? "Chronicle (Idle)" : "Chronicle";
+  }, [state?.mac_idle]);
 
   async function handleChat() {
     const msg = chatInput.trim();
@@ -381,6 +386,10 @@ function Field({ label, value }: { label: string; value: any }) {
 }
 
 function DiagnosticsPage({ state, health, settings }: { state: DashboardState | null; health: HealthResponse | null; settings: BackendSettings | null }) {
+  useEffect(() => {
+    document.title = "Chronicle Diagnostics";
+  }, []);
+
   return (
     <div style={{ padding: '2rem' }}>
       <Surface title="Agent Diagnostics" eyebrow="System Health">

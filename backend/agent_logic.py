@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from models import AgentState, ActivityLog, CalendarEventJob, HourlySummary, LocationZone, MacHeartbeat, MacPresence, MacTelemetry, iOSTelemetry, iOSZoneEvent, UserCalendarEvent
 import llm_client
 
-log = logging.getLogger("vero")
+log = logging.getLogger("chronicle")
 
 PRODUCTIVE_CATEGORIES = {"studying", "working", "creative"}
 DISTRACTED_CATEGORIES = {"entertainment", "social_media", "gaming"}
@@ -184,10 +184,10 @@ def get_ai_preferences(db: Session) -> dict:
 
 def sync_ai_preferences_to_env(db: Session) -> dict:
     preferences = get_ai_preferences(db)
-    os.environ["VERO_AI_PROVIDER"] = preferences["primary_provider"]
+    os.environ["CHRONICLE_AI_PROVIDER"] = preferences["primary_provider"]
     os.environ["LIFE_MANAGER_AI_PROVIDER"] = preferences["primary_provider"]
-    os.environ["VERO_AI_FALLBACK_PROVIDERS"] = json.dumps(preferences["fallback_providers"])
-    os.environ["VERO_AI_ROUTING_MODE"] = preferences["routing_mode"]
+    os.environ["CHRONICLE_AI_FALLBACK_PROVIDERS"] = json.dumps(preferences["fallback_providers"])
+    os.environ["CHRONICLE_AI_ROUTING_MODE"] = preferences["routing_mode"]
     return preferences
 
 
