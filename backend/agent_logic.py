@@ -82,12 +82,13 @@ def _set_state_if_changed(db: Session, key: str, value: str):
 
 
 def get_capture_interval_seconds(db: Session) -> int:
-    raw = (
-        get_state(db, "capture_interval_seconds")
-        or get_state(db, "polling_interval_seconds")
-        or DEFAULTS["capture_interval_seconds"]
-    )
-    return max(60, _safe_int(raw, 300))
+    capture = _safe_int(get_state(db, "capture_interval_seconds"), 0)
+    polling = _safe_int(get_state(db, "polling_interval_seconds"), 0)
+    if capture > 0 and polling > 0:
+        raw = min(capture, polling)
+    else:
+        raw = capture or polling or _safe_int(DEFAULTS["capture_interval_seconds"], 300)
+    return max(60, raw)
 
 
 def get_effective_capture_interval_seconds(db: Session, screen_state: str = "visible") -> int:
