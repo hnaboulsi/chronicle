@@ -335,68 +335,52 @@ function AppShell({
 }) {
   return (
     <div className="app-shell">
-      <div className="workspace">
-        <aside className="sidebar tactical-sidebar">
-          <div className="brand-block">
-            <Link to="/today" className="brand-mark">
-              <span className="brand-title">Vero</span>
-              <span className="brand-version">V.01 Tactical</span>
-            </Link>
-          </div>
-          <nav className="nav-list">
-            <NavItem to="/today" label="Today" />
-            <NavItem to="/zones" label="Zones" />
-            <NavItem to="/settings" label="Settings" />
-            <NavItem to="/diagnostics" label="Diagnostics" />
-            <NavItem to="/setup" label="Setup" dim />
-          </nav>
-          <div className="sidebar-session">
-            <div className="sidebar-session-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-              </svg>
-            </div>
-            <div>
-              <div className="sidebar-session-label">Session</div>
-              <div className="sidebar-session-value">
-                {state?.last_mac_capture_age_seconds != null ? formatAge(state.last_mac_capture_age_seconds) : "Waiting"}
-              </div>
-            </div>
-          </div>
-        </aside>
+      <header className="topbar zen-topbar">
+        <Link to="/today" className="brand-mark zen-brand-mark">
+          <span className="brand-title">Vero Zen</span>
+        </Link>
 
-        <div className="app-main">
-          <header className="topbar">
-            <div className="topbar-copy">
-              <div className="eyebrow">
-                {state?.service_health === "ok" && <span className="status-dot" />}
-                Intent console
-              </div>
-              <h1>{timeGreeting()}</h1>
-              <p className="topbar-location">
-                {topbarLocationLabel(state)}{" "}
-                <Link className="topbar-inline-link" to="/today">Update it</Link>
-              </p>
-            </div>
-            <div className="topbar-actions">
-              <div className="topbar-status-chip">
-                <span className={`sidebar-status-dot bg-${serviceTone(state?.service_health)}`} />
-                {state?.service_health === "ok" ? "Live feed" : state?.service_health === "offline" ? "Offline" : "Syncing"}
-              </div>
-              <button
-                className="secondary-button"
-                onClick={onRefresh}
-                type="button"
-                disabled={refreshing}
-                aria-busy={refreshing}
-              >
-                {refreshing ? "Refreshing..." : "Refresh"}
-              </button>
-            </div>
-          </header>
+        <nav className="top-nav-links" aria-label="Primary navigation">
+          <TopNavLink to="/today" label="Observe" />
+          <TopNavLink to="/zones" label="Chronicle" />
+          <TopNavLink to="/diagnostics" label="Analysis" />
+          <TopNavLink to="/settings" label="Archive" />
+        </nav>
 
-          <main className="content">
+        <div className="topbar-actions zen-topbar-actions">
+          <button
+            className="icon-button"
+            onClick={onRefresh}
+            type="button"
+            disabled={refreshing}
+            aria-label={refreshing ? "Refreshing" : "Refresh dashboard"}
+            aria-busy={refreshing}
+          >
+            <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992V4.356" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M2.985 19.644v-4.992h4.992" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4.93 9.348a8.25 8.25 0 0 1 13.341-3.032l2.744 2.744" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19.07 14.652a8.25 8.25 0 0 1-13.341 3.032l-2.744-2.744" />
+            </svg>
+          </button>
+          <Link className="icon-button" to="/settings" aria-label="Open settings">
+            {NAV_ICONS["/settings"]}
+          </Link>
+        </div>
+      </header>
+
+      <aside className="side-rail" aria-label="Section shortcuts">
+        <nav className="side-rail-nav">
+          <NavItem to="/today" label="Observe" iconOnly />
+          <NavItem to="/zones" label="Chronicle" iconOnly />
+          <NavItem to="/diagnostics" label="Analysis" iconOnly />
+          <NavItem to="/settings" label="Archive" iconOnly />
+          <NavItem to="/setup" label="Setup" dim iconOnly />
+        </nav>
+      </aside>
+
+      <div className="workspace zen-workspace">
+        <main className="content zen-content">
           {statusMessage ? (
             <div className="banner success" role="status" aria-live="polite">
               {statusMessage}
@@ -408,17 +392,40 @@ function AppShell({
             </div>
           ) : null}
           {children}
-          </main>
-        </div>
+        </main>
       </div>
 
+      <footer className="app-footer">
+        <div className="app-footer-left">
+          <div className="app-footer-status">
+            <span className={`sidebar-status-dot bg-${serviceTone(state?.service_health)}`} />
+            <span>{state?.service_health === "ok" ? "System uplink active" : state?.service_health === "offline" ? "System offline" : "System syncing"}</span>
+          </div>
+          <div className="app-footer-metric">Capture {intervalLabel(state?.capture_interval_seconds)}</div>
+        </div>
+        <div className="app-footer-right">
+          <div className="app-footer-identity">
+            <span>Vero Observatory</span>
+            <span>{state?.current_location ?? "Awaiting place context"}</span>
+          </div>
+        </div>
+      </footer>
+
       <nav className="mobile-nav">
-        <NavItem to="/today" label="Today" />
-        <NavItem to="/zones" label="Zones" />
-        <NavItem to="/settings" label="Settings" />
-        <NavItem to="/diagnostics" label="Diagnostics" />
+        <NavItem to="/today" label="Observe" />
+        <NavItem to="/zones" label="Chronicle" />
+        <NavItem to="/diagnostics" label="Analysis" />
+        <NavItem to="/settings" label="Archive" />
       </nav>
     </div>
+  );
+}
+
+function TopNavLink({ to, label }: { to: string; label: string }) {
+  return (
+    <NavLink to={to} className={({ isActive }) => (isActive ? "top-nav-link active" : "top-nav-link")}>
+      {label}
+    </NavLink>
   );
 }
 
@@ -452,16 +459,19 @@ const NAV_ICONS: Record<string, ReactNode> = {
   ),
 };
 
-function NavItem({ to, label, dim }: { to: string; label: string; dim?: boolean }) {
+function NavItem({ to, label, dim, iconOnly }: { to: string; label: string; dim?: boolean; iconOnly?: boolean }) {
   return (
     <NavLink
       to={to}
       className={({ isActive }) =>
-        isActive ? "nav-item active" : `nav-item${dim ? " nav-dim" : ""}`
+        isActive
+          ? `nav-item${dim ? " nav-dim" : ""}${iconOnly ? " nav-icon-only" : ""} active`
+          : `nav-item${dim ? " nav-dim" : ""}${iconOnly ? " nav-icon-only" : ""}`
       }
+      aria-label={label}
     >
       {NAV_ICONS[to]}
-      {label}
+      {!iconOnly && label}
     </NavLink>
   );
 }
@@ -651,255 +661,263 @@ function TodayPage({
   const currentCategory = state?.current_activity_category?.replace(/_/g, " ") ?? "unknown";
   const systemTitle = logs[0]?.app_name || state?.current_activity_category || "Idle";
   const systemDetail = logs[0]?.window_title || state?.current_activity_summary || "No active window detail yet";
+  const chronicleEntries = [
+    aiDayInsight,
+    ...hourlySummaries.slice(0, 2).map((summary) => stripSummaryTimePrefix(summary.summary_text)),
+    state?.current_event_title ? `Current calendar anchor: ${state.current_event_title}.` : null,
+  ].filter((entry): entry is string => Boolean(entry && entry.trim()));
 
   return (
-    <div className="today-command">
-      <section className="intent-stage">
-        <div className="intent-copy">
-          <div className="eyebrow">Intent</div>
-          <h2 className="intent-title">What are you focusing on right now?</h2>
-          <p className="intent-subtitle">
-            {initialLoading ? "Reading the room..." : currentFocus}
-          </p>
-        </div>
+    <div className="zen-observe-page">
+      <div className="zen-editorial-layout">
+        <div className="zen-main-column">
+          <section className="zen-hero">
+            <p className="zen-greeting">{timeGreeting()}</p>
+            <h2 className="zen-hero-title">
+              What is the focus for the next hour?
+              <span>{initialLoading ? "Reading the room..." : currentFocus}</span>
+            </h2>
 
-        <div className="intent-input-wrap">
-          <input
-            className="intent-input"
-            placeholder="Start typing your intent..."
-            value={chatInput}
-            onChange={(e) => setChatInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && !chatSending) void handleChat(); }}
-          />
-          <button className="intent-submit" type="button" onClick={() => void handleChat()} disabled={!chatInput.trim() || chatSending}>
-            {chatSending ? "Sending" : "Commit"}
-          </button>
-        </div>
-
-        <div className="intent-chip-row">
-          {QUICK_LOG_PRESETS.map(({ short, label, activity_type }) => (
-            <button
-              key={activity_type}
-              className="intent-chip"
-              onClick={() => void handleQuickLog(activity_type, label)}
-              disabled={!!loggingActivity}
-            >
-              <span className="intent-chip-mark">{loggingActivity === activity_type ? ".." : short}</span>
-              <span>{label}</span>
-            </button>
-          ))}
-        </div>
-
-        {loggedMsg && <div className="quicklog-confirm">{loggedMsg}</div>}
-      </section>
-
-      <div className="today-focus-grid">
-        <Surface title="System context" eyebrow="Live source">
-          <div className="context-card">
-            <div className="context-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 17 6 20.75M18 14.5V6.75A2.25 2.25 0 0 0 15.75 4.5H8.25A2.25 2.25 0 0 0 6 6.75V14.5m12 0H6m12 0 1.5 4.5H4.5L6 14.5" />
-              </svg>
-            </div>
-            <div>
-              <h3 className="context-title">{systemTitle}</h3>
-              <p className="context-meta">{currentCategory} · {captureAgeMinutes != null ? `${captureAgeMinutes}m since capture` : "Waiting for capture"}</p>
-            </div>
-          </div>
-          <p className="context-body">{systemDetail}</p>
-          <div className="context-stats">
-            <div>
-              <span className="context-stat-label">Location</span>
-              <strong>{state?.current_location ?? "Unknown"}</strong>
-            </div>
-            <div>
-              <span className="context-stat-label">Presence</span>
-              <strong>{presenceLabel(state?.presence_display ?? state?.presence_state)}</strong>
-            </div>
-            <div>
-              <span className="context-stat-label">Active time</span>
-              <strong>{analytics?.total_active_minutes ?? 0} min</strong>
-            </div>
-          </div>
-        </Surface>
-
-        <Surface title="Productivity pulse" eyebrow="Tactical signal">
-          <div className="pulse-header-row">
-            <span className="pulse-label">{analytics?.productive_pct ?? 0}% average</span>
-            <span className="pulse-note">Last {pulseValues.length} windows</span>
-          </div>
-          <div className="pulse-chart" aria-hidden="true">
-            {pulseValues.map((value, index) => (
-              <span key={`${value}-${index}`} className="pulse-bar" style={{ height: `${value}%` }} />
-            ))}
-          </div>
-          <div className="pulse-footer-row">
-            <span>Earlier</span>
-            <span>Now</span>
-          </div>
-          <div className="context-stats compact">
-            <div>
-              <span className="context-stat-label">Productive</span>
-              <strong>{analytics?.productive_minutes ?? 0} min</strong>
-            </div>
-            <div>
-              <span className="context-stat-label">Logs</span>
-              <strong>{analytics?.log_count ?? 0}</strong>
-            </div>
-            <div>
-              <span className="context-stat-label">LLM calls</span>
-              <strong>{analytics?.llm_used ?? 0}</strong>
-            </div>
-          </div>
-        </Surface>
-      </div>
-
-      {checkin?.checkin ? (
-        <Surface title="Check-in" eyebrow="Needs input">
-          {checkin.event_title ? (
-            <p className="cal-brief">{checkin.event_title}{checkin.event_location ? ` · ${checkin.event_location}` : ""}</p>
-          ) : null}
-          <p className="lead">{checkin.checkin}</p>
-          <div className="quicklog-custom" style={{ marginTop: "10px" }}>
-            <input
-              className="quicklog-input"
-              placeholder={checkin.guess ? `Confirm \"${checkin.guess}\" or type something else...` : "What are you working on?"}
-              value={checkinReply}
-              disabled={checkinLoading}
-              autoFocus
-              onChange={e => setCheckinReply(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter" && !checkinLoading && (checkinReply.trim() || checkin.guess)) void handleCheckin("confirm"); }}
-            />
-            <button
-              className="primary-button"
-              disabled={checkinLoading || (!checkinReply.trim() && !checkin.guess)}
-              onClick={() => void handleCheckin("confirm")}
-            >
-              {checkinLoading ? "Sending..." : "Send"}
-            </button>
-          </div>
-          <div className="checkin-actions">
-            <button className="secondary-button" disabled={checkinLoading} onClick={() => void handleCheckin("snooze")}>Remind me later</button>
-            <button className="secondary-button ghost-button" disabled={checkinLoading} onClick={() => void handleCheckin("dismiss")}>Dismiss</button>
-          </div>
-        </Surface>
-      ) : null}
-
-      <div className="today-support-grid">
-        {calendarEvents.length > 0 && (
-          <Surface title="Field schedule" eyebrow="Calendar">
-            {aiDayInsight && <p className="cal-ai-insight">{aiDayInsight}</p>}
-            <div className="cal-strip">
-              {calendarEvents.map((ev) => {
-                const minsAway = minutesUntil(ev.start_at);
-                return (
-                  <div key={ev.id} className={`cal-event cal-type-${ev.event_type ?? "other"}${ev.is_current ? " cal-current" : ev.is_past ? " cal-past" : ""}`}>
-                    <span className="cal-time">{formatTimeOnly(ev.start_at, timezone)}</span>
-                    <span className="cal-title-group">
-                      <span className="cal-title">{ev.event_type === "assignment" ? `Due: ${ev.title}` : ev.title}</span>
-                      {ev.event_note && <span className="cal-note">{ev.event_note}</span>}
-                    </span>
-                    {ev.event_type && ev.event_type !== "other" && (
-                      <span className={`cal-type-badge cal-type-badge-${ev.event_type}`}>{ev.event_type.replace("_", " ")}</span>
-                    )}
-                    {ev.calendar_name && <span className="cal-name">{ev.calendar_name}</span>}
-                    {ev.is_current && <span className="cal-badge">Now</span>}
-                    {minsAway != null && minsAway <= 30 ? <span className="cal-countdown">in {minsAway}m</span> : null}
-                    {ev.ai_brief && <span className="cal-brief">{ev.ai_brief}</span>}
-                  </div>
-                );
-              })}
-            </div>
-          </Surface>
-        )}
-
-        <Surface
-          title="Intent log"
-          eyebrow="Conversation"
-          action={chatMessages.length > 0 ? (
-            <button className="secondary-button compact-button" onClick={() => void handleClearChat()}>Clear</button>
-          ) : undefined}
-        >
-          {chatMessages.length > 0 ? (
-            <div className="chat-history">
-              {chatMessages.map((m, i) => (
-                <div key={i} className="chat-pair">
-                  <div className="chat-user">{m.user}</div>
-                  <div className="chat-reply">{m.reply}</div>
-                </div>
+            <div className="zen-mode-row">
+              {QUICK_LOG_PRESETS.map(({ short, label, activity_type }, index) => (
+                <button
+                  key={activity_type}
+                  className={index === 0 ? "zen-mode-button active" : "zen-mode-button"}
+                  onClick={() => void handleQuickLog(activity_type, label)}
+                  disabled={!!loggingActivity}
+                >
+                  <span>{label}</span>
+                  <span className="zen-mode-code">{loggingActivity === activity_type ? ".." : short}</span>
+                </button>
               ))}
             </div>
-          ) : (
-            <p className="muted">No active thread yet. Use the prompt above to tell Vero what you are doing or where you are.</p>
-          )}
-        </Surface>
-      </div>
 
-      {hourlySummaries.length > 0 && (
-        <Surface title="AI recaps" eyebrow="Last few hours">
-          <div className="recap-list">
-            {hourlySummaries.map(s => (
-              <div key={s.id} className="recap-row">
-                <span className="recap-time">{formatTime(s.hour_start_local, timezone)}</span>
-                <div className="recap-body">
-                  <span className="recap-text">{stripSummaryTimePrefix(s.summary_text)}</span>
-                  {s.productivity_score != null && (
-                    <div className="recap-score-bar">
-                      <div
-                        className="recap-score-fill"
-                        style={{ width: `${s.productivity_score * 10}%`, '--score': s.productivity_score } as React.CSSProperties}
-                      />
-                      <span className="recap-score-label">{s.productivity_score.toFixed(1)}</span>
-                    </div>
-                  )}
+            <div className="zen-intent-entry">
+              <input
+                className="zen-intent-input"
+                placeholder="Write the next move..."
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && !chatSending) void handleChat(); }}
+              />
+              <button className="zen-intent-submit" type="button" onClick={() => void handleChat()} disabled={!chatInput.trim() || chatSending}>
+                {chatSending ? "Sending" : "Log intent"}
+              </button>
+            </div>
+
+            {loggedMsg && <div className="quicklog-confirm">{loggedMsg}</div>}
+          </section>
+
+          <section className="zen-data-row">
+            <article className="zen-data-block">
+              <p className="zen-section-label">Environmental status</p>
+              <div>
+                <p className="zen-primary-reading">{state?.current_location ?? "Unknown location"}</p>
+                <p className="zen-secondary-reading">
+                  {presenceLabel(state?.presence_display ?? state?.presence_state)}
+                  {captureAgeMinutes != null ? ` · ${captureAgeMinutes}m since capture` : " · Waiting for capture"}
+                </p>
+                <p className="zen-micro-link">{systemDetail}</p>
+              </div>
+            </article>
+
+            <article className="zen-data-block">
+              <p className="zen-section-label">Performance metrics</p>
+              <div className="zen-metric-grid">
+                <div>
+                  <p className="zen-metric-value">{analytics?.productive_minutes ?? 0}m</p>
+                  <p className="zen-metric-label">Productive</p>
                 </div>
-                <div className="recap-right">
-                  {s.source === "llm" && !s.fallback_used
-                    ? <span className="recap-badge recap-badge-ai">AI</span>
-                    : <span className="recap-badge recap-badge-est">est.</span>}
+                <div>
+                  <p className="zen-metric-value">{analytics?.productive_pct ?? 0}%</p>
+                  <p className="zen-metric-label">Focus</p>
                 </div>
               </div>
-            ))}
-          </div>
-        </Surface>
-      )}
+              <div className="pulse-chart zen-pulse-chart" aria-hidden="true">
+                {pulseValues.map((value, index) => (
+                  <span key={`${value}-${index}`} className="pulse-bar" style={{ height: `${value}%` }} />
+                ))}
+              </div>
+            </article>
+          </section>
 
-      <Surface title="Live data feed" eyebrow="Recent activity">
-        <div className="timeline tactical-timeline">
-          {initialLoading ? (
-            Array.from({ length: 6 }).map((_, i) => (
-              <article className="timeline-row" key={i}>
-                <div className="timeline-time"><Skeleton h="0.9rem" w="90px" /></div>
-                <div className="timeline-copy"><Skeleton h="0.9rem" w="100%" /></div>
-                <div className="timeline-meta"><Skeleton h="0.9rem" w="60px" /></div>
-              </article>
-            ))
-          ) : deferredLogs.length ? (
-            deferredLogs.map((entry) => (
-              <article className="timeline-row" key={entry.id}>
-                <div className="timeline-time">{formatTime(entry.timestamp, timezone)}</div>
-                <div className="timeline-copy">
-                  <strong>{entry.app_name || entry.location_label || entry.activity_type || "Activity"}</strong>
-                  <p>{entry.window_title || entry.activity_type || entry.location_label || "No detail available"}</p>
-                </div>
-                <div className="timeline-meta">
-                  {entry.device === "manual"
-                    ? <span className="tag tag-manual">manual</span>
-                    : entry.activity_type && entry.activity_type !== "unknown"
-                      ? <span className="tag">{entry.activity_type}</span>
-                      : presenceLabel(entry.presence_state)}
-                </div>
-              </article>
-            ))
-          ) : (
-            <div className="empty-cta">
-              <p className="empty-cta-heading">No captures yet</p>
-              <p className="muted">Once the Mac companion is running, activity appears here automatically.</p>
-              <Link className="secondary-link" to="/setup">Go to Setup →</Link>
-            </div>
+          {checkin?.checkin ? (
+            <Surface title="Check-in" eyebrow="Needs input">
+              {checkin.event_title ? (
+                <p className="cal-brief">{checkin.event_title}{checkin.event_location ? ` · ${checkin.event_location}` : ""}</p>
+              ) : null}
+              <p className="lead">{checkin.checkin}</p>
+              <div className="quicklog-custom" style={{ marginTop: "10px" }}>
+                <input
+                  className="quicklog-input"
+                  placeholder={checkin.guess ? `Confirm \"${checkin.guess}\" or type something else...` : "What are you working on?"}
+                  value={checkinReply}
+                  disabled={checkinLoading}
+                  autoFocus
+                  onChange={e => setCheckinReply(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter" && !checkinLoading && (checkinReply.trim() || checkin.guess)) void handleCheckin("confirm"); }}
+                />
+                <button
+                  className="primary-button"
+                  disabled={checkinLoading || (!checkinReply.trim() && !checkin.guess)}
+                  onClick={() => void handleCheckin("confirm")}
+                >
+                  {checkinLoading ? "Sending..." : "Send"}
+                </button>
+              </div>
+              <div className="checkin-actions">
+                <button className="secondary-button" disabled={checkinLoading} onClick={() => void handleCheckin("snooze")}>Remind later</button>
+                <button className="secondary-button ghost-button" disabled={checkinLoading} onClick={() => void handleCheckin("dismiss")}>Dismiss</button>
+              </div>
+            </Surface>
+          ) : null}
+
+          {calendarEvents.length > 0 && (
+            <Surface title="Current field" eyebrow="Calendar">
+              <div className="cal-strip">
+                {calendarEvents.map((ev) => {
+                  const minsAway = minutesUntil(ev.start_at);
+                  return (
+                    <div key={ev.id} className={`cal-event cal-type-${ev.event_type ?? "other"}${ev.is_current ? " cal-current" : ev.is_past ? " cal-past" : ""}`}>
+                      <span className="cal-time">{formatTimeOnly(ev.start_at, timezone)}</span>
+                      <span className="cal-title-group">
+                        <span className="cal-title">{ev.event_type === "assignment" ? `Due: ${ev.title}` : ev.title}</span>
+                        {ev.event_note && <span className="cal-note">{ev.event_note}</span>}
+                      </span>
+                      {ev.event_type && ev.event_type !== "other" && (
+                        <span className={`cal-type-badge cal-type-badge-${ev.event_type}`}>{ev.event_type.replace("_", " ")}</span>
+                      )}
+                      {ev.calendar_name && <span className="cal-name">{ev.calendar_name}</span>}
+                      {ev.is_current && <span className="cal-badge">Now</span>}
+                      {minsAway != null && minsAway <= 30 ? <span className="cal-countdown">in {minsAway}m</span> : null}
+                      {ev.ai_brief && <span className="cal-brief">{ev.ai_brief}</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            </Surface>
           )}
+
+          <Surface title="Live feed" eyebrow="Recent activity">
+            <div className="timeline tactical-timeline">
+              {initialLoading ? (
+                Array.from({ length: 6 }).map((_, i) => (
+                  <article className="timeline-row" key={i}>
+                    <div className="timeline-time"><Skeleton h="0.9rem" w="90px" /></div>
+                    <div className="timeline-copy"><Skeleton h="0.9rem" w="100%" /></div>
+                    <div className="timeline-meta"><Skeleton h="0.9rem" w="60px" /></div>
+                  </article>
+                ))
+              ) : deferredLogs.length ? (
+                deferredLogs.map((entry) => (
+                  <article className="timeline-row" key={entry.id}>
+                    <div className="timeline-time">{formatTime(entry.timestamp, timezone)}</div>
+                    <div className="timeline-copy">
+                      <strong>{entry.app_name || entry.location_label || entry.activity_type || "Activity"}</strong>
+                      <p>{entry.window_title || entry.activity_type || entry.location_label || "No detail available"}</p>
+                    </div>
+                    <div className="timeline-meta">
+                      {entry.device === "manual"
+                        ? <span className="tag tag-manual">manual</span>
+                        : entry.activity_type && entry.activity_type !== "unknown"
+                          ? <span className="tag">{entry.activity_type}</span>
+                          : presenceLabel(entry.presence_state)}
+                    </div>
+                  </article>
+                ))
+              ) : (
+                <div className="empty-cta">
+                  <p className="empty-cta-heading">No captures yet</p>
+                  <p className="muted">Once the Mac companion is running, activity appears here automatically.</p>
+                  <Link className="secondary-link" to="/setup">Go to Setup →</Link>
+                </div>
+              )}
+            </div>
+          </Surface>
         </div>
-      </Surface>
+
+        <aside className="zen-chronicle-column">
+          <section className="zen-chronicle-panel">
+            <p className="zen-section-label zen-chronicle-label">Session Chronicle</p>
+            <div className="zen-chronicle-list">
+              {(chronicleEntries.length ? chronicleEntries : [
+                `${systemTitle} remains the main focus in the current session.`,
+                `${currentCategory.charAt(0).toUpperCase()}${currentCategory.slice(1)} is the strongest category signal right now.`,
+                `${state?.current_location ?? "Current context"} looks stable enough for continuation.`,
+              ]).map((entry, index) => (
+                <article key={`${index}-${entry.slice(0, 16)}`} className="zen-chronicle-entry">
+                  <p>{entry}</p>
+                </article>
+              ))}
+            </div>
+
+            <div className="zen-kernel-grid">
+              <div className="zen-kernel-row">
+                <span>Kernel status</span>
+                <span>{state?.service_health === "ok" ? "Active" : "Recovering"}</span>
+              </div>
+              <div className="zen-kernel-row">
+                <span>Neural sync</span>
+                <span>{analytics?.productive_pct ?? 0}%</span>
+              </div>
+              <div className="zen-kernel-row">
+                <span>Observed app</span>
+                <span>{systemTitle}</span>
+              </div>
+            </div>
+          </section>
+
+          <Surface
+            title="Intent dialogue"
+            eyebrow="Conversation"
+            action={chatMessages.length > 0 ? (
+              <button className="secondary-button compact-button" onClick={() => void handleClearChat()}>Clear</button>
+            ) : undefined}
+          >
+            {chatMessages.length > 0 ? (
+              <div className="chat-history">
+                {chatMessages.map((m, i) => (
+                  <div key={i} className="chat-pair">
+                    <div className="chat-user">{m.user}</div>
+                    <div className="chat-reply">{m.reply}</div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="muted">No active thread yet. Use the focus prompt to tell Vero what you are doing or where you are.</p>
+            )}
+          </Surface>
+
+          {hourlySummaries.length > 0 && (
+            <Surface title="AI recap" eyebrow="Recent passages">
+              <div className="recap-list">
+                {hourlySummaries.map(s => (
+                  <div key={s.id} className="recap-row">
+                    <span className="recap-time">{formatTime(s.hour_start_local, timezone)}</span>
+                    <div className="recap-body">
+                      <span className="recap-text">{stripSummaryTimePrefix(s.summary_text)}</span>
+                      {s.productivity_score != null && (
+                        <div className="recap-score-bar">
+                          <div
+                            className="recap-score-fill"
+                            style={{ width: `${s.productivity_score * 10}%`, '--score': s.productivity_score } as React.CSSProperties}
+                          />
+                          <span className="recap-score-label">{s.productivity_score.toFixed(1)}</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="recap-right">
+                      {s.source === "llm" && !s.fallback_used
+                        ? <span className="recap-badge recap-badge-ai">AI</span>
+                        : <span className="recap-badge recap-badge-est">est.</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Surface>
+          )}
+        </aside>
+      </div>
     </div>
   );
 }
