@@ -1197,7 +1197,7 @@ async def api_version():
 
 @app.get("/api/zones")
 def get_zones(db: Session = Depends(get_db)):
-    return {"zones": agent_logic.list_zones(db)}
+    return agent_logic.list_zones(db)
 
 
 @app.post("/api/zones")

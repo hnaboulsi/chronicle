@@ -1022,6 +1022,12 @@ async def _generate_and_store_hourly_summary(db: Session, now: datetime, force_c
             _zone_notes = _zone_type
             if _loc_age_note:
                 _zone_notes = f"{_zone_type}, {_loc_age_note}" if _zone_type else _loc_age_note
+            # Adjacent zone proximity warning (iPhone GPS can confuse neighboring geofences)
+            _ADJACENT_ZONES: dict[str, str] = {"anchor": "campus", "campus": "anchor"}
+            _loc_key = _loc.lower().replace(" ", "_") if _loc else ""
+            _adjacent = _ADJACENT_ZONES.get(_loc_key, "")
+            if _adjacent:
+                _zone_notes = (_zone_notes + f"; GPS note: adjacent to '{_adjacent}' zone — may be misidentified").lstrip("; ")
 
             # iOS context (most recent entry in window)
             ios_entry = (

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import {
   BrowserRouter,
@@ -329,7 +329,6 @@ function AppShell({
         </Link>
         <nav className="side-rail-nav">
           <NavItem to="/today" label="Today" />
-          <NavItem to="/zones" label="Places" />
           <NavItem to="/diagnostics" label="History" />
         </nav>
         <div className="sidebar-footer">
@@ -917,6 +916,15 @@ function ZonesPage() {
 
 // ── HistoryPage ───────────────────────────────────────────────────────────────
 
+const CAL_HOURS = Array.from({ length: 24 }, (_, i) => i);
+
+function calCellColor(s: HourlySummary | undefined): string {
+  if (!s || s.productivity_score === null) return "var(--panel-strong)";
+  if (s.productivity_score >= 7) return "var(--accent)";
+  if (s.productivity_score >= 4) return "#f0b429";
+  return "var(--bad)";
+}
+
 function HistoryPage({
   hourlySummaries,
   health,
@@ -926,15 +934,51 @@ function HistoryPage({
   health: HealthResponse | null;
   settings: BackendSettings | null;
 }) {
+  const [selected, setSelected] = useState<HourlySummary | null>(null);
+
   useEffect(() => {
     document.title = "Chronicle — History";
   }, []);
 
-  const sorted = [...hourlySummaries].sort(
-    (a, b) =>
-      new Date(b.hour_start_local).getTime() -
-      new Date(a.hour_start_local).getTime()
-  );
+  // Build map: dateKey ("YYYY-MM-DD") → hour (0-23) → summary
+  // Parse directly from ISO string to avoid browser TZ shifting
+  const calMap = useMemo(() => {
+    const map = new Map<string, Map<number, HourlySummary>>();
+    for (const s of hourlySummaries) {
+      const iso = s.hour_start_local;
+      if (!iso || iso.length < 13) continue;
+      const dateKey = iso.substring(0, 10);
+      const hour = parseInt(iso.substring(11, 13), 10);
+      if (!map.has(dateKey)) map.set(dateKey, new Map());
+      map.get(dateKey)!.set(hour, s);
+    }
+    return map;
+  }, [hourlySummaries]);
+
+  // Last 7 calendar days based on browser local date
+  const dayKeys = useMemo(() => {
+    const days: string[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      days.push(
+        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+      );
+    }
+    return days;
+  }, []);
+
+  const todayKey = dayKeys[dayKeys.length - 1];
+
+  function dayLabel(dateKey: string): string {
+    if (dateKey === todayKey) return "Today";
+    const d = new Date(`${dateKey}T12:00:00`);
+    return d.toLocaleDateString([], {
+      weekday: "short",
+      month: "numeric",
+      day: "numeric",
+    });
+  }
 
   return (
     <div className="history-page">
@@ -978,63 +1022,142 @@ function HistoryPage({
 
       <div className="history-content">
         <div className="history-header">
-          <span className="section-eyebrow">HOURLY CHRONICLE</span>
+          <span className="section-eyebrow">7-DAY CHRONICLE</span>
           <h2 className="history-title">Session History</h2>
         </div>
 
-        {sorted.length === 0 ? (
+        <div className="cal-scroll-wrap">
+          <div className="cal-grid">
+            {/* Hour axis labels */}
+            <div className="cal-hour-axis">
+              <div className="cal-axis-header" />
+              {CAL_HOURS.map((h) => (
+                <div key={h} className="cal-axis-cell">
+                  {h % 3 === 0 && (
+                    <span className="cal-hour-label">
+                      {h === 0
+                        ? "12a"
+                        : h < 12
+                          ? `${h}a`
+                          : h === 12
+                            ? "12p"
+                            : `${h - 12}p`}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Day columns */}
+            {dayKeys.map((dateKey) => (
+              <div key={dateKey} className="cal-day-col">
+                <div
+                  className={`cal-col-header${dateKey === todayKey ? " cal-today-header" : ""}`}
+                >
+                  {dayLabel(dateKey)}
+                </div>
+                {CAL_HOURS.map((h) => {
+                  const s = calMap.get(dateKey)?.get(h);
+                  const isSelected = selected?.id === s?.id && !!s;
+                  return (
+                    <div
+                      key={h}
+                      className={`cal-hour-cell${s ? " cal-has-data" : ""}${isSelected ? " cal-selected" : ""}`}
+                      style={{ background: calCellColor(s) }}
+                      title={
+                        s
+                          ? `${formatHour(s.hour_start_local)}: ${productivityGrade(Math.round((s.productivity_score ?? 0) * 10))} (${Math.round((s.productivity_score ?? 0) * 10)}%)`
+                          : undefined
+                      }
+                      onClick={() =>
+                        s
+                          ? setSelected(isSelected ? null : s)
+                          : undefined
+                      }
+                    />
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Legend */}
+        <div className="cal-legend">
+          <span className="cal-legend-item">
+            <span
+              className="cal-legend-dot"
+              style={{ background: "var(--accent)" }}
+            />
+            HIGH (7–10)
+          </span>
+          <span className="cal-legend-item">
+            <span
+              className="cal-legend-dot"
+              style={{ background: "#f0b429" }}
+            />
+            MID (4–7)
+          </span>
+          <span className="cal-legend-item">
+            <span
+              className="cal-legend-dot"
+              style={{ background: "var(--bad)" }}
+            />
+            LOW (0–4)
+          </span>
+          <span className="cal-legend-item">
+            <span
+              className="cal-legend-dot"
+              style={{ background: "var(--panel-strong)" }}
+            />
+            NO DATA
+          </span>
+        </div>
+
+        {/* Selected hour detail */}
+        {selected && (() => {
+          const pct = Math.round((selected.productivity_score ?? 0) * 10);
+          const g = productivityGrade(pct);
+          return (
+            <div className="cal-detail-panel">
+              <div className="cal-detail-header">
+                <span className="timeline-hour">
+                  {formatHour(selected.hour_start_local)}
+                </span>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "baseline",
+                    gap: "0.5rem",
+                  }}
+                >
+                  <span
+                    className="timeline-grade"
+                    style={{ color: gradeColor(g) }}
+                  >
+                    {g}
+                  </span>
+                  <span className="timeline-score">{pct}%</span>
+                </div>
+                <button
+                  className="cal-detail-close"
+                  type="button"
+                  onClick={() => setSelected(null)}
+                >
+                  ✕
+                </button>
+              </div>
+              <p className="timeline-summary">{selected.summary_text}</p>
+            </div>
+          );
+        })()}
+
+        {hourlySummaries.length === 0 && (
           <div className="history-empty">
             <p>No hourly summaries yet.</p>
             <p className="muted">
               Summaries are generated automatically each hour as you work.
             </p>
-          </div>
-        ) : (
-          <div className="timeline">
-            {sorted.map((summary) => {
-              const pct =
-                summary.productivity_score !== null
-                  ? Math.round(summary.productivity_score * 10)
-                  : 0;
-              const grade = productivityGrade(pct);
-              const gColor = gradeColor(grade);
-              return (
-                <div key={summary.id} className="timeline-entry">
-                  <div className="timeline-spine">
-                    <div
-                      className="timeline-dot"
-                      style={{ background: gColor }}
-                    />
-                    <div className="timeline-line" />
-                  </div>
-                  <div className="timeline-card">
-                    <div className="timeline-card-header">
-                      <span className="timeline-hour">
-                        {formatHour(summary.hour_start_local)}
-                      </span>
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "baseline",
-                          gap: "0.5rem",
-                        }}
-                      >
-                        <span
-                          className="timeline-grade"
-                          style={{ color: gColor }}
-                        >
-                          {grade}
-                        </span>
-                        {summary.productivity_score !== null && (
-                          <span className="timeline-score">{pct}%</span>
-                        )}
-                      </div>
-                    </div>
-                    <p className="timeline-summary">{summary.summary_text}</p>
-                  </div>
-                </div>
-              );
-            })}
           </div>
         )}
       </div>
@@ -1110,6 +1233,7 @@ function SettingsPage({
   settings: BackendSettings | null;
   onSave: (s: BackendSettings) => Promise<void>;
 }) {
+  const navigate = useNavigate();
   const [draft, setDraft] = useState<BackendSettings | null>(settings);
   useEffect(() => {
     setDraft(settings);
@@ -1135,6 +1259,46 @@ function SettingsPage({
               }
             />
           </label>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              paddingTop: "0.5rem",
+              borderTop: "1px solid var(--line)",
+            }}
+          >
+            <div>
+              <div style={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.08em", color: "var(--muted)" }}>TIMEZONE</div>
+              <div style={{ fontSize: "0.9rem", marginTop: "0.25rem" }}>{draft.user_timezone}</div>
+            </div>
+            <span style={{ fontSize: "0.7rem", color: "var(--muted)" }}>
+              Auto-synced from browser
+            </span>
+          </div>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              paddingTop: "0.5rem",
+              borderTop: "1px solid var(--line)",
+            }}
+          >
+            <div>
+              <div style={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.08em", color: "var(--muted)" }}>LOCATION ZONES</div>
+              <div style={{ fontSize: "0.85rem", color: "var(--text-soft)", marginTop: "0.25rem" }}>
+                Manage iPhone geofence zones
+              </div>
+            </div>
+            <button
+              className="channel-btn"
+              type="button"
+              onClick={() => navigate("/zones")}
+            >
+              MANAGE →
+            </button>
+          </div>
           <button
             className="log-intent-btn"
             type="button"
@@ -1171,12 +1335,22 @@ export default function App() {
         fetchJson<BackendSettings>("/api/settings"),
         fetchJson<Analytics>("/api/analytics/today"),
         fetchJson<ActivityLog[]>("/api/logs?limit=15"),
-        fetchJson<HourlySummary[]>("/api/hourly-summaries?limit=12"),
+        fetchJson<HourlySummary[]>("/api/hourly-summaries?limit=168"),
         fetchJson<{ ai_day_insight?: string }>("/api/calendar/today"),
         fetchJson<HealthResponse>("/api/healthz"),
       ]);
       if (st.status === "fulfilled") setState(st.value);
-      if (se.status === "fulfilled") setSettings(se.value);
+      if (se.status === "fulfilled") {
+        setSettings(se.value);
+        // Auto-sync browser timezone to backend if it differs
+        const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (browserTz && se.value.user_timezone !== browserTz) {
+          fetchJson("/api/settings", {
+            method: "POST",
+            body: JSON.stringify({ user_timezone: browserTz }),
+          }).catch(() => {});
+        }
+      }
       if (an.status === "fulfilled") setAnalytics(an.value);
       if (lo.status === "fulfilled") setLogs(lo.value);
       if (hs.status === "fulfilled") setHourlySummaries(hs.value);
