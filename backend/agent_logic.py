@@ -977,6 +977,30 @@ async def _generate_and_store_hourly_summary(db: Session, now: datetime, force_c
         hour_label = f"{local_hour_start.strftime('%I:%M %p')} — {local_now.strftime('%I:%M %p')} (partial hour)"
     else:
         hour_label = f"{local_hour_start.strftime('%I:%M %p')} — {local_hour_end.strftime('%I:%M %p')}"
+
+    # Skip LLM during confirmed sleep or within sleep window (save battery/quota)
+    _is_asleep = get_state(db, "likely_asleep", "false").lower() == "true"
+    _sh_start = _safe_int(get_state(db, "sleep_start_hour", DEFAULTS["sleep_start_hour"]), 1)
+    _sh_end = _safe_int(get_state(db, "sleep_end_hour", DEFAULTS["sleep_end_hour"]), 9)
+    _hour_now = local_now.hour
+    _in_sleep_window = (
+        (_hour_now >= _sh_start or _hour_now < _sh_end) if _sh_start > _sh_end
+        else (_sh_start <= _hour_now < _sh_end)
+    )
+    if _is_asleep or _in_sleep_window:
+        sleep_text = "Likely sleeping — no activity recorded."
+        if existing:
+            pass  # don't overwrite existing real summary
+        else:
+            db.add(HourlySummary(
+                hour_start=hour_start,
+                summary_text=sleep_text,
+                productivity_score=None,
+                summary_source="sleep",
+            ))
+            db.commit()
+        return
+
     fallback = _deterministic_hourly_summary(logs, hour_label)
     result = fallback
     source = "deterministic"
@@ -1253,6 +1277,16 @@ def get_checkin_payload(db: Session, now: datetime | None = None) -> dict:
 
 async def _maybe_generate_checkin(db: Session, current_location: str, prev_location: str, now: datetime):
     if not current_location or _is_checkin_ignored_location(current_location):
+        return
+    # Don't ping user during confirmed sleep or within sleep window
+    if get_state(db, "likely_asleep", "false").lower() == "true":
+        return
+    tz_ci = resolve_user_timezone(db)
+    local_h = now.astimezone(tz_ci).hour
+    _s_start = _safe_int(get_state(db, "sleep_start_hour", DEFAULTS["sleep_start_hour"]), 1)
+    _s_end = _safe_int(get_state(db, "sleep_end_hour", DEFAULTS["sleep_end_hour"]), 9)
+    _in_sleep = (local_h >= _s_start or local_h < _s_end) if _s_start > _s_end else (_s_start <= local_h < _s_end)
+    if _in_sleep:
         return
     if _checkin_is_active(db, now):
         return
@@ -1574,7 +1608,8 @@ def _update_sleep_state(db: Session, now: datetime, activity_type: str, is_charg
         confidence += 0.20
         reasons.append("mac locked")
     if in_sleep_window:
-        confidence += 0.25
+        # Weight sleep window more heavily — time of day is a strong prior
+        confidence += 0.35
         reasons.append(f"sleep window ({sleep_start:02d}:00-{sleep_end:02d}:00)")
     if is_charging:
         confidence += 0.10
@@ -1583,7 +1618,9 @@ def _update_sleep_state(db: Session, now: datetime, activity_type: str, is_charg
         confidence += 0.10
         reasons.append("stationary")
 
-    likely_asleep = confidence >= 0.65
+    # Lower threshold during sleep window since time-of-day is reliable
+    threshold = 0.55 if in_sleep_window else 0.65
+    likely_asleep = confidence >= threshold
     note = ("Likely asleep" if likely_asleep else "Likely awake") + f" ({', '.join(reasons)})"
     _set_sleep_state(db, likely_asleep, confidence, note)
 

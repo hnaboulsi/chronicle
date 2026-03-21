@@ -1096,6 +1096,8 @@ def get_settings(db: Session = Depends(get_db)):
         "calendar_ical_urls": agent_logic.get_calendar_ical_urls(db),
         "calendar_last_sync": agent_logic.get_state(db, "calendar_last_sync", ""),
         "calendar_sync_error": agent_logic.get_state(db, "calendar_sync_error", ""),
+        "sleep_start_hour": agent_logic._safe_int(agent_logic.get_state(db, "sleep_start_hour", agent_logic.DEFAULTS["sleep_start_hour"]), 1),
+        "sleep_end_hour": agent_logic._safe_int(agent_logic.get_state(db, "sleep_end_hour", agent_logic.DEFAULTS["sleep_end_hour"]), 9),
     }
 
 @app.post("/api/settings")
@@ -1167,6 +1169,20 @@ def update_settings(payload: Dict[str, Any], db: Session = Depends(get_db)):
             agent_logic.set_state(db, "user_timezone", tz_name)
         except Exception:
             raise HTTPException(status_code=400, detail=f"Invalid timezone: {tz_name}")
+    if "sleep_start_hour" in payload:
+        try:
+            h = int(payload["sleep_start_hour"])
+            if 0 <= h <= 23:
+                agent_logic.set_state(db, "sleep_start_hour", str(h))
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="sleep_start_hour must be 0–23")
+    if "sleep_end_hour" in payload:
+        try:
+            h = int(payload["sleep_end_hour"])
+            if 0 <= h <= 23:
+                agent_logic.set_state(db, "sleep_end_hour", str(h))
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="sleep_end_hour must be 0–23")
     agent_logic.sync_ai_preferences_to_env(db)
     return {"status": "updated"}
 

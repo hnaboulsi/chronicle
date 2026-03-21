@@ -935,11 +935,11 @@ button, input, select { font: inherit; }
 
 .cal-today-header {
   color: var(--accent);
+  border-bottom: 2px solid var(--accent);
 }
 
 .cal-hour-cell {
-  height: 20px;
-  border-bottom: 1px solid rgba(255,255,255,0.02);
+  height: 24px;
   transition: opacity 0.15s;
   cursor: default;
 }
@@ -1011,3 +1011,238 @@ button, input, select { font: inherit; }
   line-height: 1;
 }
 .cal-detail-close:hover { color: var(--text); }
+
+/* Day total row in calendar */
+.cal-day-total {
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.5rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  border-top: 1px solid var(--line);
+  margin-top: 2px;
+}
+
+.cal-axis-total {
+  height: 26px;
+  border-top: 1px solid var(--line);
+  margin-top: 2px;
+}
+
+/* ── Tonight Events Strip ──────────────────────────────────────────────────── */
+
+.tonight-events { margin-top: 1rem; }
+
+.tonight-empty {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin: 0.5rem 0 0;
+  font-style: italic;
+}
+
+.tonight-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.tonight-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.tonight-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+
+.tonight-details { flex: 1; min-width: 0; }
+
+.tonight-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tonight-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.2rem;
+  flex-wrap: wrap;
+}
+
+.tonight-time {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.tonight-cal {
+  font-size: 0.6rem;
+  color: var(--muted-soft);
+  letter-spacing: 0.04em;
+}
+
+.tonight-now {
+  font-size: 0.55rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+  background: var(--accent-dim);
+  padding: 1px 5px;
+  border-radius: 2px;
+}
+
+.tonight-note {
+  font-size: 0.7rem;
+  color: var(--text-soft);
+  margin-top: 0.2rem;
+  font-style: italic;
+}
+
+.tonight-type {
+  font-size: 0.5rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+
+/* ── Settings Page ─────────────────────────────────────────────────────────── */
+
+.settings-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.settings-section {
+  border-top: 1px solid var(--line);
+  padding-top: 0.75rem;
+}
+
+.settings-label {
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin-bottom: 0.25rem;
+}
+
+.settings-sublabel {
+  font-size: 0.75rem;
+  color: var(--text-soft);
+  margin-bottom: 0.75rem;
+}
+
+.capture-interval-group {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.interval-btn {
+  flex: 1;
+  padding: 0.6rem;
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.interval-btn:hover { border-color: var(--accent); color: var(--text); }
+.interval-btn-active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.sleep-hours-row {
+  display: flex;
+  gap: 1.5rem;
+  align-items: center;
+}
+
+.sleep-hour-field {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--text-soft);
+}
+
+.sleep-hour-input {
+  width: 52px;
+  padding: 0.4rem 0.5rem;
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.ical-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.ical-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.ical-url {
+  flex: 1;
+  font-size: 0.7rem;
+  color: var(--text-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ical-remove {
+  background: none;
+  border: none;
+  color: var(--bad);
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.ical-remove:hover { opacity: 0.7; }
+
+.ical-add-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.ical-input { flex: 1; }

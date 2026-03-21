@@ -63,6 +63,21 @@ type BackendSettings = {
   calendar_ical_urls: string[];
   calendar_last_sync: string;
   calendar_sync_error: string;
+  sleep_start_hour: number;
+  sleep_end_hour: number;
+};
+
+type CalendarEvent = {
+  id: number;
+  title: string;
+  start_at: string;
+  end_at: string;
+  calendar_name?: string;
+  is_current: boolean;
+  is_past: boolean;
+  event_type: string;
+  event_note: string | null;
+  ai_brief: string | null;
 };
 
 type Analytics = {
@@ -174,21 +189,28 @@ function getRecentApps(logs: ActivityLog[]): string[] {
   return apps;
 }
 
-function productivePulseData(
-  hourlySummaries: HourlySummary[],
-  productivePct?: number
-) {
-  const values = hourlySummaries
-    .slice(0, 10)
-    .reverse()
-    .map((s) =>
-      Math.max(12, Math.min(100, Math.round((s.productivity_score ?? 4.5) * 10)))
-    );
-  if (values.length >= 6) return values;
-  const seed = Math.max(20, Math.min(96, productivePct ?? 64));
-  return Array.from({ length: 14 }, (_, i) =>
-    Math.max(18, Math.min(100, Math.round(seed + ((i % 4) - 2) * 8)))
-  );
+function productivePulseData(hourlySummaries: HourlySummary[]) {
+  // Only use real today summaries with actual scores, sorted chronologically,
+  // excluding sleep stubs (summary_text "Likely sleeping")
+  const todayKey = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  })();
+  const real = hourlySummaries
+    .filter(
+      (s) =>
+        s.hour_start_local?.startsWith(todayKey) &&
+        s.productivity_score !== null &&
+        !s.summary_text?.startsWith("Likely sleeping") &&
+        !s.summary_text?.startsWith("No Mac activity")
+    )
+    .sort(
+      (a, b) =>
+        new Date(a.hour_start_local).getTime() -
+        new Date(b.hour_start_local).getTime()
+    )
+    .map((s) => Math.round((s.productivity_score ?? 0) * 10));
+  return real;
 }
 
 function formatTimestamp(ts: string): string {
@@ -346,7 +368,6 @@ function AppShell({
       <div className="workspace">
         <header className="topbar">
           <div className="topbar-left">
-            <span className="brand-title">CHRONICLE</span>
             <button
               className="topbar-status-tag topbar-log-btn"
               type="button"
@@ -371,14 +392,6 @@ function AppShell({
             >
               {refreshing ? "SYNCHRONIZING..." : "REFRESH"}
             </button>
-            <div
-              style={{
-                width: 36,
-                height: 36,
-                background: "var(--panel-bright)",
-                borderRadius: 2,
-              }}
-            />
           </div>
         </header>
 
@@ -423,12 +436,24 @@ function AppShell({
 
 // ── TodayPage ─────────────────────────────────────────────────────────────────
 
+function eventTypeColor(type: string): string {
+  switch (type) {
+    case "lecture": return "var(--warn)";
+    case "exam": return "var(--bad)";
+    case "flight": return "#60a5fa";
+    case "assignment": return "var(--accent)";
+    case "meeting": return "var(--text-soft)";
+    default: return "var(--muted)";
+  }
+}
+
 function TodayPage({
   state,
   analytics,
   logs,
   hourlySummaries,
   aiDayInsight,
+  calendarEvents,
   onRefreshLogs,
 }: {
   state: DashboardState | null;
@@ -436,6 +461,7 @@ function TodayPage({
   logs: ActivityLog[];
   hourlySummaries: HourlySummary[];
   aiDayInsight?: string | null;
+  calendarEvents: CalendarEvent[];
   onRefreshLogs: () => void;
 }) {
   const [chatInput, setChatInput] = useState("");
@@ -461,16 +487,29 @@ function TodayPage({
     }
   }
 
-  const pulseValues = productivePulseData(hourlySummaries, analytics?.productive_pct);
+  const pulseValues = productivePulseData(hourlySummaries);
   const recentApps = getRecentApps(logs);
   const grade = productivityGrade(analytics?.productive_pct ?? 0);
   const gColor = gradeColor(grade);
 
-  const sortedSummaries = [...hourlySummaries].sort(
-    (a, b) =>
-      new Date(a.hour_start_local).getTime() -
-      new Date(b.hour_start_local).getTime()
-  );
+  // For pulse time labels use only today's real summaries (same filter as bar chart)
+  const todayKey = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  })();
+  const sortedSummaries = hourlySummaries
+    .filter(
+      (s) =>
+        s.hour_start_local?.startsWith(todayKey) &&
+        s.productivity_score !== null &&
+        !s.summary_text?.startsWith("Likely sleeping") &&
+        !s.summary_text?.startsWith("No Mac activity")
+    )
+    .sort(
+      (a, b) =>
+        new Date(a.hour_start_local).getTime() -
+        new Date(b.hour_start_local).getTime()
+    );
   const pulseStart =
     sortedSummaries.length > 0
       ? formatHour(sortedSummaries[0].hour_start_local)
@@ -490,6 +529,13 @@ function TodayPage({
     0,
     (analytics?.total_active_minutes ?? 0) - (analytics?.productive_minutes ?? 0)
   );
+
+  // Upcoming events: not past, sorted by start time
+  const now = new Date();
+  const upcomingEvents = calendarEvents
+    .filter((e) => !e.is_past || e.is_current)
+    .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());
+  const scheduleLabel = now.getHours() >= 17 ? "TONIGHT'S SCHEDULE" : "TODAY'S REMAINING";
 
   const categoryMinutes = analytics?.category_minutes ?? {};
   const categoryEntries = Object.entries(categoryMinutes)
@@ -582,6 +628,49 @@ function TodayPage({
             </div>
           </article>
 
+          {/* Tonight / Today's remaining events */}
+          <article className="editorial-card tonight-events">
+            <span className="section-eyebrow">{scheduleLabel}</span>
+            {upcomingEvents.length === 0 ? (
+              <p className="tonight-empty">No remaining events today.</p>
+            ) : (
+              <div className="tonight-list">
+                {upcomingEvents.map((ev) => (
+                  <div key={ev.id} className="tonight-row">
+                    <span
+                      className="tonight-dot"
+                      style={{ background: eventTypeColor(ev.event_type) }}
+                    />
+                    <div className="tonight-details">
+                      <div className="tonight-title">{ev.title}</div>
+                      <div className="tonight-meta">
+                        <span className="tonight-time">
+                          {new Date(ev.start_at).toLocaleTimeString([], {
+                            hour: "numeric",
+                            minute: "2-digit",
+                            hour12: true,
+                          })}
+                        </span>
+                        {ev.calendar_name && (
+                          <span className="tonight-cal">{ev.calendar_name}</span>
+                        )}
+                        {ev.is_current && (
+                          <span className="tonight-now">NOW</span>
+                        )}
+                      </div>
+                      {ev.event_note && (
+                        <div className="tonight-note">{ev.event_note}</div>
+                      )}
+                    </div>
+                    <span className="tonight-type">
+                      {ev.event_type.toUpperCase()}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </article>
+
           <article className="editorial-card productivity-pulse">
             <div
               style={{
@@ -604,30 +693,56 @@ function TodayPage({
                 <span className="pulse-pct">{analytics?.productive_pct ?? 0}%</span>
               </div>
             </div>
-            <span className="card-subtitle">HIGH-FREQUENCY OUTPUT</span>
-            <div className="pulse-bars">
-              {pulseValues.map((v, i) => (
+            <span className="card-subtitle">
+              {pulseValues.length > 0
+                ? `${pulseValues.length} HOUR${pulseValues.length === 1 ? "" : "S"} TRACKED TODAY`
+                : "NO DATA YET TODAY"}
+            </span>
+            {pulseValues.length > 0 ? (
+              <>
+                <div className="pulse-bars">
+                  {pulseValues.map((v, i) => (
+                    <div
+                      key={i}
+                      className="pulse-bar-item"
+                      style={{
+                        height: `${Math.max(4, v)}%`,
+                        background: v >= 70 ? "var(--accent)" : v >= 40 ? "#f0b429" : "var(--bad)",
+                        opacity: v === 0 ? 0.25 : 0.85,
+                      }}
+                    />
+                  ))}
+                </div>
                 <div
-                  key={i}
-                  className="pulse-bar-item"
-                  style={{ height: `${v}%` }}
-                />
-              ))}
-            </div>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                fontSize: "0.55rem",
-                color: "var(--muted)",
-                fontWeight: 800,
-                letterSpacing: "0.1em",
-              }}
-            >
-              <span>{pulseStart}</span>
-              <span style={{ color: "var(--accent)" }}>LIVE NOW</span>
-              <span>{pulseEnd}</span>
-            </div>
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    fontSize: "0.55rem",
+                    color: "var(--muted)",
+                    fontWeight: 800,
+                    letterSpacing: "0.1em",
+                  }}
+                >
+                  <span>{pulseStart}</span>
+                  <span style={{ color: "var(--accent)" }}>LIVE NOW</span>
+                  <span>{pulseEnd}</span>
+                </div>
+              </>
+            ) : (
+              <div
+                style={{
+                  height: 60,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "var(--muted)",
+                  fontSize: "0.7rem",
+                  letterSpacing: "0.08em",
+                }}
+              >
+                Tracking will begin once activity is recorded
+              </div>
+            )}
             {categoryEntries.length > 0 && (
               <div className="category-breakdown">
                 {categoryEntries.map(([cat, mins]) => (
@@ -1046,6 +1161,7 @@ function HistoryPage({
                   )}
                 </div>
               ))}
+              <div className="cal-axis-total" />
             </div>
 
             {/* Day columns */}
@@ -1077,6 +1193,27 @@ function HistoryPage({
                     />
                   );
                 })}
+                {/* Day total */}
+                {(() => {
+                  const daySummaries = Array.from(
+                    calMap.get(dateKey)?.values() ?? []
+                  ).filter((s) => s.productivity_score !== null);
+                  if (daySummaries.length === 0) return <div className="cal-day-total">—</div>;
+                  const avg = Math.round(
+                    (daySummaries.reduce(
+                      (sum, s) => sum + (s.productivity_score ?? 0) * 10,
+                      0
+                    ) / daySummaries.length)
+                  );
+                  return (
+                    <div
+                      className="cal-day-total"
+                      style={{ color: avg >= 70 ? "var(--accent)" : avg >= 40 ? "#f0b429" : "var(--bad)" }}
+                    >
+                      {avg}%
+                    </div>
+                  );
+                })()}
               </div>
             ))}
           </div>
@@ -1226,31 +1363,60 @@ function Field({ label, value }: { label: string; value: any }) {
 
 // ── SettingsPage ──────────────────────────────────────────────────────────────
 
+const CAPTURE_INTERVALS = [
+  { label: "5 min", value: 300 },
+  { label: "15 min", value: 900 },
+  { label: "30 min", value: 1800 },
+];
+
 function SettingsPage({
   settings,
   onSave,
 }: {
   settings: BackendSettings | null;
-  onSave: (s: BackendSettings) => Promise<void>;
+  onSave: (s: BackendSettings & { calendar_ical_urls: string[] }) => Promise<void>;
 }) {
   const navigate = useNavigate();
   const [draft, setDraft] = useState<BackendSettings | null>(settings);
+  const [calUrls, setCalUrls] = useState<string[]>(settings?.calendar_ical_urls ?? []);
+  const [newUrl, setNewUrl] = useState("");
+
   useEffect(() => {
     setDraft(settings);
+    setCalUrls(settings?.calendar_ical_urls ?? []);
   }, [settings]);
+
   if (!draft) return null;
+
+  // Round capture interval to nearest preset for display
+  const nearestInterval =
+    CAPTURE_INTERVALS.reduce((prev, curr) =>
+      Math.abs(curr.value - draft.capture_interval_seconds) <
+      Math.abs(prev.value - draft.capture_interval_seconds)
+        ? curr
+        : prev
+    ).value;
+
+  function addUrl() {
+    const url = newUrl.trim();
+    if (url && !calUrls.includes(url)) {
+      setCalUrls([...calUrls, url]);
+      setNewUrl("");
+    }
+  }
+
+  function removeUrl(url: string) {
+    setCalUrls(calUrls.filter((u) => u !== url));
+  }
+
   return (
     <div style={{ padding: "2rem" }}>
       <Surface title="System Settings" eyebrow="Configuration">
         <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
-          <label
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-            }}
-          >
-            <span>Tracking Enabled</span>
+
+          {/* Tracking toggle */}
+          <label className="settings-row">
+            <span className="settings-label">Tracking Enabled</span>
             <input
               type="checkbox"
               checked={draft.tracking_enabled}
@@ -1259,37 +1425,115 @@ function SettingsPage({
               }
             />
           </label>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              paddingTop: "0.5rem",
-              borderTop: "1px solid var(--line)",
-            }}
-          >
-            <div>
-              <div style={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.08em", color: "var(--muted)" }}>TIMEZONE</div>
-              <div style={{ fontSize: "0.9rem", marginTop: "0.25rem" }}>{draft.user_timezone}</div>
+
+          {/* Capture interval */}
+          <div className="settings-section">
+            <div className="settings-label">CAPTURE INTERVAL</div>
+            <div className="settings-sublabel">How often the Mac app records activity</div>
+            <div className="capture-interval-group">
+              {CAPTURE_INTERVALS.map(({ label, value }) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={`interval-btn${nearestInterval === value ? " interval-btn-active" : ""}`}
+                  onClick={() =>
+                    setDraft({ ...draft, capture_interval_seconds: value })
+                  }
+                >
+                  {label}
+                </button>
+              ))}
             </div>
-            <span style={{ fontSize: "0.7rem", color: "var(--muted)" }}>
-              Auto-synced from browser
-            </span>
           </div>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              paddingTop: "0.5rem",
-              borderTop: "1px solid var(--line)",
-            }}
-          >
-            <div>
-              <div style={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.08em", color: "var(--muted)" }}>LOCATION ZONES</div>
-              <div style={{ fontSize: "0.85rem", color: "var(--text-soft)", marginTop: "0.25rem" }}>
-                Manage iPhone geofence zones
+
+          {/* Sleep hours */}
+          <div className="settings-section">
+            <div className="settings-label">SLEEP WINDOW</div>
+            <div className="settings-sublabel">No LLM calls or check-ins during these hours</div>
+            <div className="sleep-hours-row">
+              <div className="sleep-hour-field">
+                <span>From</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={23}
+                  className="sleep-hour-input"
+                  value={draft.sleep_start_hour ?? 1}
+                  onChange={(e) =>
+                    setDraft({ ...draft, sleep_start_hour: Number(e.target.value) })
+                  }
+                />
+                <span>:00</span>
               </div>
+              <div className="sleep-hour-field">
+                <span>To</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={23}
+                  className="sleep-hour-input"
+                  value={draft.sleep_end_hour ?? 9}
+                  onChange={(e) =>
+                    setDraft({ ...draft, sleep_end_hour: Number(e.target.value) })
+                  }
+                />
+                <span>:00</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Calendar iCal URLs */}
+          <div className="settings-section">
+            <div className="settings-label">CALENDAR FEEDS</div>
+            <div className="settings-sublabel">iCal (.ics) subscription URLs</div>
+            {calUrls.length > 0 && (
+              <div className="ical-list">
+                {calUrls.map((url) => (
+                  <div key={url} className="ical-row">
+                    <span className="ical-url">{url}</span>
+                    <button
+                      type="button"
+                      className="ical-remove"
+                      onClick={() => removeUrl(url)}
+                    >
+                      REMOVE
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="ical-add-row">
+              <input
+                className="zone-input ical-input"
+                placeholder="https://..."
+                value={newUrl}
+                onChange={(e) => setNewUrl(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && addUrl()}
+              />
+              <button
+                type="button"
+                className="channel-btn"
+                onClick={addUrl}
+              >
+                ADD
+              </button>
+            </div>
+          </div>
+
+          {/* Timezone (read-only, auto-synced) */}
+          <div className="settings-section">
+            <div className="settings-label">TIMEZONE</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: "0.9rem" }}>{draft.user_timezone}</span>
+              <span style={{ fontSize: "0.7rem", color: "var(--muted)" }}>Auto-synced</span>
+            </div>
+          </div>
+
+          {/* Location zones link */}
+          <div className="settings-row">
+            <div>
+              <div className="settings-label">LOCATION ZONES</div>
+              <div className="settings-sublabel">Manage iPhone geofence zones</div>
             </div>
             <button
               className="channel-btn"
@@ -1299,11 +1543,12 @@ function SettingsPage({
               MANAGE →
             </button>
           </div>
+
           <button
             className="log-intent-btn"
             type="button"
             style={{ width: "auto", padding: "1rem 2rem" }}
-            onClick={() => void onSave(draft)}
+            onClick={() => void onSave({ ...draft, calendar_ical_urls: calUrls })}
           >
             Save Changes
           </button>
@@ -1322,6 +1567,7 @@ export default function App() {
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [hourlySummaries, setHourlySummaries] = useState<HourlySummary[]>([]);
   const [aiDayInsight, setAiDayInsight] = useState<string | null>(null);
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
@@ -1336,7 +1582,7 @@ export default function App() {
         fetchJson<Analytics>("/api/analytics/today"),
         fetchJson<ActivityLog[]>("/api/logs?limit=15"),
         fetchJson<HourlySummary[]>("/api/hourly-summaries?limit=168"),
-        fetchJson<{ ai_day_insight?: string }>("/api/calendar/today"),
+        fetchJson<{ ai_day_insight?: string; events?: CalendarEvent[] }>("/api/calendar/today"),
         fetchJson<HealthResponse>("/api/healthz"),
       ]);
       if (st.status === "fulfilled") setState(st.value);
@@ -1354,8 +1600,10 @@ export default function App() {
       if (an.status === "fulfilled") setAnalytics(an.value);
       if (lo.status === "fulfilled") setLogs(lo.value);
       if (hs.status === "fulfilled") setHourlySummaries(hs.value);
-      if (ai.status === "fulfilled")
+      if (ai.status === "fulfilled") {
         setAiDayInsight(ai.value.ai_day_insight ?? null);
+        setCalendarEvents(ai.value.events ?? []);
+      }
       if (he.status === "fulfilled") setHealth(he.value);
     } finally {
       setRefreshing(false);
@@ -1391,6 +1639,7 @@ export default function App() {
                 logs={logs}
                 hourlySummaries={hourlySummaries}
                 aiDayInsight={aiDayInsight}
+                calendarEvents={calendarEvents}
                 onRefreshLogs={refreshCore}
               />
             }
