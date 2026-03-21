@@ -1,9 +1,4 @@
-import React, {
-  startTransition,
-  useDeferredValue,
-  useEffect,
-  useState,
-} from "react";
+import React, { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import {
   BrowserRouter,
@@ -12,7 +7,10 @@ import {
   Navigate,
   Route,
   Routes,
+  useNavigate,
 } from "react-router-dom";
+
+// ── Types ──────────────────────────────────────────────────────────────────────
 
 type DashboardState = {
   backend_target_url?: string;
@@ -75,6 +73,7 @@ type Analytics = {
   llm_used: number;
   llm_cap: number;
   log_count: number;
+  category_minutes?: Record<string, number>;
 };
 
 type ActivityLog = {
@@ -102,11 +101,6 @@ type HealthResponse = {
   };
 };
 
-type CheckinResponse = {
-  checkin?: string | null;
-  guess?: string | null;
-};
-
 type HourlySummary = {
   id: number;
   hour_start_local: string;
@@ -125,7 +119,10 @@ type ZoneRecord = {
   sort_order: number;
 };
 
-const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/+$/, "") ?? "";
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+const API_BASE =
+  (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/+$/, "") ?? "";
 
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
@@ -149,23 +146,145 @@ function timeGreeting() {
   return "Good evening.";
 }
 
-function productivePulseData(hourlySummaries: HourlySummary[], productivePct?: number) {
+function productivityGrade(pct: number): string {
+  if (pct >= 90) return "A+";
+  if (pct >= 80) return "A";
+  if (pct >= 70) return "B";
+  if (pct >= 60) return "C";
+  if (pct >= 50) return "D";
+  return "F";
+}
+
+function gradeColor(grade: string): string {
+  if (grade === "A+" || grade === "A") return "var(--good)";
+  if (grade === "B") return "var(--accent)";
+  if (grade === "C") return "var(--warn)";
+  return "var(--bad)";
+}
+
+function getRecentApps(logs: ActivityLog[]): string[] {
+  const counts: Record<string, number> = {};
+  for (const log of logs) {
+    if (log.app_name) counts[log.app_name] = (counts[log.app_name] ?? 0) + 1;
+  }
+  const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  const apps = sorted.slice(0, 3).map(([name]) => name.toUpperCase());
+  const fallbacks = ["VS CODE", "TERMINAL", "DOCS"];
+  while (apps.length < 3) apps.push(fallbacks[apps.length]);
+  return apps;
+}
+
+function productivePulseData(
+  hourlySummaries: HourlySummary[],
+  productivePct?: number
+) {
   const values = hourlySummaries
     .slice(0, 10)
     .reverse()
-    .map((s) => Math.max(12, Math.min(100, Math.round((s.productivity_score ?? 4.5) * 10))));
+    .map((s) =>
+      Math.max(12, Math.min(100, Math.round((s.productivity_score ?? 4.5) * 10)))
+    );
   if (values.length >= 6) return values;
   const seed = Math.max(20, Math.min(96, productivePct ?? 64));
-  return Array.from({ length: 14 }, (_, i) => Math.max(18, Math.min(100, Math.round(seed + ((i % 4) - 2) * 8))));
+  return Array.from({ length: 14 }, (_, i) =>
+    Math.max(18, Math.min(100, Math.round(seed + ((i % 4) - 2) * 8)))
+  );
 }
+
+function formatTimestamp(ts: string): string {
+  return new Date(ts).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatHour(ts: string): string {
+  return new Date(ts).toLocaleTimeString([], {
+    hour: "numeric",
+    hour12: true,
+  });
+}
+
+// ── NavItem ────────────────────────────────────────────────────────────────────
 
 function NavItem({ to, label, dim }: { to: string; label: string; dim?: boolean }) {
   return (
-    <NavLink to={to} className={({ isActive }) => `nav-item${dim ? " nav-dim" : ""}${isActive ? " active" : ""}`}>
+    <NavLink
+      to={to}
+      className={({ isActive }) =>
+        `nav-item${dim ? " nav-dim" : ""}${isActive ? " active" : ""}`
+      }
+    >
       {label}
     </NavLink>
   );
 }
+
+// ── Log Panel ─────────────────────────────────────────────────────────────────
+
+function LogPanel({
+  logs,
+  open,
+  onClose,
+}: {
+  logs: ActivityLog[];
+  open: boolean;
+  onClose: () => void;
+}) {
+  return (
+    <>
+      {open && <div className="log-panel-backdrop" onClick={onClose} />}
+      <aside className={`log-panel${open ? " log-panel-open" : ""}`}>
+        <div className="log-panel-header">
+          <span className="section-eyebrow" style={{ margin: 0 }}>
+            OPERATIONAL LOG
+          </span>
+          <button className="log-panel-close" onClick={onClose} type="button">
+            ✕
+          </button>
+        </div>
+        <div className="log-panel-body">
+          {logs.length === 0 ? (
+            <p className="log-panel-empty">
+              No logs yet. Start tracking to see activity.
+            </p>
+          ) : (
+            logs.map((log) => (
+              <div key={log.id} className={`log-entry log-entry-${log.device}`}>
+                <div className="log-entry-header">
+                  <span className="log-entry-device">
+                    {log.device.toUpperCase()}
+                  </span>
+                  <span className="log-entry-time">
+                    {formatTimestamp(log.timestamp)}
+                  </span>
+                </div>
+                {log.app_name && (
+                  <div className="log-entry-app">{log.app_name}</div>
+                )}
+                {log.window_title && (
+                  <div className="log-entry-window">{log.window_title}</div>
+                )}
+                {log.location_label && (
+                  <div className="log-entry-location">
+                    📍 {log.location_label}
+                  </div>
+                )}
+                {log.presence_state && (
+                  <div className="log-entry-meta">
+                    {log.presence_state.toUpperCase()}
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      </aside>
+    </>
+  );
+}
+
+// ── AppShell ──────────────────────────────────────────────────────────────────
 
 function AppShell({
   children,
@@ -174,6 +293,7 @@ function AppShell({
   refreshing,
   onRefresh,
   state,
+  logs,
 }: {
   children: ReactNode;
   statusMessage: string;
@@ -181,7 +301,26 @@ function AppShell({
   refreshing: boolean;
   onRefresh: () => void;
   state: DashboardState | null;
+  logs: ActivityLog[];
 }) {
+  const [logPanelOpen, setLogPanelOpen] = useState(false);
+  const navigate = useNavigate();
+
+  const liveCategory = state?.mac_idle
+    ? "IDLE"
+    : (state?.current_activity_category?.toUpperCase() ?? null);
+
+  function handleLogIntent() {
+    navigate("/today");
+    setTimeout(() => {
+      const input = document.getElementById("intent-input") as HTMLInputElement | null;
+      if (input) {
+        input.scrollIntoView({ behavior: "smooth" });
+        input.focus();
+      }
+    }, 80);
+  }
+
   return (
     <div className="app-shell">
       <aside className="side-rail">
@@ -192,13 +331,16 @@ function AppShell({
           <NavItem to="/today" label="Today" />
           <NavItem to="/zones" label="Places" />
           <NavItem to="/diagnostics" label="History" />
-          <NavItem to="/settings" label="Archive" />
         </nav>
-        <div className="sidebar-header">CHRONICLE</div>
         <div className="sidebar-footer">
-          <NavItem to="/setup" label="Support" dim />
           <NavItem to="/settings" label="Settings" dim />
-          <button className="log-intent-btn" type="button">LOG INTENT</button>
+          <button
+            className="log-intent-btn"
+            type="button"
+            onClick={handleLogIntent}
+          >
+            LOG INTENT
+          </button>
         </div>
       </aside>
 
@@ -206,19 +348,45 @@ function AppShell({
         <header className="topbar">
           <div className="topbar-left">
             <span className="brand-title">CHRONICLE</span>
-            <span className="topbar-status-tag">OPERATIONAL LOG</span>
+            <button
+              className="topbar-status-tag topbar-log-btn"
+              type="button"
+              onClick={() => setLogPanelOpen((v) => !v)}
+            >
+              OPERATIONAL LOG
+            </button>
+            {liveCategory && (
+              <span className="topbar-live-indicator">
+                <span className="live-dot" />
+                {liveCategory}
+              </span>
+            )}
           </div>
 
           <div className="topbar-actions">
-            <button className="refresh-btn" onClick={onRefresh} type="button" disabled={refreshing}>
+            <button
+              className="refresh-btn"
+              onClick={onRefresh}
+              type="button"
+              disabled={refreshing}
+            >
               {refreshing ? "SYNCHRONIZING..." : "REFRESH"}
             </button>
-            <div className="user-avatar" style={{width: 36, height: 36, background: 'var(--panel-bright)', borderRadius: 2}}></div>
+            <div
+              style={{
+                width: 36,
+                height: 36,
+                background: "var(--panel-bright)",
+                borderRadius: 2,
+              }}
+            />
           </div>
         </header>
 
         <main className="content">
-          {statusMessage && <div className="banner success">{statusMessage}</div>}
+          {statusMessage && (
+            <div className="banner success">{statusMessage}</div>
+          )}
           {errorMessage && <div className="banner error">{errorMessage}</div>}
           {children}
         </main>
@@ -226,23 +394,40 @@ function AppShell({
         <footer className="app-footer">
           <div className="app-footer-left">
             <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-              <span className={`sidebar-status-dot bg-${serviceTone(state?.service_health)}`} />
-              <span>{state?.service_health === "ok" ? "SYSTEM UPLINK ACTIVE" : "SYSTEM OFFLINE"}</span>
+              <span
+                className={`sidebar-status-dot bg-${serviceTone(state?.service_health)}`}
+              />
+              <span>
+                {state?.service_health === "ok"
+                  ? "SYSTEM UPLINK ACTIVE"
+                  : "SYSTEM OFFLINE"}
+              </span>
             </div>
             <span>CHRONICLE OBSERVATORY</span>
           </div>
           <div className="app-footer-right">
-            <span>{state?.current_location?.toUpperCase() ?? "AWAITING PLACE CONTEXT"}</span>
+            <span>
+              {state?.current_location?.toUpperCase() ?? "AWAITING PLACE CONTEXT"}
+            </span>
           </div>
         </footer>
+
+        <LogPanel
+          logs={logs}
+          open={logPanelOpen}
+          onClose={() => setLogPanelOpen(false)}
+        />
       </div>
     </div>
   );
 }
 
+// ── TodayPage ─────────────────────────────────────────────────────────────────
+
 function TodayPage({
   state,
   analytics,
+  logs,
   hourlySummaries,
   aiDayInsight,
   onRefreshLogs,
@@ -267,38 +452,91 @@ function TodayPage({
     setChatSending(true);
     setChatInput("");
     try {
-      await fetchJson("/api/chat", { method: "POST", body: JSON.stringify({ message: msg }) });
+      await fetchJson("/api/chat", {
+        method: "POST",
+        body: JSON.stringify({ message: msg }),
+      });
       onRefreshLogs();
-    } finally { setChatSending(false); }
+    } finally {
+      setChatSending(false);
+    }
   }
 
   const pulseValues = productivePulseData(hourlySummaries, analytics?.productive_pct);
+  const recentApps = getRecentApps(logs);
+  const grade = productivityGrade(analytics?.productive_pct ?? 0);
+  const gColor = gradeColor(grade);
+
+  const sortedSummaries = [...hourlySummaries].sort(
+    (a, b) =>
+      new Date(a.hour_start_local).getTime() -
+      new Date(b.hour_start_local).getTime()
+  );
+  const pulseStart =
+    sortedSummaries.length > 0
+      ? formatHour(sortedSummaries[0].hour_start_local)
+      : "START";
+  const pulseEnd =
+    sortedSummaries.length > 0
+      ? formatHour(sortedSummaries[sortedSummaries.length - 1].hour_start_local)
+      : "NOW";
+
+  const envStatus = state?.mac_idle
+    ? "IDLE"
+    : (state?.current_activity_category?.toUpperCase() ??
+        state?.current_location?.toUpperCase() ??
+        "STABLE");
+
+  const adminMinutes = Math.max(
+    0,
+    (analytics?.total_active_minutes ?? 0) - (analytics?.productive_minutes ?? 0)
+  );
+
+  const categoryMinutes = analytics?.category_minutes ?? {};
+  const categoryEntries = Object.entries(categoryMinutes)
+    .filter(([, mins]) => mins > 0)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 5);
+  const totalMins = Math.max(analytics?.total_active_minutes ?? 0, 1);
+  const productiveCategories = new Set(["studying", "working", "creative"]);
 
   return (
     <div className="editorial-page">
       <div className="editorial-grid">
         <div className="editorial-left">
           <section className="hero-section">
-            <span className="section-eyebrow" style={{ color: 'var(--accent)' }}>SESSION ACTIVE</span>
+            <span className="section-eyebrow" style={{ color: "var(--accent)" }}>
+              SESSION ACTIVE
+            </span>
             <h1 className="main-greeting">{timeGreeting()}</h1>
 
             <div className="intent-selection">
               <span className="section-eyebrow">INTENT SELECTION</span>
               <input
+                id="intent-input"
                 className="editorial-intent-input"
                 placeholder="Define your trajectory..."
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" && !chatSending) void handleChat(); }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !chatSending) void handleChat();
+                }}
               />
             </div>
 
             <div className="recent-channels">
               <span className="section-eyebrow">RECENT CHANNELS</span>
               <div className="channel-btns">
-                <button className="channel-btn">VS CODE</button>
-                <button className="channel-btn">TERMINAL</button>
-                <button className="channel-btn">DOCS</button>
+                {recentApps.map((app) => (
+                  <button
+                    key={app}
+                    className="channel-btn"
+                    type="button"
+                    onClick={() => setChatInput(app)}
+                  >
+                    {app}
+                  </button>
+                ))}
               </div>
             </div>
           </section>
@@ -313,30 +551,105 @@ function TodayPage({
             </p>
             <div className="card-meta">
               <div className="meta-item">
-                <svg className="meta-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
-                <span>ENVIRONMENT: {state?.current_location?.toUpperCase() ?? "STABLE"}</span>
+                <svg
+                  className="meta-icon"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+                  <circle cx="12" cy="10" r="3" />
+                </svg>
+                <span>
+                  ENVIRONMENT: {state?.current_location?.toUpperCase() ?? "STABLE"}
+                </span>
               </div>
               <div className="meta-item">
-                <svg className="meta-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v10l4.5 4.5"/><circle cx="12" cy="12" r="10"/></svg>
-                <span>OUTPUT: {analytics?.log_count ?? 0} LOGS / {analytics?.llm_used ?? 0} LLM</span>
+                <svg
+                  className="meta-icon"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path d="M12 2v10l4.5 4.5" />
+                  <circle cx="12" cy="12" r="10" />
+                </svg>
+                <span>
+                  OUTPUT: {analytics?.log_count ?? 0} LOGS / {analytics?.llm_used ?? 0} LLM
+                </span>
               </div>
             </div>
           </article>
 
           <article className="editorial-card productivity-pulse">
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "baseline",
+              }}
+            >
               <span className="section-eyebrow">PRODUCTIVITY PULSE</span>
-              <span className="pulse-pct">{analytics?.productive_pct ?? 0}%</span>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "baseline",
+                  gap: "0.75rem",
+                }}
+              >
+                <span className="pulse-grade" style={{ color: gColor }}>
+                  {grade}
+                </span>
+                <span className="pulse-pct">{analytics?.productive_pct ?? 0}%</span>
+              </div>
             </div>
-            <span className="card-subtitle">High-Frequency Output</span>
+            <span className="card-subtitle">HIGH-FREQUENCY OUTPUT</span>
             <div className="pulse-bars">
-              {pulseValues.map((v, i) => <div key={i} className="pulse-bar-item" style={{ height: `${v}%` }} />)}
+              {pulseValues.map((v, i) => (
+                <div
+                  key={i}
+                  className="pulse-bar-item"
+                  style={{ height: `${v}%` }}
+                />
+              ))}
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.55rem", color: "var(--muted)", fontWeight: 800, letterSpacing: '0.1em' }}>
-              <span>08:00</span>
-              <span style={{ color: 'var(--accent)' }}>LIVE NOW</span>
-              <span>20:00</span>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                fontSize: "0.55rem",
+                color: "var(--muted)",
+                fontWeight: 800,
+                letterSpacing: "0.1em",
+              }}
+            >
+              <span>{pulseStart}</span>
+              <span style={{ color: "var(--accent)" }}>LIVE NOW</span>
+              <span>{pulseEnd}</span>
             </div>
+            {categoryEntries.length > 0 && (
+              <div className="category-breakdown">
+                {categoryEntries.map(([cat, mins]) => (
+                  <div key={cat} className="category-row">
+                    <span className="category-name">{cat.toUpperCase()}</span>
+                    <div className="category-bar-track">
+                      <div
+                        className="category-bar-fill"
+                        style={{
+                          width: `${(mins / totalMins) * 100}%`,
+                          background: productiveCategories.has(cat)
+                            ? "var(--accent)"
+                            : "var(--panel-bright)",
+                        }}
+                      />
+                    </div>
+                    <span className="category-mins">{mins}m</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </article>
         </div>
       </div>
@@ -344,32 +657,417 @@ function TodayPage({
       <footer className="editorial-footer">
         <div className="metric-group">
           <div className="metric-item">
-            <span className="metric-value">{analytics?.productive_minutes ?? 0}m</span>
+            <span className="metric-value">
+              {analytics?.productive_minutes ?? 0}m
+            </span>
             <span className="metric-label">PRODUCTIVE</span>
           </div>
           <div className="metric-item">
-            <span className="metric-value">{Math.max(0, (analytics?.total_active_minutes ?? 0) - (analytics?.productive_minutes ?? 0))}m</span>
+            <span className="metric-value">{adminMinutes}m</span>
             <span className="metric-label">ADMINISTRATIVE</span>
           </div>
           <div className="metric-item">
-            <span className="metric-value">STABLE</span>
+            <span className="metric-value">{envStatus}</span>
             <span className="metric-label">ENVIRONMENT</span>
           </div>
         </div>
         <div className="ticker">
-          REFINING INTELLIGENCE FEED <span style={{ opacity: 0.3 }}>● ● ●</span>
+          REFINING INTELLIGENCE FEED{" "}
+          <span style={{ opacity: 0.3 }}>● ● ●</span>
         </div>
       </footer>
     </div>
   );
 }
 
-function Surface({ title, eyebrow, children }: { title: string; eyebrow?: string; children: ReactNode }) {
+// ── ZonesPage ─────────────────────────────────────────────────────────────────
+
+function ZonesPage() {
+  const [zones, setZones] = useState<ZoneRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [showForm, setShowForm] = useState(false);
+  const [newZone, setNewZone] = useState<Partial<ZoneRecord>>({
+    slug: "",
+    name: "",
+    radius_meters: 75,
+    enabled: true,
+    zone_type: "custom",
+    focus_mode: "",
+    sort_order: 0,
+  });
+
+  useEffect(() => {
+    document.title = "Chronicle — Places";
+    void load();
+  }, []);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const data = await fetchJson<ZoneRecord[]>("/api/zones");
+      setZones(data);
+      setError("");
+    } catch {
+      setError("Failed to load places.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function toggleZone(zone: ZoneRecord) {
+    if (!zone.id) return;
+    try {
+      await fetchJson(`/api/zones/${zone.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ enabled: !zone.enabled }),
+      });
+      await load();
+    } catch {
+      setError("Failed to update place.");
+    }
+  }
+
+  async function deleteZone(zone: ZoneRecord) {
+    if (!zone.id) return;
+    if (!confirm(`Remove "${zone.name}"?`)) return;
+    try {
+      await fetchJson(`/api/zones/${zone.id}`, { method: "DELETE" });
+      await load();
+    } catch {
+      setError("Failed to remove place.");
+    }
+  }
+
+  async function createZone() {
+    if (!newZone.slug || !newZone.name) {
+      setError("Name and slug are required.");
+      return;
+    }
+    try {
+      await fetchJson("/api/zones", {
+        method: "POST",
+        body: JSON.stringify(newZone),
+      });
+      setNewZone({
+        slug: "",
+        name: "",
+        radius_meters: 75,
+        enabled: true,
+        zone_type: "custom",
+        focus_mode: "",
+        sort_order: 0,
+      });
+      setShowForm(false);
+      setError("");
+      await load();
+    } catch {
+      setError("Failed to create place.");
+    }
+  }
+
   return (
-    <section className="surface" style={{ padding: '4rem', margin: '4rem', border: '1px solid var(--line)' }}>
-      <div style={{ marginBottom: '3rem' }}>
+    <div className="zones-page">
+      <div className="zones-header">
+        <div>
+          <span className="section-eyebrow">LOCATION INTELLIGENCE</span>
+          <h2 className="zones-title">Places</h2>
+        </div>
+        <button
+          className="log-intent-btn zones-add-btn"
+          type="button"
+          onClick={() => setShowForm((v) => !v)}
+        >
+          {showForm ? "CANCEL" : "+ ADD PLACE"}
+        </button>
+      </div>
+
+      {error && <div className="banner error">{error}</div>}
+
+      {showForm && (
+        <div className="zone-form">
+          <span className="section-eyebrow">NEW PLACE</span>
+          <div className="zone-form-fields">
+            <div className="zone-field">
+              <label>Name</label>
+              <input
+                className="zone-input"
+                value={newZone.name ?? ""}
+                onChange={(e) =>
+                  setNewZone({ ...newZone, name: e.target.value })
+                }
+                placeholder="e.g. Home, Library"
+              />
+            </div>
+            <div className="zone-field">
+              <label>Slug</label>
+              <input
+                className="zone-input"
+                value={newZone.slug ?? ""}
+                onChange={(e) =>
+                  setNewZone({
+                    ...newZone,
+                    slug: e.target.value
+                      .toLowerCase()
+                      .replace(/\s+/g, "-")
+                      .replace(/[^a-z0-9-]/g, ""),
+                  })
+                }
+                placeholder="e.g. home, library"
+              />
+            </div>
+            <div className="zone-field">
+              <label>Type</label>
+              <select
+                className="zone-input"
+                value={newZone.zone_type ?? "custom"}
+                onChange={(e) =>
+                  setNewZone({ ...newZone, zone_type: e.target.value })
+                }
+              >
+                <option value="custom">Custom</option>
+                <option value="study">Study</option>
+                <option value="work">Work</option>
+                <option value="home">Home</option>
+                <option value="gym">Gym</option>
+              </select>
+            </div>
+            <div className="zone-field">
+              <label>Radius (meters)</label>
+              <input
+                className="zone-input"
+                type="number"
+                min={25}
+                max={500}
+                value={newZone.radius_meters ?? 75}
+                onChange={(e) =>
+                  setNewZone({
+                    ...newZone,
+                    radius_meters: Number(e.target.value),
+                  })
+                }
+              />
+            </div>
+          </div>
+          <button
+            className="log-intent-btn"
+            type="button"
+            style={{ marginTop: "1.5rem", width: "auto", padding: "0.75rem 2rem" }}
+            onClick={() => void createZone()}
+          >
+            CREATE PLACE
+          </button>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="zones-loading">Loading places...</div>
+      ) : zones.length === 0 ? (
+        <div className="zones-empty">
+          <p>No places configured yet.</p>
+          <p className="muted">
+            Add a place to enable location-aware tracking and iPhone automations.
+          </p>
+        </div>
+      ) : (
+        <div className="zones-list">
+          {zones.map((zone) => (
+            <div
+              key={zone.id}
+              className={`zone-card${zone.enabled ? "" : " zone-disabled"}`}
+            >
+              <div className="zone-card-header">
+                <div>
+                  <span className="zone-type-tag">
+                    {zone.zone_type.toUpperCase()}
+                  </span>
+                  <h3 className="zone-name">{zone.name}</h3>
+                  <span className="zone-slug">/{zone.slug}</span>
+                </div>
+                <div className="zone-card-actions">
+                  <button
+                    type="button"
+                    className={`zone-toggle ${zone.enabled ? "zone-toggle-on" : "zone-toggle-off"}`}
+                    onClick={() => void toggleZone(zone)}
+                  >
+                    {zone.enabled ? "ACTIVE" : "PAUSED"}
+                  </button>
+                  <button
+                    type="button"
+                    className="zone-delete"
+                    onClick={() => void deleteZone(zone)}
+                  >
+                    REMOVE
+                  </button>
+                </div>
+              </div>
+              <div className="zone-card-meta">
+                <span>RADIUS: {zone.radius_meters}m</span>
+                {zone.focus_mode && (
+                  <span>FOCUS: {zone.focus_mode.toUpperCase()}</span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── HistoryPage ───────────────────────────────────────────────────────────────
+
+function HistoryPage({
+  hourlySummaries,
+  health,
+  settings,
+}: {
+  hourlySummaries: HourlySummary[];
+  health: HealthResponse | null;
+  settings: BackendSettings | null;
+}) {
+  useEffect(() => {
+    document.title = "Chronicle — History";
+  }, []);
+
+  const sorted = [...hourlySummaries].sort(
+    (a, b) =>
+      new Date(b.hour_start_local).getTime() -
+      new Date(a.hour_start_local).getTime()
+  );
+
+  return (
+    <div className="history-page">
+      <div className="history-status-strip">
+        <div className="status-strip-item">
+          <span className="status-strip-label">SERVICE</span>
+          <span
+            className={`status-strip-value ${
+              health?.status === "ok" ? "value-good" : "value-bad"
+            }`}
+          >
+            {health?.status?.toUpperCase() ?? "UNKNOWN"}
+          </span>
+        </div>
+        <div className="status-strip-item">
+          <span className="status-strip-label">LLM PROVIDER</span>
+          <span className="status-strip-value">
+            {health?.llm?.provider?.toUpperCase() ?? "—"}
+          </span>
+        </div>
+        <div className="status-strip-item">
+          <span className="status-strip-label">TRACKING</span>
+          <span
+            className={`status-strip-value ${
+              settings?.tracking_enabled ? "value-good" : "value-warn"
+            }`}
+          >
+            {settings?.tracking_enabled ? "ENABLED" : "PAUSED"}
+          </span>
+        </div>
+        {health?.uptime_seconds !== undefined && (
+          <div className="status-strip-item">
+            <span className="status-strip-label">UPTIME</span>
+            <span className="status-strip-value">
+              {Math.floor(health.uptime_seconds / 3600)}h{" "}
+              {Math.floor((health.uptime_seconds % 3600) / 60)}m
+            </span>
+          </div>
+        )}
+      </div>
+
+      <div className="history-content">
+        <div className="history-header">
+          <span className="section-eyebrow">HOURLY CHRONICLE</span>
+          <h2 className="history-title">Session History</h2>
+        </div>
+
+        {sorted.length === 0 ? (
+          <div className="history-empty">
+            <p>No hourly summaries yet.</p>
+            <p className="muted">
+              Summaries are generated automatically each hour as you work.
+            </p>
+          </div>
+        ) : (
+          <div className="timeline">
+            {sorted.map((summary) => {
+              const pct =
+                summary.productivity_score !== null
+                  ? Math.round(summary.productivity_score * 10)
+                  : 0;
+              const grade = productivityGrade(pct);
+              const gColor = gradeColor(grade);
+              return (
+                <div key={summary.id} className="timeline-entry">
+                  <div className="timeline-spine">
+                    <div
+                      className="timeline-dot"
+                      style={{ background: gColor }}
+                    />
+                    <div className="timeline-line" />
+                  </div>
+                  <div className="timeline-card">
+                    <div className="timeline-card-header">
+                      <span className="timeline-hour">
+                        {formatHour(summary.hour_start_local)}
+                      </span>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "baseline",
+                          gap: "0.5rem",
+                        }}
+                      >
+                        <span
+                          className="timeline-grade"
+                          style={{ color: gColor }}
+                        >
+                          {grade}
+                        </span>
+                        {summary.productivity_score !== null && (
+                          <span className="timeline-score">{pct}%</span>
+                        )}
+                      </div>
+                    </div>
+                    <p className="timeline-summary">{summary.summary_text}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Surface & Field ───────────────────────────────────────────────────────────
+
+function Surface({
+  title,
+  eyebrow,
+  children,
+}: {
+  title: string;
+  eyebrow?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="surface">
+      <div style={{ marginBottom: "2rem" }}>
         {eyebrow && <div className="section-eyebrow">{eyebrow}</div>}
-        <h2 style={{ fontFamily: 'Newsreader', fontSize: '3rem', fontStyle: 'italic', fontWeight: 300, margin: 0 }}>{title}</h2>
+        <h2
+          style={{
+            fontFamily: "Newsreader",
+            fontSize: "2.5rem",
+            fontStyle: "italic",
+            fontWeight: 300,
+            margin: 0,
+          }}
+        >
+          {title}
+        </h2>
       </div>
       {children}
     </section>
@@ -378,48 +1076,80 @@ function Surface({ title, eyebrow, children }: { title: string; eyebrow?: string
 
 function Field({ label, value }: { label: string; value: any }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '1.5rem 0', borderBottom: '1px solid var(--line)' }}>
-      <span style={{ fontSize: '0.7rem', fontWeight: 800, letterSpacing: '0.1em', color: 'var(--muted)' }}>{label}</span>
-      <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>{String(value ?? "—")}</span>
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        padding: "1.25rem 0",
+        borderBottom: "1px solid var(--line)",
+      }}
+    >
+      <span
+        style={{
+          fontSize: "0.7rem",
+          fontWeight: 800,
+          letterSpacing: "0.1em",
+          color: "var(--muted)",
+        }}
+      >
+        {label}
+      </span>
+      <span style={{ fontSize: "0.9rem", fontWeight: 500 }}>
+        {String(value ?? "—")}
+      </span>
     </div>
   );
 }
 
-function DiagnosticsPage({ state, health, settings }: { state: DashboardState | null; health: HealthResponse | null; settings: BackendSettings | null }) {
-  useEffect(() => {
-    document.title = "Chronicle Diagnostics";
-  }, []);
+// ── SettingsPage ──────────────────────────────────────────────────────────────
 
-  return (
-    <div style={{ padding: '2rem' }}>
-      <Surface title="Agent Diagnostics" eyebrow="System Health">
-        <Field label="Service Health" value={health?.status} />
-        <Field label="Last Heartbeat" value={state?.last_mac_heartbeat_age_seconds ? `${state.last_mac_heartbeat_age_seconds}s ago` : "Unknown"} />
-        <Field label="Active Provider" value={health?.llm?.provider} />
-        <Field label="Tracking" value={settings?.tracking_enabled ? "Enabled" : "Paused"} />
-      </Surface>
-    </div>
-  );
-}
-
-function SettingsPage({ settings, onSave }: { settings: BackendSettings | null; onSave: (s: BackendSettings) => Promise<void> }) {
+function SettingsPage({
+  settings,
+  onSave,
+}: {
+  settings: BackendSettings | null;
+  onSave: (s: BackendSettings) => Promise<void>;
+}) {
   const [draft, setDraft] = useState<BackendSettings | null>(settings);
-  useEffect(() => { setDraft(settings); }, [settings]);
+  useEffect(() => {
+    setDraft(settings);
+  }, [settings]);
   if (!draft) return null;
   return (
-    <div style={{ padding: '2rem' }}>
+    <div style={{ padding: "2rem" }}>
       <Surface title="System Settings" eyebrow="Configuration">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-          <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
+          <label
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+            }}
+          >
             <span>Tracking Enabled</span>
-            <input type="checkbox" checked={draft.tracking_enabled} onChange={e => setDraft({ ...draft, tracking_enabled: e.target.checked })} />
+            <input
+              type="checkbox"
+              checked={draft.tracking_enabled}
+              onChange={(e) =>
+                setDraft({ ...draft, tracking_enabled: e.target.checked })
+              }
+            />
           </label>
-          <button className="log-intent-btn" style={{ width: 'auto', padding: '1rem 2rem' }} onClick={() => void onSave(draft)}>Save Changes</button>
+          <button
+            className="log-intent-btn"
+            type="button"
+            style={{ width: "auto", padding: "1rem 2rem" }}
+            onClick={() => void onSave(draft)}
+          >
+            Save Changes
+          </button>
         </div>
       </Surface>
     </div>
   );
 }
+
+// ── App Root ──────────────────────────────────────────────────────────────────
 
 export default function App() {
   const [state, setState] = useState<DashboardState | null>(null);
@@ -428,6 +1158,7 @@ export default function App() {
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [hourlySummaries, setHourlySummaries] = useState<HourlySummary[]>([]);
   const [aiDayInsight, setAiDayInsight] = useState<string | null>(null);
+  const [health, setHealth] = useState<HealthResponse | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -435,41 +1166,88 @@ export default function App() {
   async function refreshCore() {
     setRefreshing(true);
     try {
-      const [st, se, an, lo, hs, ai] = await Promise.allSettled([
+      const [st, se, an, lo, hs, ai, he] = await Promise.allSettled([
         fetchJson<DashboardState>("/api/state"),
         fetchJson<BackendSettings>("/api/settings"),
         fetchJson<Analytics>("/api/analytics/today"),
         fetchJson<ActivityLog[]>("/api/logs?limit=15"),
-        fetchJson<HourlySummary[]>("/api/hourly-summaries?limit=4"),
-        fetchJson<{ai_day_insight?: string}>("/api/calendar/today"),
+        fetchJson<HourlySummary[]>("/api/hourly-summaries?limit=12"),
+        fetchJson<{ ai_day_insight?: string }>("/api/calendar/today"),
+        fetchJson<HealthResponse>("/api/healthz"),
       ]);
       if (st.status === "fulfilled") setState(st.value);
       if (se.status === "fulfilled") setSettings(se.value);
       if (an.status === "fulfilled") setAnalytics(an.value);
       if (lo.status === "fulfilled") setLogs(lo.value);
       if (hs.status === "fulfilled") setHourlySummaries(hs.value);
-      if (ai.status === "fulfilled") setAiDayInsight(ai.value.ai_day_insight ?? null);
-    } finally { setRefreshing(false); }
+      if (ai.status === "fulfilled")
+        setAiDayInsight(ai.value.ai_day_insight ?? null);
+      if (he.status === "fulfilled") setHealth(he.value);
+    } finally {
+      setRefreshing(false);
+    }
   }
 
   useEffect(() => {
     void refreshCore();
-    const i = setInterval(() => { if (!document.hidden) void refreshCore(); }, 60000);
+    const i = setInterval(() => {
+      if (!document.hidden) void refreshCore();
+    }, 60000);
     return () => clearInterval(i);
   }, []);
 
   return (
     <BrowserRouter>
-      <AppShell statusMessage={statusMessage} errorMessage={errorMessage} refreshing={refreshing} onRefresh={() => void refreshCore()} state={state}>
+      <AppShell
+        statusMessage={statusMessage}
+        errorMessage={errorMessage}
+        refreshing={refreshing}
+        onRefresh={() => void refreshCore()}
+        state={state}
+        logs={logs}
+      >
         <Routes>
           <Route path="/" element={<Navigate replace to="/today" />} />
-          <Route path="/today" element={<TodayPage state={state} analytics={analytics} logs={logs} hourlySummaries={hourlySummaries} aiDayInsight={aiDayInsight} onRefreshLogs={refreshCore} />} />
-          <Route path="/diagnostics" element={<DiagnosticsPage state={state} health={null} settings={settings} />} />
-          <Route path="/settings" element={<SettingsPage settings={settings} onSave={async (s) => {
-            await fetchJson("/api/settings", { method: "POST", body: JSON.stringify(s) });
-            setStatusMessage("Settings updated.");
-            void refreshCore();
-          }} />} />
+          <Route
+            path="/today"
+            element={
+              <TodayPage
+                state={state}
+                analytics={analytics}
+                logs={logs}
+                hourlySummaries={hourlySummaries}
+                aiDayInsight={aiDayInsight}
+                onRefreshLogs={refreshCore}
+              />
+            }
+          />
+          <Route path="/zones" element={<ZonesPage />} />
+          <Route
+            path="/diagnostics"
+            element={
+              <HistoryPage
+                hourlySummaries={hourlySummaries}
+                health={health}
+                settings={settings}
+              />
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              <SettingsPage
+                settings={settings}
+                onSave={async (s) => {
+                  await fetchJson("/api/settings", {
+                    method: "POST",
+                    body: JSON.stringify(s),
+                  });
+                  setStatusMessage("Settings updated.");
+                  void refreshCore();
+                }}
+              />
+            }
+          />
           <Route path="*" element={<Navigate replace to="/today" />} />
         </Routes>
       </AppShell>
