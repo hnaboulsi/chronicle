@@ -2,13 +2,21 @@ import asyncio
 import json
 import logging
 import os
-from typing import Optional
+import time
+from typing import Any, Optional
 
 import httpx
 from dotenv import load_dotenv
 from google import genai
 
 log = logging.getLogger("vero.llm")
+
+_VALID_PROVIDERS = ("mistral", "gemini", "openai")
+_INTERACTIVE_TASKS = {"chat", "activity_summary", "prompt", "recap_feedback", "daily_recap"}
+_MISTRAL_MIN_INTERVAL_SECONDS = float(os.getenv("VERO_MISTRAL_MIN_INTERVAL_SECONDS") or "31")
+_MISTRAL_INTERACTIVE_MAX_WAIT_SECONDS = float(os.getenv("VERO_MISTRAL_INTERACTIVE_MAX_WAIT_SECONDS") or "1.5")
+_mistral_rate_lock = asyncio.Lock()
+_mistral_next_request_at = 0.0
 
 load_dotenv()
 
@@ -27,28 +35,107 @@ if not _mistral_api_key:
     log.warning("MISTRAL_API_KEY environment variable not set.")
 
 
+def _normalize_provider(provider: str | None, default: str = "auto") -> str:
+    cleaned = (provider or "").strip().lower()
+    return cleaned if cleaned in {"auto", * _VALID_PROVIDERS} else default
+
+
 def _configured_provider() -> str:
-    provider = (os.getenv("VERO_AI_PROVIDER") or os.getenv("LIFE_MANAGER_AI_PROVIDER") or "auto").strip().lower()
-    if provider not in {"auto", "gemini", "openai", "mistral"}:
-        provider = "auto"
+    return _normalize_provider(os.getenv("VERO_AI_PROVIDER") or os.getenv("LIFE_MANAGER_AI_PROVIDER") or "auto")
+
+
+def _parse_fallback_providers(raw: str | None) -> list[str]:
+    if not raw:
+        return ["gemini", "openai"]
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, list):
+            values = parsed
+        else:
+            values = []
+    except Exception:
+        values = [part.strip() for part in str(raw).split(",")]
+
+    normalized: list[str] = []
+    for value in values:
+        provider = _normalize_provider(str(value), default="")
+        if provider in _VALID_PROVIDERS and provider not in normalized:
+            normalized.append(provider)
+    return normalized
+
+
+def _routing_mode() -> str:
+    mode = (os.getenv("VERO_AI_ROUTING_MODE") or "task_aware").strip().lower()
+    return mode if mode in {"task_aware", "aggressive_fallback", "strict_primary"} else "task_aware"
+
+
+def _provider_available(provider: str) -> bool:
+    if provider == "mistral":
+        return bool(_mistral_api_key)
+    if provider == "gemini":
+        return _gemini_client is not None
+    if provider == "openai":
+        return bool(os.getenv("OPENAI_API_KEY", "").strip())
+    return False
+
+
+def _primary_provider() -> str:
+    provider = _configured_provider()
+    if provider == "auto":
+        for candidate in ("mistral", "gemini", "openai"):
+            if _provider_available(candidate):
+                return candidate
+        return "auto"
     return provider
 
 
-def _provider_order() -> list[str]:
-    provider = _configured_provider()
-    if provider == "gemini":
-        return ["gemini", "openai"]
-    if provider == "openai":
-        return ["openai", "gemini"]
-    if provider == "mistral":
-        return ["mistral"]  # strict: no silent fallback, 2 RPM is precious
-    if os.getenv("OPENAI_API_KEY"):
-        return ["openai", "gemini"]
-    return ["gemini", "openai"]
+def _task_allows_fallback(task_type: str) -> bool:
+    mode = _routing_mode()
+    if mode == "strict_primary":
+        return False
+    if mode == "aggressive_fallback":
+        return True
+    return task_type in _INTERACTIVE_TASKS
 
 
-def has_llm_provider() -> bool:
-    return bool(_gemini_client or os.getenv("OPENAI_API_KEY", "").strip() or _mistral_api_key)
+def _provider_order(task_type: str = "default") -> list[str]:
+    primary = _primary_provider()
+    fallbacks = _parse_fallback_providers(os.getenv("VERO_AI_FALLBACK_PROVIDERS"))
+
+    candidates: list[str] = []
+    if primary in _VALID_PROVIDERS:
+        candidates.append(primary)
+    elif primary == "auto":
+        candidates.extend(_VALID_PROVIDERS)
+
+    if _task_allows_fallback(task_type) or not candidates or not any(_provider_available(p) for p in candidates):
+        candidates.extend(fallbacks)
+
+    ordered: list[str] = []
+    for provider in candidates:
+        if provider in _VALID_PROVIDERS and provider not in ordered and _provider_available(provider):
+            ordered.append(provider)
+    return ordered
+
+
+def has_llm_provider(task_type: str = "default") -> bool:
+    return bool(_provider_order(task_type=task_type))
+
+
+def get_routing_status(task_type: str = "default") -> dict:
+    available = [provider for provider in _VALID_PROVIDERS if _provider_available(provider)]
+    primary = _primary_provider()
+    order = _provider_order(task_type=task_type)
+    return {
+        "configured": bool(available),
+        "routing_mode": _routing_mode(),
+        "primary_provider": primary,
+        "fallback_providers": _parse_fallback_providers(os.getenv("VERO_AI_FALLBACK_PROVIDERS")),
+        "available_providers": available,
+        "provider_order": order,
+        "effective_provider": order[0] if order else None,
+        "fallback_enabled": _task_allows_fallback(task_type),
+    }
 
 
 def _gemini_model(task: str) -> str:
@@ -132,8 +219,25 @@ async def _ask_openai(prompt: str, model_kind: str = "default") -> str:
         return ""
 
 
-async def _ask_mistral(prompt: str, model_kind: str = "default") -> str:
+async def _acquire_mistral_slot(task_type: str) -> bool:
+    global _mistral_next_request_at
+
+    max_wait = 0.0 if task_type not in _INTERACTIVE_TASKS else _MISTRAL_INTERACTIVE_MAX_WAIT_SECONDS
+    async with _mistral_rate_lock:
+        wait_seconds = _mistral_next_request_at - time.monotonic()
+        if wait_seconds > max_wait:
+            log.info("Skipping Mistral for %s; next slot in %.1fs", task_type, wait_seconds)
+            return False
+        if wait_seconds > 0:
+            await asyncio.sleep(wait_seconds)
+        _mistral_next_request_at = time.monotonic() + _MISTRAL_MIN_INTERVAL_SECONDS
+        return True
+
+
+async def _ask_mistral(prompt: str, model_kind: str = "default", task_type: str = "default") -> str:
     if not _mistral_api_key:
+        return ""
+    if not await _acquire_mistral_slot(task_type):
         return ""
     model = _mistral_model(model_kind)
     try:
@@ -166,16 +270,21 @@ async def _ask_mistral(prompt: str, model_kind: str = "default") -> str:
         return ""
 
 
-async def ask_llm(prompt: str, context: Optional[str] = None, model_kind: str = "default") -> str:
+async def ask_llm(
+    prompt: str,
+    context: Optional[str] = None,
+    model_kind: str = "default",
+    task_type: str = "default",
+) -> str:
     full_prompt = prompt
     if context:
         full_prompt = f"Context:\n{context}\n\nQuery:\n{prompt}"
 
-    for provider in _provider_order():
+    for provider in _provider_order(task_type=task_type):
         if provider == "openai":
             text = await _ask_openai(full_prompt, model_kind=model_kind)
         elif provider == "mistral":
-            text = await _ask_mistral(full_prompt, model_kind=model_kind)
+            text = await _ask_mistral(full_prompt, model_kind=model_kind, task_type=task_type)
         else:
             text = await _ask_gemini(full_prompt, model_kind=model_kind)
         if text:
@@ -203,7 +312,7 @@ async def check_if_vague(app_name: str, window_title: str) -> bool:
         "Does this describe a specific, productive task, or is it vague or unfocused like generic browsing or passive media? "
         "Answer ONLY with YES if vague, or NO if specific."
     )
-    response = await ask_llm(prompt, model_kind="cheap")
+    response = await ask_llm(prompt, model_kind="cheap", task_type="classification")
     return "YES" in response.upper()
 
 
@@ -213,7 +322,7 @@ async def generate_prompt(app_name: str, window_title: str) -> str:
         "Write a short, direct check-in question asking whether this is still intentional work. "
         "Under 12 words. No filler."
     )
-    return await ask_llm(prompt, model_kind="cheap")
+    return await ask_llm(prompt, model_kind="cheap", task_type="prompt")
 
 
 async def generate_activity_summary(app_name: str, window_title: str) -> str:
@@ -223,7 +332,7 @@ async def generate_activity_summary(app_name: str, window_title: str) -> str:
         "Write 1-2 direct sentences describing what they were likely doing. "
         "If it looks distracting, say so plainly."
     )
-    return await ask_llm(prompt, model_kind="default")
+    return await ask_llm(prompt, model_kind="default", task_type="activity_summary")
 
 
 def _safe_confidence(value, default: float = 0.5) -> float:
@@ -259,12 +368,13 @@ async def generate_activity_summary_structured(entry, context_logs: list) -> dic
         "- signals: array of 2-4 short evidence strings\n"
         "Keep it direct and useful."
     )
-    result = _parse_json_response(await ask_llm(prompt, model_kind="default"))
+    result = _parse_json_response(await ask_llm(prompt, model_kind="default", task_type="activity_summary"))
     summary_text = str(result.get("summary_text") or "").strip()
     focus_assessment = str(result.get("focus_assessment") or "unknown").strip().lower()
     confidence = _safe_confidence(result.get("confidence"), 0.55)
-    signals = result.get("signals") if isinstance(result.get("signals"), list) else []
-    signals = [str(s).strip() for s in signals if str(s).strip()][:4]
+    raw_signals_value = result.get("signals")
+    raw_signals: list[Any] = raw_signals_value if isinstance(raw_signals_value, list) else []
+    signals = [str(s).strip() for s in raw_signals if str(s).strip()][:4]
     if focus_assessment not in focus_modes:
         focus_assessment = "unknown"
     if not summary_text:
@@ -280,7 +390,7 @@ async def generate_activity_summary_structured(entry, context_logs: list) -> dic
     }
 
 
-async def classify_activity_context(recent_activities: list, user_self_report: str = "", recent_history: list = None, global_context: str = "") -> dict:
+async def classify_activity_context(recent_activities: list, user_self_report: str = "", recent_history: list | None = None, global_context: str = "") -> dict:
     if not recent_activities:
         return {"category": "unknown", "summary": "", "presence_inference": "unknown"}
 
@@ -345,7 +455,7 @@ async def classify_activity_context(recent_activities: list, user_self_report: s
         'Respond ONLY with valid JSON: {"category": "...", "summary": "...", "presence_inference": "..."}'
     )
 
-    result = _parse_json_response(await ask_llm(prompt, model_kind="cheap"))
+    result = _parse_json_response(await ask_llm(prompt, model_kind="cheap", task_type="classification"))
     return {
         "category": str(result.get("category", "unknown")).lower(),
         "summary": result.get("summary", ""),
@@ -356,15 +466,15 @@ async def classify_activity_context(recent_activities: list, user_self_report: s
 async def generate_hourly_summary(
     logs: list,
     hour_start: str,
-    app_cache: dict = None,
+    app_cache: dict | None = None,
     global_context: str = "",
-    calendar_events: list = None,
-    upcoming_events: list = None,
-    manual_logs: list = None,
+    calendar_events: list | None = None,
+    upcoming_events: list | None = None,
+    manual_logs: list | None = None,
     idle_pct: int = 0,
     active_pct: int = 100,
     prev_score: float | None = None,
-    ios_context: dict = None,
+    ios_context: dict | None = None,
     hour_of_day: int = 12,
     day_of_week: str = "Monday",
 ) -> dict:
@@ -482,7 +592,7 @@ INSTRUCTIONS:
 
 Respond ONLY with valid JSON: {{"summary": "...", "productivity_score": 7.5}}"""
 
-    result_text = await ask_llm(prompt, model_kind="default")
+    result_text = await ask_llm(prompt, model_kind="default", task_type="hourly_summary")
     result = _parse_json_response(result_text)
     
     summary = result.get("summary", "")
@@ -512,7 +622,7 @@ async def generate_daily_recap(logs_summary: str) -> str:
         "provide a concise daily summary and a productivity score out of 10.\n\n"
         f"Logs:\n{logs_summary}"
     )
-    return await ask_llm(prompt, model_kind="default")
+    return await ask_llm(prompt, model_kind="default", task_type="daily_recap")
 
 
 async def analyze_calendar_day(events_text: str, now_label: str) -> dict:
@@ -543,7 +653,7 @@ async def analyze_calendar_day(events_text: str, now_label: str) -> dict:
         "3. 'day_insight': 1-2 sentence summary of the day's shape — e.g. 'Two lectures and a pset due — front-load the pset before noon.' "
         "Keep it under 30 words and be actionable."
     )
-    text = await ask_llm(prompt, model_kind="cheap")
+    text = await ask_llm(prompt, model_kind="cheap", task_type="calendar_day")
     result = _parse_json_response(text)
     return {
         "event_types": result.get("event_types") or {},
@@ -571,10 +681,10 @@ async def generate_calendar_event_briefs(
         "If no connection is obvious, describe the event's purpose plainly.\n"
         'Respond ONLY with JSON: {"Event Title": "brief sentence.", ...}'
     )
-    text = await ask_llm(prompt, model_kind="cheap")
+    text = await ask_llm(prompt, model_kind="cheap", task_type="calendar_briefs")
     result = _parse_json_response(text)
     return result if isinstance(result, dict) else {}
 
 
 async def ask_gemini(prompt: str, context: Optional[str] = None) -> str:
-    return await ask_llm(prompt, context=context, model_kind="default")
+    return await ask_llm(prompt, context=context, model_kind="default", task_type="chat")

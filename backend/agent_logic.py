@@ -30,7 +30,9 @@ DOMAIN_PATTERN = re.compile(r"\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b", re.IGNORECASE)
 DEFAULTS = {
     "backend_mode": "railway_primary",
     "llm_mode": "balanced",
-    "ai_provider": "auto",
+    "ai_provider": "mistral",
+    "ai_fallback_providers": json.dumps(["gemini", "openai"]),
+    "ai_routing_mode": "task_aware",
     "hourly_summaries_enabled": "true",
     "capture_interval_seconds": "300",
     "polling_interval_seconds": "300",
@@ -139,7 +141,53 @@ def ensure_default_settings(db: Session):
         set_state(db, "privacy_mode", "detailed")
     set_capture_interval_seconds(db, get_capture_interval_seconds(db))
     ensure_default_zones(db)
-    os.environ["LIFE_MANAGER_AI_PROVIDER"] = get_state(db, "ai_provider", DEFAULTS["ai_provider"])
+    sync_ai_preferences_to_env(db)
+
+
+def _normalize_ai_provider(value: str | None, default: str = "mistral") -> str:
+    cleaned = (value or "").strip().lower()
+    return cleaned if cleaned in {"auto", "gemini", "openai", "mistral"} else default
+
+
+def _parse_fallback_providers(raw: str | None) -> list[str]:
+    if not raw:
+        raw_values = ["gemini", "openai"]
+    else:
+        try:
+            parsed = json.loads(raw)
+            raw_values = parsed if isinstance(parsed, list) else []
+        except Exception:
+            raw_values = [part.strip() for part in str(raw).split(",")]
+
+    normalized: list[str] = []
+    for item in raw_values:
+        provider = _normalize_ai_provider(str(item), default="")
+        if provider in {"gemini", "openai", "mistral"} and provider not in normalized:
+            normalized.append(provider)
+    return normalized
+
+
+def get_ai_preferences(db: Session) -> dict:
+    primary = _normalize_ai_provider(get_state(db, "ai_provider", DEFAULTS["ai_provider"]))
+    fallbacks = _parse_fallback_providers(get_state(db, "ai_fallback_providers", DEFAULTS["ai_fallback_providers"]))
+    fallbacks = [provider for provider in fallbacks if provider != primary]
+    routing_mode = (get_state(db, "ai_routing_mode", DEFAULTS["ai_routing_mode"]) or DEFAULTS["ai_routing_mode"]).strip().lower()
+    if routing_mode not in {"task_aware", "aggressive_fallback", "strict_primary"}:
+        routing_mode = DEFAULTS["ai_routing_mode"]
+    return {
+        "primary_provider": primary,
+        "fallback_providers": fallbacks,
+        "routing_mode": routing_mode,
+    }
+
+
+def sync_ai_preferences_to_env(db: Session) -> dict:
+    preferences = get_ai_preferences(db)
+    os.environ["VERO_AI_PROVIDER"] = preferences["primary_provider"]
+    os.environ["LIFE_MANAGER_AI_PROVIDER"] = preferences["primary_provider"]
+    os.environ["VERO_AI_FALLBACK_PROVIDERS"] = json.dumps(preferences["fallback_providers"])
+    os.environ["VERO_AI_ROUTING_MODE"] = preferences["routing_mode"]
+    return preferences
 
 
 def ensure_default_zones(db: Session):
@@ -432,8 +480,9 @@ def llm_usage_snapshot(db: Session, now: datetime | None = None) -> dict:
     return {"daily_cap": None, "daily_used": used, "daily_remaining": None}
 
 
-def can_use_llm(db: Session, now: datetime | None = None) -> bool:
-    return llm_client.has_llm_provider()
+def can_use_llm(db: Session, now: datetime | None = None, task_type: str = "default") -> bool:
+    sync_ai_preferences_to_env(db)
+    return llm_client.has_llm_provider(task_type=task_type)
 
 
 def register_llm_call(db: Session, now: datetime | None = None):
@@ -933,7 +982,7 @@ async def _generate_and_store_hourly_summary(db: Session, now: datetime, force_c
     confidence = 0.35
     fallback_used = True
 
-    if can_use_llm(db, now):
+    if can_use_llm(db, now, task_type="hourly_summary"):
         try:
             app_cache = json.loads(get_state(db, "app_category_cache") or "{}")
             global_context = get_global_chat_context(db)
@@ -1191,7 +1240,7 @@ async def _maybe_generate_checkin(db: Session, current_location: str, prev_locat
 
     if needs_checkin:
         guess = _guess_activity(current_location, prev_location, now, db)
-        if can_use_llm(db, now):
+        if can_use_llm(db, now, task_type="checkin"):
             global_context = get_global_chat_context(db)
             zone_type = get_state(db, f"zone_type:{_location_context_key(current_location)}", "")
             prompt = (
@@ -1203,7 +1252,7 @@ async def _maybe_generate_checkin(db: Session, current_location: str, prev_locat
             )
             try:
                 register_llm_call(db, now)
-                ai_msg = await llm_client.ask_llm(prompt)
+                ai_msg = await llm_client.ask_llm(prompt, task_type="checkin")
                 checkin_msg = ai_msg.strip() if ai_msg and ai_msg.strip() else f"At {current_location} — what are you working on?"
             except Exception:
                 checkin_msg = f"At {current_location} — what are you working on?"
@@ -1563,7 +1612,7 @@ async def _refresh_app_category_cache(db: Session, now: datetime):
     last_refresh = _parse_iso_dt(get_state(db, "last_category_cache_refresh"))
     if last_refresh and (now - last_refresh).total_seconds() < 3600:
         return
-    if not can_use_llm(db, now):
+    if not can_use_llm(db, now, task_type="app_cache_refresh"):
         return
 
     today_start, today_end = user_day_bounds_utc(db, now)
@@ -1613,7 +1662,7 @@ async def _refresh_app_category_cache(db: Session, now: datetime):
 
     try:
         register_llm_call(db, now)
-        result_text = await llm_client.ask_llm(prompt)
+        result_text = await llm_client.ask_llm(prompt, task_type="app_cache_refresh")
         start = result_text.find('{')
         end = result_text.rfind('}') + 1
         if start >= 0 and end > start:
@@ -1722,7 +1771,7 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session):
         )
         if low_signal and get_state(db, "llm_mode", DEFAULTS["llm_mode"]) == "ultra_save":
             result = heuristic_classify_activity(recent, idle_time_seconds=data.idle_time_seconds, recent_history=history)
-        elif can_use_llm(db, now):
+        elif can_use_llm(db, now, task_type="classification"):
             register_llm_call(db, now)
             result = await llm_client.classify_activity_context(recent, user_self_report, recent_history=history, global_context=global_context)
         else:
@@ -1757,7 +1806,7 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session):
 
         study_mode = get_state(db, "study_mode")
         if study_mode == "active" and new_category in DISTRACTED_CATEGORIES and not get_state(db, "pending_prompt"):
-            if can_use_llm(db, now):
+            if can_use_llm(db, now, task_type="prompt"):
                 register_llm_call(db, now)
                 prompt = await llm_client.generate_prompt(data.app_name, data.window_title)
             else:
@@ -1768,7 +1817,7 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session):
             set_state(db, "callout_category", new_category)
             set_state(db, "callout_summary", new_summary)
             # Generate AI-driven callout message when category becomes distracted
-            if prev_callout_category != new_category and can_use_llm(db, now):
+            if prev_callout_category != new_category and can_use_llm(db, now, task_type="prompt"):
                 global_context = get_global_chat_context(db)
                 callout_prompt = (
                     f"User has been on {new_category} ({new_summary}) for 30+ min during a work/study period.\n"
@@ -1778,7 +1827,7 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session):
                 )
                 try:
                     register_llm_call(db, now)
-                    ai_callout = await llm_client.ask_llm(callout_prompt)
+                    ai_callout = await llm_client.ask_llm(callout_prompt, task_type="prompt")
                     if ai_callout and ai_callout.strip():
                         set_state(db, "callout_ai_message", ai_callout.strip())
                 except Exception:

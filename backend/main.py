@@ -8,7 +8,7 @@ import subprocess
 import secrets
 import hmac
 import hashlib
-import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any
 
@@ -38,6 +38,7 @@ _STARTUP_STATUS = {
     "startup_migrations_ok": False,
     "startup_errors": [],
 }
+_BACKGROUND_EXECUTOR = ThreadPoolExecutor(max_workers=max(2, int(os.environ.get("VERO_BACKGROUND_WORKERS", "4"))))
 
 
 # Lightweight column migrations — add missing columns to existing tables
@@ -615,6 +616,22 @@ def _coerce_bool(value, default: bool = False) -> bool:
     return default
 
 
+def _submit_background_job(label: str, coroutine_func, data) -> None:
+    def _run() -> None:
+        db = SessionLocal()
+        try:
+            asyncio.run(coroutine_func(data, db))
+        except Exception as exc:
+            log.error("Background %s error: %s", label, exc)
+        finally:
+            db.close()
+
+    try:
+        _BACKGROUND_EXECUTOR.submit(_run)
+    except Exception as exc:
+        log.error("Failed to queue %s job: %s", label, exc)
+
+
 def _parse_event_time(value: str | None) -> datetime | None:
     if not value:
         return None
@@ -856,68 +873,23 @@ def _build_state_payload(db: Session) -> dict:
     return states
 
 def _bg_process_mac(data: MacTelemetry):
-    """Run mac telemetry processing in its own thread + event loop (FastAPI-safe)."""
-    def _run():
-        db = SessionLocal()
-        try:
-            asyncio.run(agent_logic.process_mac_telemetry(data, db))
-        except Exception as e:
-            log.error("Background mac telemetry error: %s", e)
-        finally:
-            db.close()
-    threading.Thread(target=_run, daemon=True).start()
+    _submit_background_job("mac telemetry", agent_logic.process_mac_telemetry, data)
 
 
 def _bg_process_ios(data: iOSTelemetry):
-    """Run ios telemetry processing in its own thread + event loop (FastAPI-safe)."""
-    def _run():
-        db = SessionLocal()
-        try:
-            asyncio.run(agent_logic.process_ios_telemetry(data, db))
-        except Exception as e:
-            log.error("Background ios telemetry error: %s", e)
-        finally:
-            db.close()
-    threading.Thread(target=_run, daemon=True).start()
+    _submit_background_job("ios telemetry", agent_logic.process_ios_telemetry, data)
 
 
 def _bg_process_heartbeat(data: MacHeartbeat):
-    """Run mac heartbeat processing in its own thread + event loop (FastAPI-safe)."""
-    def _run():
-        db = SessionLocal()
-        try:
-            asyncio.run(agent_logic.process_mac_heartbeat(data, db))
-        except Exception as e:
-            log.error("Background mac heartbeat error: %s", e)
-        finally:
-            db.close()
-    threading.Thread(target=_run, daemon=True).start()
+    _submit_background_job("mac heartbeat", agent_logic.process_mac_heartbeat, data)
 
 
 def _bg_process_mac_presence(data: MacPresence):
-    """Run mac presence processing in its own thread + event loop (FastAPI-safe)."""
-    def _run():
-        db = SessionLocal()
-        try:
-            asyncio.run(agent_logic.process_mac_presence(data, db))
-        except Exception as e:
-            log.error("Background mac presence error: %s", e)
-        finally:
-            db.close()
-    threading.Thread(target=_run, daemon=True).start()
+    _submit_background_job("mac presence", agent_logic.process_mac_presence, data)
 
 
 def _bg_process_ios_zone(data: iOSZoneEvent):
-    """Run iOS zone event processing in its own thread + event loop (FastAPI-safe)."""
-    def _run():
-        db = SessionLocal()
-        try:
-            asyncio.run(agent_logic.process_ios_zone_event(data, db))
-        except Exception as e:
-            log.error("Background ios zone event error: %s", e)
-        finally:
-            db.close()
-    threading.Thread(target=_run, daemon=True).start()
+    _submit_background_job("ios zone event", agent_logic.process_ios_zone_event, data)
 
 
 @app.post("/api/mac-telemetry")
@@ -1102,13 +1074,19 @@ def get_settings(db: Session = Depends(get_db)):
     agent_logic.ensure_default_settings(db)
     tracking_enabled_str = agent_logic.get_state(db, "tracking_enabled", "true")
     capture_interval_seconds = agent_logic.get_capture_interval_seconds(db)
+    ai_preferences = agent_logic.get_ai_preferences(db)
+    llm_stats = agent_logic.llm_usage_snapshot(db, datetime.now(timezone.utc))
     return {
         "capture_interval_seconds": capture_interval_seconds,
         "polling_interval_seconds": capture_interval_seconds,
         "tracking_enabled": tracking_enabled_str.lower() == "true",
         "backend_mode": agent_logic.get_state(db, "backend_mode", "railway_primary"),
-        "ai_provider": agent_logic.get_state(db, "ai_provider", "auto"),
+        "ai_provider": ai_preferences["primary_provider"],
+        "ai_primary_provider": ai_preferences["primary_provider"],
+        "ai_fallback_providers": ai_preferences["fallback_providers"],
+        "ai_routing_mode": ai_preferences["routing_mode"],
         "llm_mode": agent_logic.get_state(db, "llm_mode", agent_logic.DEFAULTS["llm_mode"]),
+        "llm_daily_cap": llm_stats["daily_cap"],
         "hourly_summaries_enabled": agent_logic.get_state(db, "hourly_summaries_enabled", agent_logic.DEFAULTS["hourly_summaries_enabled"]).lower() == "true",
         "classification_interval_seconds": max(300, capture_interval_seconds),
         "user_timezone": agent_logic.get_state(db, "user_timezone", agent_logic.DEFAULTS["user_timezone"]),
@@ -1139,7 +1117,23 @@ def update_settings(payload: Dict[str, Any], db: Session = Depends(get_db)):
         agent_logic.set_state(db, "backend_mode", payload["backend_mode"])
     if "ai_provider" in payload and payload["ai_provider"] in {"auto", "gemini", "openai", "mistral"}:
         agent_logic.set_state(db, "ai_provider", payload["ai_provider"])
-        os.environ["VERO_AI_PROVIDER"] = payload["ai_provider"]
+    if "ai_fallback_providers" in payload:
+        raw = payload["ai_fallback_providers"]
+        if isinstance(raw, list):
+            fallback_values = raw
+        else:
+            fallback_values = [part.strip() for part in str(raw).split(",")]
+        cleaned = []
+        for value in fallback_values:
+            provider = str(value).strip().lower()
+            if provider in {"gemini", "openai", "mistral"} and provider not in cleaned:
+                cleaned.append(provider)
+        agent_logic.set_state(db, "ai_fallback_providers", json.dumps(cleaned))
+    if "ai_routing_mode" in payload:
+        routing_mode = str(payload["ai_routing_mode"] or "").strip().lower()
+        if routing_mode not in {"task_aware", "aggressive_fallback", "strict_primary"}:
+            raise HTTPException(status_code=400, detail="ai_routing_mode must be task_aware, aggressive_fallback, or strict_primary")
+        agent_logic.set_state(db, "ai_routing_mode", routing_mode)
     if "llm_mode" in payload and payload["llm_mode"] in {"ultra_save", "balanced", "quality"}:
         agent_logic.set_state(db, "llm_mode", payload["llm_mode"])
     if "hourly_summaries_enabled" in payload:
@@ -1173,6 +1167,7 @@ def update_settings(payload: Dict[str, Any], db: Session = Depends(get_db)):
             agent_logic.set_state(db, "user_timezone", tz_name)
         except Exception:
             raise HTTPException(status_code=400, detail=f"Invalid timezone: {tz_name}")
+    agent_logic.sync_ai_preferences_to_env(db)
     return {"status": "updated"}
 
 
@@ -1328,7 +1323,7 @@ async def get_calendar_today(db: Session = Depends(get_db)):
             event_briefs = _json.loads(cached_briefs_raw)
         except Exception:
             event_briefs = {}
-    elif events and agent_logic.can_use_llm(db, now):
+    elif events and agent_logic.can_use_llm(db, now, task_type="calendar_day"):
         import llm_client
         events_text = "\n".join(
             f"- {e.title} ({_local_iso(e.start_at)[11:16]}–{_local_iso(e.end_at)[11:16]})"
@@ -1344,7 +1339,6 @@ async def get_calendar_today(db: Session = Depends(get_db)):
             for l in recent_logs
             if (l.get('app_name') or l.get('window_title'))
         )
-        agent_logic.register_llm_call(db, now)
         agent_logic.register_llm_call(db, now)
         result, event_briefs = await asyncio.gather(
             llm_client.analyze_calendar_day(events_text, now_label),
@@ -1595,7 +1589,7 @@ async def get_log_summary(log_id: int, db: Session = Depends(get_db)):
             .all()
         )
 
-    if entry.device == "mac" and agent_logic.can_use_llm(db):
+    if entry.device == "mac" and agent_logic.can_use_llm(db, task_type="activity_summary"):
         agent_logic.register_llm_call(db)
         structured = await llm_client.generate_activity_summary_structured(entry, context_logs)
         if structured and structured.get("summary_text"):
@@ -1701,7 +1695,7 @@ async def recap_feedback(payload: Dict[str, Any], db: Session = Depends(get_db))
     )
 
     try:
-        result_text = await llm_client.ask_llm(verification_prompt)
+        result_text = await llm_client.ask_llm(verification_prompt, task_type="recap_feedback")
         start = result_text.find('{')
         end = result_text.rfind('}') + 1
         if start >= 0 and end > start:
@@ -1848,7 +1842,7 @@ async def chat_message(payload: Dict[str, Any], db: Session = Depends(get_db)):
 
     # Use LLM to generate a smart response and extract context if budget allows
     _llm_handled_location = False
-    if agent_logic.can_use_llm(db, now):
+    if agent_logic.can_use_llm(db, now, task_type="chat"):
         agent_logic.register_llm_call(db, now)
         import llm_client
         prompt = (
@@ -1866,7 +1860,7 @@ async def chat_message(payload: Dict[str, Any], db: Session = Depends(get_db)):
             "3. 'location': Named place if the user mentions arriving at, being at, or leaving one (e.g. 'just got to Anchor', 'leaving the library'). Otherwise null.\n"
             "4. 'location_action': 'arrived' if they just got there or are there now, 'leaving' if departing. Null if no location.\n"
         )
-        result_text = await llm_client.ask_gemini(prompt)
+        result_text = await llm_client.ask_llm(prompt, task_type="chat")
         reply = "Got it. I'll track that and update your context."
         
         start = result_text.find('{')
@@ -2072,8 +2066,7 @@ def dismiss_checkin(db: Session = Depends(get_db)):
 @app.get("/api/healthz")
 async def healthz():
     now = datetime.now(timezone.utc)
-    llm_configured = bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("OPENAI_API_KEY") or os.environ.get("MISTRAL_API_KEY"))
-    ai_provider = os.environ.get("VERO_AI_PROVIDER") or os.environ.get("LIFE_MANAGER_AI_PROVIDER", "auto")
+    llm_status = llm_client.get_routing_status(task_type="chat")
 
     # --- Non-blocking DB check (3s timeout) ---
     # Railway requires a 200 response within 30s; we must not block the event loop.
@@ -2097,11 +2090,12 @@ async def healthz():
         _db = SessionLocal()
         try:
             _db.execute(text("SELECT 1"))
+            agent_logic.sync_ai_preferences_to_env(_db)
             _payload = _build_state_payload(_db)
             _llm = agent_logic.llm_usage_snapshot(_db, datetime.now(timezone.utc))
-            _ai = agent_logic.get_state(_db, "ai_provider", "auto")
+            _routing = llm_client.get_routing_status(task_type="chat")
             _pending = _db.query(func.count(CalendarEventJob.id)).filter(CalendarEventJob.status == "pending").scalar()
-            return True, "", _payload, _llm, _ai, _pending
+            return True, "", _payload, _llm, _routing, _pending
         except Exception as exc:
             return False, str(exc), None, None, None, None
         finally:
@@ -2110,11 +2104,11 @@ async def healthz():
     loop = asyncio.get_running_loop()
     try:
         result = await asyncio.wait_for(loop.run_in_executor(None, _db_check), timeout=8.0)
-        db_ok, db_error, _states, _llm_stats, _ai_provider, pending_calendar_jobs = result
+        db_ok, db_error, _states, _llm_stats, _routing, pending_calendar_jobs = result
         if db_ok:
             states = _states
             llm_stats = _llm_stats
-            ai_provider = _ai_provider
+            llm_status = _routing
             _STARTUP_STATUS["database_ready"] = True
     except asyncio.TimeoutError:
         db_ok = False
@@ -2148,8 +2142,13 @@ async def healthz():
             "user": os.environ.get("DASHBOARD_USER", "admin"),
         },
         "llm": {
-            "configured": llm_configured,
-            "provider": ai_provider,
+            "configured": llm_status["configured"],
+            "provider": llm_status.get("effective_provider"),
+            "primary_provider": llm_status.get("primary_provider"),
+            "fallback_providers": llm_status.get("fallback_providers", []),
+            "routing_mode": llm_status.get("routing_mode", "task_aware"),
+            "available_providers": llm_status.get("available_providers", []),
+            "degraded": bool(llm_status.get("fallback_enabled") and llm_status.get("effective_provider") != llm_status.get("primary_provider")),
             "daily_used": llm_stats["daily_used"],
             "daily_remaining": llm_stats["daily_remaining"],
             "daily_cap": llm_stats["daily_cap"],

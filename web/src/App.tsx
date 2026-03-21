@@ -51,9 +51,13 @@ type BackendSettings = {
   tracking_enabled: boolean;
   backend_mode: string;
   ai_provider: string;
+  ai_primary_provider?: string;
+  ai_fallback_providers: string[];
+  ai_routing_mode: string;
   llm_mode: string;
   hourly_summaries_enabled: boolean;
   classification_interval_seconds: number;
+  llm_daily_cap?: number | null;
   user_timezone: string;
   privacy_mode: "private" | "detailed";
   calendar_sync_enabled: boolean;
@@ -123,6 +127,19 @@ type HealthResponse = {
   status: string;
   uptime_seconds?: number;
   startup_errors?: string[];
+  llm?: {
+    configured?: boolean;
+    provider?: string | null;
+    primary_provider?: string | null;
+    fallback_providers?: string[];
+    routing_mode?: string;
+    available_providers?: string[];
+    degraded?: boolean;
+    daily_used?: number | null;
+    daily_remaining?: number | null;
+    daily_cap?: number | null;
+    mode?: string;
+  };
   build?: {
     build_version?: string;
     deployment_channel?: string;
@@ -225,12 +242,16 @@ function formatTimeOnly(value?: string, timezone?: string) {
 }
 
 function intervalLabel(seconds?: number) {
-  if (seconds === 30) return "30 seconds";
   if (seconds === 60) return "1 minute";
   if (seconds === 300) return "5 minutes";
   if (seconds === 900) return "15 minutes";
   if (!seconds) return "Unknown";
   return `${seconds}s`;
+}
+
+function providerLabel(provider?: string | null) {
+  if (!provider) return "Unknown";
+  return provider.charAt(0).toUpperCase() + provider.slice(1);
 }
 
 function stripSummaryTimePrefix(text: string): string {
@@ -270,6 +291,33 @@ function serviceTone(value?: string) {
   return "warn";
 }
 
+function timeGreeting() {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning.";
+  if (hour < 18) return "Good afternoon.";
+  return "Good evening.";
+}
+
+function topbarLocationLabel(state: DashboardState | null) {
+  if (!state?.current_location) return "Your context updates here as Vero watches the day unfold.";
+  if (state.presence_display === "away_from_location") return `You just left ${state.current_location.replace(/^Outside\s+/, "")}.`;
+  if (state.presence_display === "walking") return `You're moving through ${state.current_location}.`;
+  return `You're at ${state.current_location}.`;
+}
+
+function productivePulseData(hourlySummaries: HourlySummary[], productivePct?: number) {
+  const values = hourlySummaries
+    .slice(0, 10)
+    .reverse()
+    .map((summary) => Math.max(12, Math.min(100, Math.round((summary.productivity_score ?? 4.5) * 10))));
+  if (values.length >= 6) return values;
+  const seed = Math.max(20, Math.min(96, productivePct ?? 64));
+  return Array.from({ length: 8 }, (_, index) => {
+    const drift = ((index % 4) - 1.5) * 10;
+    return Math.max(18, Math.min(100, Math.round(seed + drift)));
+  });
+}
+
 function AppShell({
   children,
   statusMessage,
@@ -287,29 +335,14 @@ function AppShell({
 }) {
   return (
     <div className="app-shell">
-      <header className="topbar">
-        <div>
-          <div className="eyebrow">
-            {state?.service_health === "ok" && <span className="status-dot" />}
-            Your day, tracked
-          </div>
-          <h1>Vero</h1>
-        </div>
-        <div className="topbar-actions">
-          <button
-            className="secondary-button"
-            onClick={onRefresh}
-            type="button"
-            disabled={refreshing}
-            aria-busy={refreshing}
-          >
-            {refreshing ? "Refreshing..." : "Refresh"}
-          </button>
-        </div>
-      </header>
-
       <div className="workspace">
-        <aside className="sidebar">
+        <aside className="sidebar tactical-sidebar">
+          <div className="brand-block">
+            <Link to="/today" className="brand-mark">
+              <span className="brand-title">Vero</span>
+              <span className="brand-version">V.01 Tactical</span>
+            </Link>
+          </div>
           <nav className="nav-list">
             <NavItem to="/today" label="Today" />
             <NavItem to="/zones" label="Zones" />
@@ -317,18 +350,53 @@ function AppShell({
             <NavItem to="/diagnostics" label="Diagnostics" />
             <NavItem to="/setup" label="Setup" dim />
           </nav>
-          <div className="sidebar-status">
-            <span className={`sidebar-status-dot bg-${serviceTone(state?.service_health)}`} />
-            <span className="sidebar-status-label">
-              {state?.service_health === "ok" ? "Connected" : state?.service_health === "offline" ? "Offline" : "Connecting"}
-            </span>
-            {state?.last_mac_heartbeat_age_seconds != null && (
-              <span className="muted">{formatAge(state.last_mac_heartbeat_age_seconds)}</span>
-            )}
+          <div className="sidebar-session">
+            <div className="sidebar-session-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+              </svg>
+            </div>
+            <div>
+              <div className="sidebar-session-label">Session</div>
+              <div className="sidebar-session-value">
+                {state?.last_mac_capture_age_seconds != null ? formatAge(state.last_mac_capture_age_seconds) : "Waiting"}
+              </div>
+            </div>
           </div>
         </aside>
 
-        <main className="content">
+        <div className="app-main">
+          <header className="topbar">
+            <div className="topbar-copy">
+              <div className="eyebrow">
+                {state?.service_health === "ok" && <span className="status-dot" />}
+                Intent console
+              </div>
+              <h1>{timeGreeting()}</h1>
+              <p className="topbar-location">
+                {topbarLocationLabel(state)}{" "}
+                <Link className="topbar-inline-link" to="/today">Update it</Link>
+              </p>
+            </div>
+            <div className="topbar-actions">
+              <div className="topbar-status-chip">
+                <span className={`sidebar-status-dot bg-${serviceTone(state?.service_health)}`} />
+                {state?.service_health === "ok" ? "Live feed" : state?.service_health === "offline" ? "Offline" : "Syncing"}
+              </div>
+              <button
+                className="secondary-button"
+                onClick={onRefresh}
+                type="button"
+                disabled={refreshing}
+                aria-busy={refreshing}
+              >
+                {refreshing ? "Refreshing..." : "Refresh"}
+              </button>
+            </div>
+          </header>
+
+          <main className="content">
           {statusMessage ? (
             <div className="banner success" role="status" aria-live="polite">
               {statusMessage}
@@ -340,8 +408,16 @@ function AppShell({
             </div>
           ) : null}
           {children}
-        </main>
+          </main>
+        </div>
       </div>
+
+      <nav className="mobile-nav">
+        <NavItem to="/today" label="Today" />
+        <NavItem to="/zones" label="Zones" />
+        <NavItem to="/settings" label="Settings" />
+        <NavItem to="/diagnostics" label="Diagnostics" />
+      </nav>
     </div>
   );
 }
@@ -455,11 +531,11 @@ function Field({
 }
 
 const QUICK_LOG_PRESETS = [
-  { emoji: "💻", label: "Working",  activity_type: "work"     },
-  { emoji: "🏃", label: "Moving",   activity_type: "exercise" },
-  { emoji: "🍽", label: "Eating",   activity_type: "meal"     },
-  { emoji: "📖", label: "Learning", activity_type: "study"    },
-  { emoji: "☕", label: "Break",    activity_type: "break"    },
+  { short: "DW", label: "Deep work", activity_type: "work" },
+  { short: "ST", label: "Study", activity_type: "study" },
+  { short: "RD", label: "Reading", activity_type: "reading" },
+  { short: "MV", label: "Moving", activity_type: "exercise" },
+  { short: "RS", label: "Rest", activity_type: "break" },
 ];
 
 function TodayPage({
@@ -518,23 +594,21 @@ function TodayPage({
     try {
       if (action === "confirm") {
         const reply = checkinReply.trim();
-        await fetch("/api/checkin/confirm", {
+        await fetchJson("/api/checkin/confirm", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(reply ? { correction: reply } : { confirmed: true }),
         }).catch(() => {});
         // Also send to chat so it's stored in history and updates context
         if (reply) {
-          await fetch("/api/chat", {
+          await fetchJson("/api/chat", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ message: reply }),
           }).catch(() => {});
         }
         setCheckinReply("");
       } else {
         const endpoint = action === "no" ? "/api/checkin/dismiss" : `/api/checkin/${action}`;
-        await fetch(endpoint, { method: "POST" }).catch(() => {});
+        await fetchJson(endpoint, { method: "POST" }).catch(() => {});
       }
       onRefreshLogs();
     } finally {
@@ -543,7 +617,7 @@ function TodayPage({
   };
 
   async function handleClearChat() {
-    await fetch("/api/chat/history", { method: "DELETE" }).catch(() => {});
+    await fetchJson("/api/chat/history", { method: "DELETE" }).catch(() => {});
     setChatMessages([]);
   }
 
@@ -572,89 +646,157 @@ function TodayPage({
 
   const captureAgeSeconds = state?.last_mac_capture_age_seconds;
   const captureAgeMinutes = captureAgeSeconds != null ? Math.floor(captureAgeSeconds / 60) : null;
+  const pulseValues = productivePulseData(hourlySummaries, analytics?.productive_pct);
+  const currentFocus = state?.current_activity_summary ?? "Waiting for your first capture";
+  const currentCategory = state?.current_activity_category?.replace(/_/g, " ") ?? "unknown";
+  const systemTitle = logs[0]?.app_name || state?.current_activity_category || "Idle";
+  const systemDetail = logs[0]?.window_title || state?.current_activity_summary || "No active window detail yet";
 
   return (
-    <div className="today-bento">
-      {/* Row 1: Hero */}
-      <div className="col-span-4">
-        <Surface title="Today" eyebrow="Live view">
-          <div className="hero-grid">
-            <div>
-              <h3 className="hero-title">
-                {initialLoading ? <Skeleton h="2rem" w="65%" /> : (state?.current_activity_summary ?? "Waiting for your first capture")}
-              </h3>
-              <div className="hero-pills">
-                {state?.current_activity_category && state.current_activity_category !== "unknown" && (
-                  <span className={`category-pill cat-${state.current_activity_category}`}>
-                    {state.current_activity_category.replace(/_/g, " ")}
-                  </span>
-                )}
-                {state?.current_event_title && (
-                  <span className="category-pill cal-pill-now">
-                    📅 {state.current_event_title}
-                  </span>
-                )}
-                {!state?.current_event_title && state?.next_event_title && state?.next_event_starts_in_minutes != null && state.next_event_starts_in_minutes <= 30 && (
-                  <span className="category-pill cal-pill-soon">
-                    ⏰ {state.next_event_title} in {state.next_event_starts_in_minutes}m
-                  </span>
-                )}
-              </div>
-              <p className="hero-copy">
-                {initialLoading ? <Skeleton h="0.9rem" w="40%" /> : (
-                  <>
-                    {state?.presence_display === "at_location" ? (
-                      // Title already shows "At X" — only show mac note if meaningfully active, otherwise nothing
-                      state?.at_location_mac_note ? <><strong>{state.at_location_mac_note}</strong> · </> : null
-                    ) : state?.presence_display === "away_from_location" ? (
-                      <><strong>{state.presence_display_label}</strong> · </>
-                    ) : state?.presence_display === "walking" ? (
-                      <><strong>Walking</strong> · </>
-                    ) : (
-                      <>
-                        {state?.current_location && (
-                          <><strong>{state.current_location}</strong> · </>
-                        )}
-                        <strong>{presenceLabel(state?.presence_display ?? state?.presence_state)}</strong> ·{" "}
-                      </>
-                    )}
-                    Last capture: <strong>{captureAgeMinutes != null ? `${captureAgeMinutes}m ago` : "Unknown"}</strong> ·
-                    Active: <strong>{analytics?.total_active_minutes ?? 0} min</strong>
-                  </>
-                )}
-              </p>
+    <div className="today-command">
+      <section className="intent-stage">
+        <div className="intent-copy">
+          <div className="eyebrow">Intent</div>
+          <h2 className="intent-title">What are you focusing on right now?</h2>
+          <p className="intent-subtitle">
+            {initialLoading ? "Reading the room..." : currentFocus}
+          </p>
+        </div>
+
+        <div className="intent-input-wrap">
+          <input
+            className="intent-input"
+            placeholder="Start typing your intent..."
+            value={chatInput}
+            onChange={(e) => setChatInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && !chatSending) void handleChat(); }}
+          />
+          <button className="intent-submit" type="button" onClick={() => void handleChat()} disabled={!chatInput.trim() || chatSending}>
+            {chatSending ? "Sending" : "Commit"}
+          </button>
+        </div>
+
+        <div className="intent-chip-row">
+          {QUICK_LOG_PRESETS.map(({ short, label, activity_type }) => (
+            <button
+              key={activity_type}
+              className="intent-chip"
+              onClick={() => void handleQuickLog(activity_type, label)}
+              disabled={!!loggingActivity}
+            >
+              <span className="intent-chip-mark">{loggingActivity === activity_type ? ".." : short}</span>
+              <span>{label}</span>
+            </button>
+          ))}
+        </div>
+
+        {loggedMsg && <div className="quicklog-confirm">{loggedMsg}</div>}
+      </section>
+
+      <div className="today-focus-grid">
+        <Surface title="System context" eyebrow="Live source">
+          <div className="context-card">
+            <div className="context-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 17 6 20.75M18 14.5V6.75A2.25 2.25 0 0 0 15.75 4.5H8.25A2.25 2.25 0 0 0 6 6.75V14.5m12 0H6m12 0 1.5 4.5H4.5L6 14.5" />
+              </svg>
             </div>
-            {initialLoading ? (
-              <Skeleton h="1.5rem" w="80px" />
-            ) : (
-              <div className={`pill tone-${serviceTone(state?.service_health)}`}>
-                {state?.mac_status?.replace(/_/g, " ") ?? "not connected"}
-              </div>
-            )}
+            <div>
+              <h3 className="context-title">{systemTitle}</h3>
+              <p className="context-meta">{currentCategory} · {captureAgeMinutes != null ? `${captureAgeMinutes}m since capture` : "Waiting for capture"}</p>
+            </div>
+          </div>
+          <p className="context-body">{systemDetail}</p>
+          <div className="context-stats">
+            <div>
+              <span className="context-stat-label">Location</span>
+              <strong>{state?.current_location ?? "Unknown"}</strong>
+            </div>
+            <div>
+              <span className="context-stat-label">Presence</span>
+              <strong>{presenceLabel(state?.presence_display ?? state?.presence_state)}</strong>
+            </div>
+            <div>
+              <span className="context-stat-label">Active time</span>
+              <strong>{analytics?.total_active_minutes ?? 0} min</strong>
+            </div>
+          </div>
+        </Surface>
+
+        <Surface title="Productivity pulse" eyebrow="Tactical signal">
+          <div className="pulse-header-row">
+            <span className="pulse-label">{analytics?.productive_pct ?? 0}% average</span>
+            <span className="pulse-note">Last {pulseValues.length} windows</span>
+          </div>
+          <div className="pulse-chart" aria-hidden="true">
+            {pulseValues.map((value, index) => (
+              <span key={`${value}-${index}`} className="pulse-bar" style={{ height: `${value}%` }} />
+            ))}
+          </div>
+          <div className="pulse-footer-row">
+            <span>Earlier</span>
+            <span>Now</span>
+          </div>
+          <div className="context-stats compact">
+            <div>
+              <span className="context-stat-label">Productive</span>
+              <strong>{analytics?.productive_minutes ?? 0} min</strong>
+            </div>
+            <div>
+              <span className="context-stat-label">Logs</span>
+              <strong>{analytics?.log_count ?? 0}</strong>
+            </div>
+            <div>
+              <span className="context-stat-label">LLM calls</span>
+              <strong>{analytics?.llm_used ?? 0}</strong>
+            </div>
           </div>
         </Surface>
       </div>
 
-      {/* Row 2: Today's schedule */}
-      {calendarEvents.length > 0 && (
-        <div className="col-span-4">
-          <Surface title="Today's schedule" eyebrow="Calendar">
-            {aiDayInsight && (
-              <p className="cal-ai-insight">✦ {aiDayInsight}</p>
-            )}
+      {checkin?.checkin ? (
+        <Surface title="Check-in" eyebrow="Needs input">
+          {checkin.event_title ? (
+            <p className="cal-brief">{checkin.event_title}{checkin.event_location ? ` · ${checkin.event_location}` : ""}</p>
+          ) : null}
+          <p className="lead">{checkin.checkin}</p>
+          <div className="quicklog-custom" style={{ marginTop: "10px" }}>
+            <input
+              className="quicklog-input"
+              placeholder={checkin.guess ? `Confirm \"${checkin.guess}\" or type something else...` : "What are you working on?"}
+              value={checkinReply}
+              disabled={checkinLoading}
+              autoFocus
+              onChange={e => setCheckinReply(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter" && !checkinLoading && (checkinReply.trim() || checkin.guess)) void handleCheckin("confirm"); }}
+            />
+            <button
+              className="primary-button"
+              disabled={checkinLoading || (!checkinReply.trim() && !checkin.guess)}
+              onClick={() => void handleCheckin("confirm")}
+            >
+              {checkinLoading ? "Sending..." : "Send"}
+            </button>
+          </div>
+          <div className="checkin-actions">
+            <button className="secondary-button" disabled={checkinLoading} onClick={() => void handleCheckin("snooze")}>Remind me later</button>
+            <button className="secondary-button ghost-button" disabled={checkinLoading} onClick={() => void handleCheckin("dismiss")}>Dismiss</button>
+          </div>
+        </Surface>
+      ) : null}
+
+      <div className="today-support-grid">
+        {calendarEvents.length > 0 && (
+          <Surface title="Field schedule" eyebrow="Calendar">
+            {aiDayInsight && <p className="cal-ai-insight">{aiDayInsight}</p>}
             <div className="cal-strip">
-              {calendarEvents.map(ev => {
-                const typeIcon: Record<string, string> = {
-                  lecture: "🏫", assignment: "📝", office_hours: "🙋", exam: "📋",
-                  meeting: "🤝", focus: "🎯", personal: "🌿",
-                };
-                const icon = typeIcon[ev.event_type ?? ""] ?? null;
+              {calendarEvents.map((ev) => {
                 const minsAway = minutesUntil(ev.start_at);
                 return (
                   <div key={ev.id} className={`cal-event cal-type-${ev.event_type ?? "other"}${ev.is_current ? " cal-current" : ev.is_past ? " cal-past" : ""}`}>
                     <span className="cal-time">{formatTimeOnly(ev.start_at, timezone)}</span>
                     <span className="cal-title-group">
-                      <span className="cal-title">{icon && <span className="cal-type-icon">{icon}</span>}{ev.event_type === "assignment" ? `Due: ${ev.title}` : ev.title}</span>
+                      <span className="cal-title">{ev.event_type === "assignment" ? `Due: ${ev.title}` : ev.title}</span>
                       {ev.event_note && <span className="cal-note">{ev.event_note}</span>}
                     </span>
                     {ev.event_type && ev.event_type !== "other" && (
@@ -669,32 +811,16 @@ function TodayPage({
               })}
             </div>
           </Surface>
-        </div>
-      )}
+        )}
 
-      {/* Row 3: Vero chat */}
-      <div className="col-span-4">
         <Surface
-          title="Vero"
-          eyebrow="Tell me what's up"
+          title="Intent log"
+          eyebrow="Conversation"
           action={chatMessages.length > 0 ? (
-            <button className="secondary-button" style={{ fontSize: "0.8rem", padding: "4px 10px" }} onClick={() => void handleClearChat()}>Clear</button>
+            <button className="secondary-button compact-button" onClick={() => void handleClearChat()}>Clear</button>
           ) : undefined}
         >
-          <div className="quicklog-row">
-            {QUICK_LOG_PRESETS.map(({ emoji, label, activity_type }) => (
-              <button
-                key={activity_type}
-                className="quicklog-btn"
-                onClick={() => void handleQuickLog(activity_type, label)}
-                disabled={!!loggingActivity}
-              >
-                <span className="quicklog-emoji">{loggingActivity === activity_type ? "…" : emoji}</span>
-                <span>{label}</span>
-              </button>
-            ))}
-          </div>
-          {chatMessages.length > 0 && (
+          {chatMessages.length > 0 ? (
             <div className="chat-history">
               {chatMessages.map((m, i) => (
                 <div key={i} className="chat-pair">
@@ -703,128 +829,77 @@ function TodayPage({
                 </div>
               ))}
             </div>
+          ) : (
+            <p className="muted">No active thread yet. Use the prompt above to tell Vero what you are doing or where you are.</p>
           )}
-          <div className="quicklog-custom">
-            <input
-              className="quicklog-input"
-              placeholder="Tell Vero where you are or what you're doing…"
-              value={chatInput}
-              onChange={e => setChatInput(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter" && !chatSending) void handleChat(); }}
-            />
-            <button className="quicklog-submit" type="button" onClick={() => void handleChat()} disabled={!chatInput.trim() || chatSending}>
-              {chatSending ? "…" : "Send"}
-            </button>
-          </div>
-          {loggedMsg && <div className="quicklog-confirm">{loggedMsg}</div>}
         </Surface>
       </div>
 
-      {/* Row 3: AI Recaps */}
       {hourlySummaries.length > 0 && (
-        <div className="col-span-4">
-          <Surface title="AI recaps" eyebrow="Last few hours">
-            <div className="recap-list">
-              {hourlySummaries.map(s => (
-                <div key={s.id} className="recap-row">
-                  <span className="recap-time">{formatTime(s.hour_start_local, timezone)}</span>
-                  <div className="recap-body">
-                    <span className="recap-text">{stripSummaryTimePrefix(s.summary_text)}</span>
-                    {s.productivity_score != null && (
-                      <div className="recap-score-bar">
-                        <div
-                          className="recap-score-fill"
-                          style={{ width: `${s.productivity_score * 10}%`, '--score': s.productivity_score } as React.CSSProperties}
-                        />
-                        <span className="recap-score-label">{s.productivity_score.toFixed(1)}</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="recap-right">
-                    {s.source === "llm" && !s.fallback_used
-                      ? <span className="recap-badge recap-badge-ai">AI</span>
-                      : <span className="recap-badge recap-badge-est">est.</span>}
-                  </div>
+        <Surface title="AI recaps" eyebrow="Last few hours">
+          <div className="recap-list">
+            {hourlySummaries.map(s => (
+              <div key={s.id} className="recap-row">
+                <span className="recap-time">{formatTime(s.hour_start_local, timezone)}</span>
+                <div className="recap-body">
+                  <span className="recap-text">{stripSummaryTimePrefix(s.summary_text)}</span>
+                  {s.productivity_score != null && (
+                    <div className="recap-score-bar">
+                      <div
+                        className="recap-score-fill"
+                        style={{ width: `${s.productivity_score * 10}%`, '--score': s.productivity_score } as React.CSSProperties}
+                      />
+                      <span className="recap-score-label">{s.productivity_score.toFixed(1)}</span>
+                    </div>
+                  )}
                 </div>
-              ))}
-            </div>
-          </Surface>
-        </div>
+                <div className="recap-right">
+                  {s.source === "llm" && !s.fallback_used
+                    ? <span className="recap-badge recap-badge-ai">AI</span>
+                    : <span className="recap-badge recap-badge-est">est.</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Surface>
       )}
 
-      {/* Check-in if pending */}
-      {checkin?.checkin ? (
-        <div className="col-span-4">
-          <Surface title="Check-in" eyebrow="Needs input">
-            {checkin.event_title ? (
-              <p className="cal-brief">📅 {checkin.event_title}{checkin.event_location ? ` · ${checkin.event_location}` : ""}</p>
-            ) : null}
-            <p className="lead">{checkin.checkin}</p>
-            <div className="quicklog-custom" style={{ marginTop: "10px" }}>
-              <input
-                className="quicklog-input"
-                placeholder={checkin.guess ? `Confirm "${checkin.guess}" or type something else…` : "What are you working on?"}
-                value={checkinReply}
-                disabled={checkinLoading}
-                autoFocus
-                onChange={e => setCheckinReply(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter" && !checkinLoading && (checkinReply.trim() || checkin.guess)) void handleCheckin("confirm"); }}
-              />
-              <button
-                className="primary-button"
-                disabled={checkinLoading || (!checkinReply.trim() && !checkin.guess)}
-                onClick={() => void handleCheckin("confirm")}
-              >
-                {checkinLoading ? "Sending…" : "Send"}
-              </button>
+      <Surface title="Live data feed" eyebrow="Recent activity">
+        <div className="timeline tactical-timeline">
+          {initialLoading ? (
+            Array.from({ length: 6 }).map((_, i) => (
+              <article className="timeline-row" key={i}>
+                <div className="timeline-time"><Skeleton h="0.9rem" w="90px" /></div>
+                <div className="timeline-copy"><Skeleton h="0.9rem" w="100%" /></div>
+                <div className="timeline-meta"><Skeleton h="0.9rem" w="60px" /></div>
+              </article>
+            ))
+          ) : deferredLogs.length ? (
+            deferredLogs.map((entry) => (
+              <article className="timeline-row" key={entry.id}>
+                <div className="timeline-time">{formatTime(entry.timestamp, timezone)}</div>
+                <div className="timeline-copy">
+                  <strong>{entry.app_name || entry.location_label || entry.activity_type || "Activity"}</strong>
+                  <p>{entry.window_title || entry.activity_type || entry.location_label || "No detail available"}</p>
+                </div>
+                <div className="timeline-meta">
+                  {entry.device === "manual"
+                    ? <span className="tag tag-manual">manual</span>
+                    : entry.activity_type && entry.activity_type !== "unknown"
+                      ? <span className="tag">{entry.activity_type}</span>
+                      : presenceLabel(entry.presence_state)}
+                </div>
+              </article>
+            ))
+          ) : (
+            <div className="empty-cta">
+              <p className="empty-cta-heading">No captures yet</p>
+              <p className="muted">Once the Mac companion is running, activity appears here automatically.</p>
+              <Link className="secondary-link" to="/setup">Go to Setup →</Link>
             </div>
-            <div className="checkin-actions">
-              <button className="secondary-button" disabled={checkinLoading} onClick={() => void handleCheckin("snooze")}>Remind me later</button>
-              <button className="secondary-button" style={{ background: "transparent", border: "none" }} disabled={checkinLoading} onClick={() => void handleCheckin("dismiss")}>Dismiss</button>
-            </div>
-          </Surface>
+          )}
         </div>
-      ) : null}
-
-      {/* Row 4: Timeline */}
-      <div className="col-span-4">
-        <Surface title="Recent timeline" eyebrow="Recent activity">
-          <div className="timeline">
-            {initialLoading ? (
-              Array.from({ length: 6 }).map((_, i) => (
-                <article className="timeline-row" key={i}>
-                  <div className="timeline-time"><Skeleton h="0.9rem" w="90px" /></div>
-                  <div className="timeline-copy"><Skeleton h="0.9rem" w="100%" /></div>
-                  <div className="timeline-meta"><Skeleton h="0.9rem" w="60px" /></div>
-                </article>
-              ))
-            ) : deferredLogs.length ? (
-              deferredLogs.map((entry) => (
-                <article className="timeline-row" key={entry.id}>
-                  <div className="timeline-time">{formatTime(entry.timestamp, timezone)}</div>
-                  <div className="timeline-copy">
-                    <strong>{entry.app_name || entry.location_label || entry.activity_type || "Activity"}</strong>
-                    <p>{entry.window_title || entry.activity_type || entry.location_label || "No detail available"}</p>
-                  </div>
-                  <div className="timeline-meta">
-                    {entry.device === "manual"
-                      ? <span className="tag tag-manual">manual</span>
-                      : entry.activity_type && entry.activity_type !== "unknown"
-                        ? <span className="tag">{entry.activity_type}</span>
-                        : presenceLabel(entry.presence_state)}
-                  </div>
-                </article>
-              ))
-            ) : (
-              <div className="empty-cta">
-                <p className="empty-cta-heading">No captures yet</p>
-                <p className="muted">Once the Mac companion is running, activity appears here automatically.</p>
-                <Link className="secondary-link" to="/setup">Go to Setup →</Link>
-              </div>
-            )}
-          </div>
-        </Surface>
-      </div>
+      </Surface>
     </div>
   );
 }
@@ -981,7 +1056,7 @@ function DiagnosticsPage({
   }, []);
 
   const handleClearContext = async () => {
-    await fetch("/api/chat/history", { method: "DELETE" }).catch(() => {});
+    await fetchJson("/api/chat/history", { method: "DELETE" }).catch(() => {});
     setContextSummary(prev => prev ? { ...prev, facts: [], chat_message_count: 0, current_self_report: "" } : null);
   };
 
@@ -999,7 +1074,11 @@ function DiagnosticsPage({
         </Surface>
 
         <Surface title="AI & Intelligence" eyebrow="LLM status">
-          <Field label="Can use AI" value={health?.status === "ok" ? "Yes" : "No"} />
+          <Field label="Can use AI" value={health?.llm?.configured ? "Yes" : "No"} />
+          <Field label="Effective provider" value={providerLabel(health?.llm?.provider)} />
+          <Field label="Primary provider" value={providerLabel(settings?.ai_primary_provider ?? settings?.ai_provider)} />
+          <Field label="Fallbacks" value={(settings?.ai_fallback_providers ?? []).map(providerLabel).join(", ") || "None"} />
+          <Field label="Routing mode" value={health?.llm?.routing_mode ?? settings?.ai_routing_mode ?? "Unknown"} />
           <Field label="AI mode" value={settings?.llm_mode ?? "Unknown"} />
           <Field label="Hourly summaries" value={settings?.hourly_summaries_enabled ? "Enabled" : "Disabled"} />
         </Surface>
@@ -1431,8 +1510,18 @@ function SettingsPage({
   const [draft, setDraft] = useState<BackendSettings | null>(settings);
   const [saving, setSaving] = useState(false);
 
+  function normalizeSettings(next: BackendSettings | null) {
+    if (!next) return next;
+    return {
+      ...next,
+      ai_primary_provider: next.ai_primary_provider ?? next.ai_provider,
+      ai_fallback_providers: next.ai_fallback_providers ?? ["gemini", "openai"],
+      ai_routing_mode: next.ai_routing_mode ?? "task_aware",
+    };
+  }
+
   useEffect(() => {
-    setDraft(settings);
+    setDraft(normalizeSettings(settings));
   }, [settings]);
 
   if (!draft) {
@@ -1486,7 +1575,6 @@ function SettingsPage({
                 });
               }}
             >
-              <option value={30}>30 seconds — most accurate</option>
               <option value={60}>1 minute</option>
               <option value={300}>5 minutes</option>
               <option value={900}>15 minutes — least battery impact</option>
@@ -1530,6 +1618,52 @@ function SettingsPage({
 
       <Surface title="AI" eyebrow="Intelligence">
         <div className="form-grid">
+          <label className="field">
+            <span>Primary provider</span>
+            <select
+              value={draft.ai_provider}
+              onChange={(event) => setDraft({ ...draft, ai_provider: event.target.value, ai_primary_provider: event.target.value })}
+            >
+              <option value="mistral">Mistral — recommended</option>
+              <option value="auto">Auto</option>
+              <option value="gemini">Gemini</option>
+              <option value="openai">OpenAI</option>
+            </select>
+          </label>
+          <p className="field-hint">Mistral is the default path. Interactive requests can fall back when enabled.</p>
+
+          <label className="field">
+            <span>Fallback providers</span>
+            <select
+              multiple
+              value={draft.ai_fallback_providers}
+              onChange={(event) => {
+                const values = Array.from(event.target.selectedOptions, (option) => option.value);
+                setDraft({ ...draft, ai_fallback_providers: values.filter((value) => value !== draft.ai_provider) });
+              }}
+            >
+              {["mistral", "gemini", "openai"].map((provider) => (
+                <option key={provider} value={provider} disabled={provider === draft.ai_provider}>
+                  {providerLabel(provider)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="field-hint">Hold Command to select more than one fallback provider.</p>
+
+          <label className="field">
+            <span>Routing behavior</span>
+            <select
+              value={draft.ai_routing_mode}
+              onChange={(event) => setDraft({ ...draft, ai_routing_mode: event.target.value })}
+            >
+              <option value="task_aware">Task-aware fallback</option>
+              <option value="aggressive_fallback">Always fall back</option>
+              <option value="strict_primary">Strict primary only</option>
+            </select>
+          </label>
+          <p className="field-hint">Task-aware keeps Mistral primary and spends fallback providers mostly on interactive requests.</p>
+
           <label className="toggle-field">
             <span>Hourly summaries</span>
             <input
@@ -1589,8 +1723,8 @@ export default function App() {
     setRefreshing(true);
     setErrorMessage("");
     try {
-      const [nextState, nextSettings, nextAnalytics, nextLogs, nextHealth, nextCheckin] =
-        await Promise.all([
+      const [stateResult, settingsResult, analyticsResult, logsResult, healthResult, checkinResult] =
+        await Promise.allSettled([
           fetchJson<DashboardState>("/api/state"),
           fetchJson<BackendSettings>("/api/settings"),
           fetchJson<Analytics>("/api/analytics/today"),
@@ -1599,13 +1733,17 @@ export default function App() {
           fetchJson<CheckinResponse>("/api/checkin"),
         ]);
 
+      if (stateResult.status !== "fulfilled" || settingsResult.status !== "fulfilled") {
+        throw new Error("Core backend endpoints are unavailable.");
+      }
+
       startTransition(() => {
-        setState(nextState);
-        setSettings(nextSettings);
-        setAnalytics(nextAnalytics);
-        setLogs(nextLogs);
-        setHealth(nextHealth);
-        setCheckin(nextCheckin);
+        setState(stateResult.value);
+        setSettings(settingsResult.value);
+        if (analyticsResult.status === "fulfilled") setAnalytics(analyticsResult.value);
+        if (logsResult.status === "fulfilled") setLogs(logsResult.value);
+        if (healthResult.status === "fulfilled") setHealth(healthResult.value);
+        if (checkinResult.status === "fulfilled") setCheckin(checkinResult.value);
         setInitialLoading(false);
         setIsOffline(false);
       });
@@ -1683,6 +1821,8 @@ export default function App() {
           capture_interval_seconds: nextSettings.capture_interval_seconds,
           tracking_enabled: nextSettings.tracking_enabled,
           ai_provider: nextSettings.ai_provider,
+          ai_fallback_providers: nextSettings.ai_fallback_providers,
+          ai_routing_mode: nextSettings.ai_routing_mode,
           llm_mode: nextSettings.llm_mode,
           hourly_summaries_enabled: nextSettings.hourly_summaries_enabled,
           user_timezone: nextSettings.user_timezone,

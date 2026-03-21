@@ -11,10 +11,13 @@ struct BackendSettings: Codable, Equatable {
     var tracking_enabled: Bool
     var backend_mode: String
     var ai_provider: String
+    var ai_primary_provider: String
+    var ai_fallback_providers: [String]
+    var ai_routing_mode: String
     var llm_mode: String
     var hourly_summaries_enabled: Bool
     var classification_interval_seconds: Int
-    var llm_daily_cap: Int
+    var llm_daily_cap: Int?
     var user_timezone: String
     var privacy_mode: String
     var calendar_sync_enabled: Bool
@@ -25,10 +28,13 @@ struct BackendSettings: Codable, Equatable {
         tracking_enabled: Bool,
         backend_mode: String,
         ai_provider: String,
+        ai_primary_provider: String? = nil,
+        ai_fallback_providers: [String] = ["gemini", "openai"],
+        ai_routing_mode: String = "task_aware",
         llm_mode: String,
         hourly_summaries_enabled: Bool,
         classification_interval_seconds: Int,
-        llm_daily_cap: Int,
+        llm_daily_cap: Int? = nil,
         user_timezone: String,
         privacy_mode: String,
         calendar_sync_enabled: Bool
@@ -39,6 +45,9 @@ struct BackendSettings: Codable, Equatable {
         self.tracking_enabled = tracking_enabled
         self.backend_mode = backend_mode
         self.ai_provider = ai_provider
+        self.ai_primary_provider = ai_primary_provider ?? ai_provider
+        self.ai_fallback_providers = ai_fallback_providers
+        self.ai_routing_mode = ai_routing_mode
         self.llm_mode = llm_mode
         self.hourly_summaries_enabled = hourly_summaries_enabled
         self.classification_interval_seconds = max(300, classification_interval_seconds)
@@ -54,6 +63,9 @@ struct BackendSettings: Codable, Equatable {
         case tracking_enabled
         case backend_mode
         case ai_provider
+        case ai_primary_provider
+        case ai_fallback_providers
+        case ai_routing_mode
         case llm_mode
         case hourly_summaries_enabled
         case classification_interval_seconds
@@ -74,10 +86,13 @@ struct BackendSettings: Codable, Equatable {
             tracking_enabled: try container.decode(Bool.self, forKey: .tracking_enabled),
             backend_mode: try container.decode(String.self, forKey: .backend_mode),
             ai_provider: try container.decode(String.self, forKey: .ai_provider),
+            ai_primary_provider: try container.decodeIfPresent(String.self, forKey: .ai_primary_provider),
+            ai_fallback_providers: try container.decodeIfPresent([String].self, forKey: .ai_fallback_providers) ?? ["gemini", "openai"],
+            ai_routing_mode: try container.decodeIfPresent(String.self, forKey: .ai_routing_mode) ?? "task_aware",
             llm_mode: try container.decode(String.self, forKey: .llm_mode),
             hourly_summaries_enabled: try container.decode(Bool.self, forKey: .hourly_summaries_enabled),
             classification_interval_seconds: try container.decodeIfPresent(Int.self, forKey: .classification_interval_seconds) ?? max(300, capture),
-            llm_daily_cap: try container.decode(Int.self, forKey: .llm_daily_cap),
+            llm_daily_cap: try container.decodeIfPresent(Int.self, forKey: .llm_daily_cap),
             user_timezone: try container.decode(String.self, forKey: .user_timezone),
             privacy_mode: try container.decodeIfPresent(String.self, forKey: .privacy_mode) ?? "private",
             calendar_sync_enabled: try container.decodeIfPresent(Bool.self, forKey: .calendar_sync_enabled) ?? true
@@ -193,11 +208,26 @@ struct HealthResponse: Codable {
         let executor: String?
     }
 
+    struct LLMStatus: Codable {
+        let configured: Bool?
+        let provider: String?
+        let primary_provider: String?
+        let fallback_providers: [String]?
+        let routing_mode: String?
+        let available_providers: [String]?
+        let degraded: Bool?
+        let daily_used: Int?
+        let daily_remaining: Int?
+        let daily_cap: Int?
+        let mode: String?
+    }
+
     let status: String
     let build: Build?
     let database: DatabaseStatus?
     let startup_errors: [String]?
     let uptime_seconds: Int?
+    let llm: LLMStatus?
     let mac: MacStatus?
     let calendar: CalendarStatus?
 }
