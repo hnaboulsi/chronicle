@@ -1239,7 +1239,7 @@ function HistoryPage({
   health: HealthResponse | null;
   settings: BackendSettings | null;
 }) {
-  const [selected, setSelected] = useState<HourlySummary | null>(null);
+  const [expandedDay, setExpandedDay] = useState<string | null>(null);
 
   useEffect(() => {
     document.title = "Chronicle — History";
@@ -1331,138 +1331,139 @@ function HistoryPage({
           <h2 className="history-title">Session History</h2>
         </div>
 
-        {/* Week view: days as rows, hours as columns */}
-        <div className="week-view">
-          {/* Header: hour axis */}
-          <div className="week-header-row">
-            <div className="week-label-col" />
-            {CAL_HOURS.map((h) => (
-              <div key={h} className="week-hour-tick">
-                {h % 3 === 0 && (
-                  <span className="week-hour-text">
-                    {h === 0 ? "12a" : h < 12 ? `${h}a` : h === 12 ? "12p" : `${h - 12}p`}
-                  </span>
-                )}
-              </div>
-            ))}
-            <div className="week-grade-col" />
-          </div>
+        {/* Day Chronicle Cards — newest first */}
+        <div className="chronicle-view">
+          {[...dayKeys].reverse().map((dateKey) => {
+            const realSummaries = Array.from(calMap.get(dateKey)?.values() ?? [])
+              .filter(
+                (s) =>
+                  s.productivity_score !== null &&
+                  !s.summary_text?.startsWith("Likely sleeping") &&
+                  !s.summary_text?.startsWith("No Mac activity")
+              )
+              .sort((a, b) => a.hour_start_local.localeCompare(b.hour_start_local));
 
-          {/* Day rows */}
-          {dayKeys.map((dateKey) => {
-            const daySummaries = Array.from(calMap.get(dateKey)?.values() ?? []).filter(
-              (s) => s.productivity_score !== null
-            );
             const dayAvg =
-              daySummaries.length > 0
+              realSummaries.length > 0
                 ? Math.round(
-                    daySummaries.reduce(
+                    realSummaries.reduce(
                       (sum, s) => sum + (s.productivity_score ?? 0) * 10,
                       0
-                    ) / daySummaries.length
+                    ) / realSummaries.length
                   )
                 : null;
             const dayGrade = dayAvg !== null ? productivityGrade(dayAvg) : null;
 
+            const headline = [...realSummaries].sort(
+              (a, b) => (b.productivity_score ?? 0) - (a.productivity_score ?? 0)
+            )[0];
+
+            const isExpanded = expandedDay === dateKey;
+            const isToday = dateKey === todayKey;
+
             return (
-              <React.Fragment key={dateKey}>
+              <div
+                key={dateKey}
+                className={`chronicle-card${isToday ? " chronicle-today" : ""}`}
+              >
                 <div
-                  className={`week-day-row${dateKey === todayKey ? " week-today-row" : ""}`}
+                  className="chronicle-card-header"
+                  onClick={() => setExpandedDay(isExpanded ? null : dateKey)}
                 >
-                  <div
-                    className={`week-label-col${dateKey === todayKey ? " week-today-label" : ""}`}
-                  >
-                    {dayLabel(dateKey)}
-                  </div>
-                  {CAL_HOURS.map((h) => {
-                    const s = calMap.get(dateKey)?.get(h);
-                    const isSelected = selected?.id === s?.id && !!s;
-                    return (
-                      <div
-                        key={h}
-                        className={`week-cell${s ? " week-cell-data" : ""}${isSelected ? " week-cell-selected" : ""}`}
-                        style={{ background: calCellColor(s) }}
-                        title={
-                          s
-                            ? `${formatHour(s.hour_start_local)}: ${productivityGrade(Math.round((s.productivity_score ?? 0) * 10))} (${Math.round((s.productivity_score ?? 0) * 10)}%)`
-                            : undefined
-                        }
-                        onClick={() => s && setSelected(isSelected ? null : s)}
-                      />
-                    );
-                  })}
-                  <div className="week-grade-col">
-                    {dayAvg !== null ? (
-                      <>
+                  <div className="chronicle-card-meta">
+                    <span
+                      className={`chronicle-day-name${isToday ? " chronicle-today-name" : ""}`}
+                    >
+                      {isToday ? "TODAY · " : ""}
+                      {dayLabel(dateKey).toUpperCase()}
+                    </span>
+                    <div className="chronicle-card-right">
+                      {dayGrade && (
                         <span
-                          className="week-grade"
-                          style={{ color: gradeColor(dayGrade!) }}
+                          className="chronicle-grade"
+                          style={{ color: gradeColor(dayGrade) }}
                         >
-                          {dayGrade}
+                          {dayGrade} · {dayAvg}%
                         </span>
-                        <span className="week-pct">{dayAvg}%</span>
-                      </>
-                    ) : (
-                      <span className="week-pct">—</span>
-                    )}
+                      )}
+                      <button type="button" className="chronicle-expand-btn">
+                        {isExpanded
+                          ? "↑ COLLAPSE"
+                          : `↓ ${realSummaries.length} HOUR${realSummaries.length !== 1 ? "S" : ""}`}
+                      </button>
+                    </div>
                   </div>
+
+                  {/* Sparkline: 24 bars proportional to productivity score */}
+                  <div className="chronicle-sparkline">
+                    {CAL_HOURS.map((h) => {
+                      const s = calMap.get(dateKey)?.get(h);
+                      const score = s?.productivity_score ?? null;
+                      const isSleep = s?.summary_text?.startsWith("Likely sleeping");
+                      return (
+                        <div
+                          key={h}
+                          className="chronicle-spark-bar"
+                          style={{
+                            height:
+                              score !== null && !isSleep
+                                ? `${Math.max(20, score * 10)}%`
+                                : "15%",
+                            background: isSleep ? "transparent" : calCellColor(s),
+                            opacity: score !== null && !isSleep ? 0.85 : 0.15,
+                          }}
+                        />
+                      );
+                    })}
+                  </div>
+
+                  {headline ? (
+                    <p className="chronicle-headline">"{headline.summary_text}"</p>
+                  ) : (
+                    <p className="chronicle-empty-day">No activity recorded.</p>
+                  )}
                 </div>
 
-                {/* Inline detail: appears below the row whose cell is selected */}
-                {selected &&
-                  selected.hour_start_local.startsWith(dateKey) &&
-                  (() => {
-                    const pct = Math.round((selected.productivity_score ?? 0) * 10);
-                    const g = productivityGrade(pct);
-                    return (
-                      <div className="week-detail-row">
-                        <div className="week-label-col" />
-                        <div className="week-detail-body">
-                          <div className="week-detail-header">
-                            <span className="timeline-hour">
-                              {formatHour(selected.hour_start_local)}
-                            </span>
-                            <span
-                              className="timeline-grade"
-                              style={{ color: gradeColor(g) }}
-                            >
-                              {g}
-                            </span>
-                            <span className="timeline-score">{pct}%</span>
-                            <button
-                              className="cal-detail-close"
-                              type="button"
-                              onClick={() => setSelected(null)}
-                            >
-                              ✕
-                            </button>
+                {isExpanded && realSummaries.length > 0 && (
+                  <div className="chronicle-hours">
+                    {realSummaries.map((s) => {
+                      const pct = Math.round((s.productivity_score ?? 0) * 10);
+                      const g = productivityGrade(pct);
+                      return (
+                        <div key={s.id} className="chronicle-hour-row">
+                          <div className="chronicle-hour-time">
+                            {formatHour(s.hour_start_local)}
                           </div>
-                          <p className="timeline-summary">{selected.summary_text}</p>
+                          <span
+                            className="chronicle-hour-grade"
+                            style={{ color: gradeColor(g) }}
+                          >
+                            {g}
+                          </span>
+                          <div className="chronicle-hour-bar">
+                            <div
+                              className="chronicle-hour-fill"
+                              style={{
+                                width: `${pct}%`,
+                                background:
+                                  pct >= 70
+                                    ? "var(--accent)"
+                                    : pct >= 40
+                                    ? "#f0b429"
+                                    : "var(--bad)",
+                              }}
+                            />
+                          </div>
+                          <p className="chronicle-hour-text">{s.summary_text}</p>
                         </div>
-                        <div className="week-grade-col" />
-                      </div>
-                    );
-                  })()}
-              </React.Fragment>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>
-
-        {/* Legend */}
-        <div className="week-legend">
-          {(
-            [
-              { color: "var(--accent)", label: "HIGH" },
-              { color: "#f0b429", label: "MID" },
-              { color: "var(--bad)", label: "LOW" },
-              { color: "var(--panel-strong)", label: "NO DATA" },
-            ] as const
-          ).map(({ color, label }) => (
-            <span key={label} className="week-legend-item">
-              <span className="week-legend-dot" style={{ background: color }} />
-              {label}
-            </span>
-          ))}</div>
 
         {hourlySummaries.length === 0 && (
           <div className="history-empty">
