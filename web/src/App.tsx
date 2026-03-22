@@ -1141,153 +1141,138 @@ function HistoryPage({
           <h2 className="history-title">Session History</h2>
         </div>
 
-        <div className="cal-scroll-wrap">
-          <div className="cal-grid">
-            {/* Hour axis labels */}
-            <div className="cal-hour-axis">
-              <div className="cal-axis-header" />
-              {CAL_HOURS.map((h) => (
-                <div key={h} className="cal-axis-cell">
-                  {h % 3 === 0 && (
-                    <span className="cal-hour-label">
-                      {h === 0
-                        ? "12a"
-                        : h < 12
-                          ? `${h}a`
-                          : h === 12
-                            ? "12p"
-                            : `${h - 12}p`}
-                    </span>
-                  )}
-                </div>
-              ))}
-              <div className="cal-axis-total" />
-            </div>
-
-            {/* Day columns */}
-            {dayKeys.map((dateKey) => (
-              <div key={dateKey} className="cal-day-col">
-                <div
-                  className={`cal-col-header${dateKey === todayKey ? " cal-today-header" : ""}`}
-                >
-                  {dayLabel(dateKey)}
-                </div>
-                {CAL_HOURS.map((h) => {
-                  const s = calMap.get(dateKey)?.get(h);
-                  const isSelected = selected?.id === s?.id && !!s;
-                  return (
-                    <div
-                      key={h}
-                      className={`cal-hour-cell${s ? " cal-has-data" : ""}${isSelected ? " cal-selected" : ""}`}
-                      style={{ background: calCellColor(s) }}
-                      title={
-                        s
-                          ? `${formatHour(s.hour_start_local)}: ${productivityGrade(Math.round((s.productivity_score ?? 0) * 10))} (${Math.round((s.productivity_score ?? 0) * 10)}%)`
-                          : undefined
-                      }
-                      onClick={() =>
-                        s
-                          ? setSelected(isSelected ? null : s)
-                          : undefined
-                      }
-                    />
-                  );
-                })}
-                {/* Day total */}
-                {(() => {
-                  const daySummaries = Array.from(
-                    calMap.get(dateKey)?.values() ?? []
-                  ).filter((s) => s.productivity_score !== null);
-                  if (daySummaries.length === 0) return <div className="cal-day-total">—</div>;
-                  const avg = Math.round(
-                    (daySummaries.reduce(
-                      (sum, s) => sum + (s.productivity_score ?? 0) * 10,
-                      0
-                    ) / daySummaries.length)
-                  );
-                  return (
-                    <div
-                      className="cal-day-total"
-                      style={{ color: avg >= 70 ? "var(--accent)" : avg >= 40 ? "#f0b429" : "var(--bad)" }}
-                    >
-                      {avg}%
-                    </div>
-                  );
-                })()}
+        {/* Week view: days as rows, hours as columns */}
+        <div className="week-view">
+          {/* Header: hour axis */}
+          <div className="week-header-row">
+            <div className="week-label-col" />
+            {CAL_HOURS.map((h) => (
+              <div key={h} className="week-hour-tick">
+                {h % 3 === 0 && (
+                  <span className="week-hour-text">
+                    {h === 0 ? "12a" : h < 12 ? `${h}a` : h === 12 ? "12p" : `${h - 12}p`}
+                  </span>
+                )}
               </div>
             ))}
+            <div className="week-grade-col" />
           </div>
+
+          {/* Day rows */}
+          {dayKeys.map((dateKey) => {
+            const daySummaries = Array.from(calMap.get(dateKey)?.values() ?? []).filter(
+              (s) => s.productivity_score !== null
+            );
+            const dayAvg =
+              daySummaries.length > 0
+                ? Math.round(
+                    daySummaries.reduce(
+                      (sum, s) => sum + (s.productivity_score ?? 0) * 10,
+                      0
+                    ) / daySummaries.length
+                  )
+                : null;
+            const dayGrade = dayAvg !== null ? productivityGrade(dayAvg) : null;
+
+            return (
+              <React.Fragment key={dateKey}>
+                <div
+                  className={`week-day-row${dateKey === todayKey ? " week-today-row" : ""}`}
+                >
+                  <div
+                    className={`week-label-col${dateKey === todayKey ? " week-today-label" : ""}`}
+                  >
+                    {dayLabel(dateKey)}
+                  </div>
+                  {CAL_HOURS.map((h) => {
+                    const s = calMap.get(dateKey)?.get(h);
+                    const isSelected = selected?.id === s?.id && !!s;
+                    return (
+                      <div
+                        key={h}
+                        className={`week-cell${s ? " week-cell-data" : ""}${isSelected ? " week-cell-selected" : ""}`}
+                        style={{ background: calCellColor(s) }}
+                        title={
+                          s
+                            ? `${formatHour(s.hour_start_local)}: ${productivityGrade(Math.round((s.productivity_score ?? 0) * 10))} (${Math.round((s.productivity_score ?? 0) * 10)}%)`
+                            : undefined
+                        }
+                        onClick={() => s && setSelected(isSelected ? null : s)}
+                      />
+                    );
+                  })}
+                  <div className="week-grade-col">
+                    {dayAvg !== null ? (
+                      <>
+                        <span
+                          className="week-grade"
+                          style={{ color: gradeColor(dayGrade!) }}
+                        >
+                          {dayGrade}
+                        </span>
+                        <span className="week-pct">{dayAvg}%</span>
+                      </>
+                    ) : (
+                      <span className="week-pct">—</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Inline detail: appears below the row whose cell is selected */}
+                {selected &&
+                  selected.hour_start_local.startsWith(dateKey) &&
+                  (() => {
+                    const pct = Math.round((selected.productivity_score ?? 0) * 10);
+                    const g = productivityGrade(pct);
+                    return (
+                      <div className="week-detail-row">
+                        <div className="week-label-col" />
+                        <div className="week-detail-body">
+                          <div className="week-detail-header">
+                            <span className="timeline-hour">
+                              {formatHour(selected.hour_start_local)}
+                            </span>
+                            <span
+                              className="timeline-grade"
+                              style={{ color: gradeColor(g) }}
+                            >
+                              {g}
+                            </span>
+                            <span className="timeline-score">{pct}%</span>
+                            <button
+                              className="cal-detail-close"
+                              type="button"
+                              onClick={() => setSelected(null)}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                          <p className="timeline-summary">{selected.summary_text}</p>
+                        </div>
+                        <div className="week-grade-col" />
+                      </div>
+                    );
+                  })()}
+              </React.Fragment>
+            );
+          })}
         </div>
 
         {/* Legend */}
-        <div className="cal-legend">
-          <span className="cal-legend-item">
-            <span
-              className="cal-legend-dot"
-              style={{ background: "var(--accent)" }}
-            />
-            HIGH (7–10)
-          </span>
-          <span className="cal-legend-item">
-            <span
-              className="cal-legend-dot"
-              style={{ background: "#f0b429" }}
-            />
-            MID (4–7)
-          </span>
-          <span className="cal-legend-item">
-            <span
-              className="cal-legend-dot"
-              style={{ background: "var(--bad)" }}
-            />
-            LOW (0–4)
-          </span>
-          <span className="cal-legend-item">
-            <span
-              className="cal-legend-dot"
-              style={{ background: "var(--panel-strong)" }}
-            />
-            NO DATA
-          </span>
-        </div>
-
-        {/* Selected hour detail */}
-        {selected && (() => {
-          const pct = Math.round((selected.productivity_score ?? 0) * 10);
-          const g = productivityGrade(pct);
-          return (
-            <div className="cal-detail-panel">
-              <div className="cal-detail-header">
-                <span className="timeline-hour">
-                  {formatHour(selected.hour_start_local)}
-                </span>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "baseline",
-                    gap: "0.5rem",
-                  }}
-                >
-                  <span
-                    className="timeline-grade"
-                    style={{ color: gradeColor(g) }}
-                  >
-                    {g}
-                  </span>
-                  <span className="timeline-score">{pct}%</span>
-                </div>
-                <button
-                  className="cal-detail-close"
-                  type="button"
-                  onClick={() => setSelected(null)}
-                >
-                  ✕
-                </button>
-              </div>
-              <p className="timeline-summary">{selected.summary_text}</p>
-            </div>
-          );
-        })()}
+        <div className="week-legend">
+          {(
+            [
+              { color: "var(--accent)", label: "HIGH" },
+              { color: "#f0b429", label: "MID" },
+              { color: "var(--bad)", label: "LOW" },
+              { color: "var(--panel-strong)", label: "NO DATA" },
+            ] as const
+          ).map(({ color, label }) => (
+            <span key={label} className="week-legend-item">
+              <span className="week-legend-dot" style={{ background: color }} />
+              {label}
+            </span>
+          ))}</div>
 
         {hourlySummaries.length === 0 && (
           <div className="history-empty">
