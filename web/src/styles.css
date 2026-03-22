@@ -129,8 +129,24 @@ button, input, select { font: inherit; }
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+.nav-item { position: relative; }
 .nav-item:hover { background: rgba(255, 255, 255, 0.04); color: var(--text); }
 .nav-item.active { background: rgba(255, 255, 255, 0.08); color: var(--accent); }
+
+.nav-badge {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--warn);
+  animation: nav-pulse 1.5s ease-in-out infinite;
+}
+@keyframes nav-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.8); }
+}
 
 .sidebar-footer { margin-top: auto; display: flex; flex-direction: column; gap: 1.5rem; }
 .nav-dim { opacity: 0.4; font-size: 0.7rem; }
@@ -163,7 +179,15 @@ button, input, select { font: inherit; }
   padding: 0.4rem 0.8rem;
   border-radius: 2px;
 }
-.topbar-actions { display: flex; align-items: center; gap: 2.5rem; }
+.topbar-actions { display: flex; align-items: center; gap: 1.25rem; }
+
+.topbar-sync {
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  opacity: 0.6;
+}
 .refresh-btn {
   background: transparent;
   border: 1px solid var(--line-strong);
@@ -671,6 +695,34 @@ button, input, select { font: inherit; }
 }
 .zone-delete:hover { border-color: var(--bad); color: var(--bad); }
 
+.zone-edit-btn {
+  font-size: 0.6rem;
+  font-weight: 900;
+  letter-spacing: 0.15em;
+  padding: 0.4rem 0.75rem;
+  border-radius: 2px;
+  border: 1px solid var(--line-strong);
+  color: var(--accent);
+  background: none;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.zone-edit-btn:hover { border-color: var(--accent); background: rgba(255,178,77,0.06); }
+
+.zone-edit-form {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.zone-field-hint {
+  font-size: 0.55rem;
+  color: var(--muted);
+  font-weight: 400;
+  letter-spacing: 0;
+  margin-left: 4px;
+}
+
 .zone-card-meta {
   margin-top: 0.75rem;
   display: flex;
@@ -1110,6 +1162,70 @@ button, input, select { font: inherit; }
   color: var(--muted);
   flex-shrink: 0;
   margin-top: 4px;
+}
+
+/* ── Check-in Card ─────────────────────────────────────────────────────────── */
+
+.checkin-card {
+  background: var(--panel);
+  border: 1px solid rgba(255, 178, 77, 0.25);
+  border-radius: 8px;
+  padding: 1.25rem;
+  margin-bottom: 0.75rem;
+}
+
+.checkin-question {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text);
+  margin: 0.5rem 0 0.875rem;
+  line-height: 1.5;
+}
+
+.checkin-input {
+  width: 100%;
+  background: var(--bg-elevated);
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 0.78rem;
+  padding: 0.6rem 0.8rem;
+  outline: none;
+  margin-bottom: 0.875rem;
+  box-sizing: border-box;
+}
+.checkin-input:focus { border-color: var(--accent); }
+
+.checkin-actions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.checkin-btn {
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  padding: 0.5rem 1rem;
+  border-radius: 3px;
+  border: 1px solid var(--line-strong);
+  cursor: pointer;
+  transition: filter 0.15s;
+}
+.checkin-btn:hover { filter: brightness(1.15); }
+
+.checkin-btn-confirm {
+  background: var(--accent);
+  color: #000;
+  border-color: var(--accent);
+}
+.checkin-btn-snooze {
+  background: transparent;
+  color: var(--text-soft);
+}
+.checkin-btn-dismiss {
+  background: transparent;
+  color: var(--muted);
 }
 
 /* ── Nudge Banner ──────────────────────────────────────────────────────────── */

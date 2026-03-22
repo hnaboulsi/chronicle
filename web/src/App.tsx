@@ -134,6 +134,14 @@ type ZoneRecord = {
   sort_order: number;
 };
 
+type CheckinPayload = {
+  checkin: string | null;
+  guess: string;
+  age_seconds: number | null;
+  event_title: string | null;
+  event_location: string | null;
+};
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const API_BASE =
@@ -214,7 +222,10 @@ function productivePulseData(hourlySummaries: HourlySummary[]) {
 }
 
 function formatTimestamp(ts: string): string {
-  return new Date(ts).toLocaleTimeString([], {
+  // Backend returns naive UTC strings (no Z/offset); append Z so the browser
+  // parses them as UTC then converts to local time via toLocaleTimeString.
+  const normalized = ts && !ts.endsWith("Z") && !ts.includes("+") ? ts + "Z" : ts;
+  return new Date(normalized).toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
   });
@@ -229,7 +240,7 @@ function formatHour(ts: string): string {
 
 // ── NavItem ────────────────────────────────────────────────────────────────────
 
-function NavItem({ to, label, dim }: { to: string; label: string; dim?: boolean }) {
+function NavItem({ to, label, dim, badge }: { to: string; label: string; dim?: boolean; badge?: boolean }) {
   return (
     <NavLink
       to={to}
@@ -238,6 +249,7 @@ function NavItem({ to, label, dim }: { to: string; label: string; dim?: boolean 
       }
     >
       {label}
+      {badge && <span className="nav-badge" />}
     </NavLink>
   );
 }
@@ -316,6 +328,8 @@ function AppShell({
   onRefresh,
   state,
   logs,
+  hasCheckin,
+  lastRefreshed,
 }: {
   children: ReactNode;
   statusMessage: string;
@@ -324,9 +338,24 @@ function AppShell({
   onRefresh: () => void;
   state: DashboardState | null;
   logs: ActivityLog[];
+  hasCheckin: boolean;
+  lastRefreshed: Date | null;
 }) {
   const [logPanelOpen, setLogPanelOpen] = useState(false);
+  const [syncAge, setSyncAge] = useState<string>("");
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!lastRefreshed) return;
+    function updateAge() {
+      const secs = Math.round((Date.now() - lastRefreshed!.getTime()) / 1000);
+      if (secs < 60) setSyncAge(`${secs}s AGO`);
+      else setSyncAge(`${Math.floor(secs / 60)}m AGO`);
+    }
+    updateAge();
+    const t = setInterval(updateAge, 10000);
+    return () => clearInterval(t);
+  }, [lastRefreshed]);
 
   const liveCategory = state?.mac_idle
     ? "IDLE"
@@ -350,7 +379,7 @@ function AppShell({
           <span className="brand-title">CHRONICLE</span>
         </Link>
         <nav className="side-rail-nav">
-          <NavItem to="/today" label="Today" />
+          <NavItem to="/today" label="Today" badge={hasCheckin} />
           <NavItem to="/diagnostics" label="History" />
         </nav>
         <div className="sidebar-footer">
@@ -384,6 +413,9 @@ function AppShell({
           </div>
 
           <div className="topbar-actions">
+            {syncAge && !refreshing && (
+              <span className="topbar-sync">SYNCED {syncAge}</span>
+            )}
             <button
               className="refresh-btn"
               onClick={onRefresh}
@@ -456,6 +488,8 @@ function TodayPage({
   calendarEvents,
   nudge,
   onDismissNudge,
+  checkin,
+  onCheckinAction,
   onRefreshLogs,
 }: {
   state: DashboardState | null;
@@ -466,14 +500,47 @@ function TodayPage({
   calendarEvents: CalendarEvent[];
   nudge: { text: string; category: string } | null;
   onDismissNudge: () => void;
+  checkin: CheckinPayload | null;
+  onCheckinAction: () => void;
   onRefreshLogs: () => void;
 }) {
   const [chatInput, setChatInput] = useState("");
   const [chatSending, setChatSending] = useState(false);
+  const [checkinInput, setCheckinInput] = useState("");
 
   useEffect(() => {
     document.title = state?.mac_idle ? "Chronicle (Idle)" : "Chronicle";
   }, [state?.mac_idle]);
+
+  // "/" hotkey focuses the intent input
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "/") return;
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      e.preventDefault();
+      (document.getElementById("intent-input") as HTMLInputElement | null)?.focus();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
+
+  async function handleCheckin(action: "confirm" | "snooze" | "dismiss") {
+    if (action === "confirm") {
+      await fetchJson("/api/checkin/confirm", {
+        method: "POST",
+        body: JSON.stringify(checkinInput.trim()
+          ? { confirmed: false, correction: checkinInput.trim() }
+          : { confirmed: true }),
+      });
+    } else if (action === "snooze") {
+      await fetchJson("/api/checkin/snooze", { method: "POST", body: JSON.stringify({ minutes: 30 }) });
+    } else {
+      await fetchJson("/api/checkin/dismiss", { method: "POST" });
+    }
+    setCheckinInput("");
+    onCheckinAction();
+  }
 
   async function handleChat() {
     const msg = chatInput.trim();
@@ -631,6 +698,32 @@ function TodayPage({
               </div>
             </div>
           </article>
+
+          {/* Check-in prompt card */}
+          {checkin?.checkin && (
+            <div className="checkin-card">
+              <span className="section-eyebrow" style={{ color: "var(--accent)" }}>CHECK-IN</span>
+              <p className="checkin-question">{checkin.checkin}</p>
+              <input
+                className="checkin-input"
+                placeholder={checkin.guess ? `"${checkin.guess}" — or type a correction` : "What are you working on?"}
+                value={checkinInput}
+                onChange={(e) => setCheckinInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") void handleCheckin("confirm"); }}
+              />
+              <div className="checkin-actions">
+                <button type="button" className="checkin-btn checkin-btn-confirm" onClick={() => void handleCheckin("confirm")}>
+                  ✓ CONFIRM
+                </button>
+                <button type="button" className="checkin-btn checkin-btn-snooze" onClick={() => void handleCheckin("snooze")}>
+                  SNOOZE 30m
+                </button>
+                <button type="button" className="checkin-btn checkin-btn-dismiss" onClick={() => void handleCheckin("dismiss")}>
+                  DISMISS
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Tonight / Today's remaining events */}
           <article className="editorial-card tonight-events">
@@ -828,6 +921,8 @@ function ZonesPage() {
     focus_mode: "",
     sort_order: 0,
   });
+  const [editingZoneId, setEditingZoneId] = useState<number | null>(null);
+  const [editZone, setEditZone] = useState<Partial<ZoneRecord>>({});
 
   useEffect(() => {
     document.title = "Chronicle — Places";
@@ -895,6 +990,22 @@ function ZonesPage() {
       await load();
     } catch {
       setError("Failed to create place.");
+    }
+  }
+
+  async function saveZoneEdit(zone: ZoneRecord) {
+    if (!zone.id) return;
+    try {
+      await fetchJson(`/api/zones/${zone.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(editZone),
+      });
+      setEditingZoneId(null);
+      setEditZone({});
+      setError("");
+      await load();
+    } catch {
+      setError("Failed to update place.");
     }
   }
 
@@ -980,6 +1091,15 @@ function ZonesPage() {
                 }
               />
             </div>
+            <div className="zone-field">
+              <label>Focus Mode <span className="zone-field-hint">(optional)</span></label>
+              <input
+                className="zone-input"
+                value={newZone.focus_mode ?? ""}
+                onChange={(e) => setNewZone({ ...newZone, focus_mode: e.target.value })}
+                placeholder="e.g. study, work"
+              />
+            </div>
           </div>
           <button
             className="log-intent-btn"
@@ -1026,6 +1146,26 @@ function ZonesPage() {
                   </button>
                   <button
                     type="button"
+                    className="zone-edit-btn"
+                    onClick={() => {
+                      if (editingZoneId === zone.id) {
+                        setEditingZoneId(null);
+                        setEditZone({});
+                      } else {
+                        setEditingZoneId(zone.id ?? null);
+                        setEditZone({
+                          name: zone.name,
+                          zone_type: zone.zone_type,
+                          radius_meters: zone.radius_meters,
+                          focus_mode: zone.focus_mode,
+                        });
+                      }
+                    }}
+                  >
+                    {editingZoneId === zone.id ? "CANCEL" : "EDIT"}
+                  </button>
+                  <button
+                    type="button"
                     className="zone-delete"
                     onClick={() => void deleteZone(zone)}
                   >
@@ -1039,6 +1179,38 @@ function ZonesPage() {
                   <span>FOCUS: {zone.focus_mode.toUpperCase()}</span>
                 )}
               </div>
+              {editingZoneId === zone.id && (
+                <div className="zone-edit-form">
+                  <div className="zone-form-fields">
+                    <div className="zone-field">
+                      <label>Name</label>
+                      <input className="zone-input" value={editZone.name ?? ""} onChange={(e) => setEditZone({ ...editZone, name: e.target.value })} />
+                    </div>
+                    <div className="zone-field">
+                      <label>Type</label>
+                      <select className="zone-input" value={editZone.zone_type ?? "custom"} onChange={(e) => setEditZone({ ...editZone, zone_type: e.target.value })}>
+                        <option value="custom">Custom</option>
+                        <option value="study">Study</option>
+                        <option value="work">Work</option>
+                        <option value="home">Home</option>
+                        <option value="gym">Gym</option>
+                      </select>
+                    </div>
+                    <div className="zone-field">
+                      <label>Radius (meters)</label>
+                      <input className="zone-input" type="number" min={25} max={500} value={editZone.radius_meters ?? 75} onChange={(e) => setEditZone({ ...editZone, radius_meters: Number(e.target.value) })} />
+                    </div>
+                    <div className="zone-field">
+                      <label>Focus Mode <span className="zone-field-hint">(optional)</span></label>
+                      <input className="zone-input" value={editZone.focus_mode ?? ""} onChange={(e) => setEditZone({ ...editZone, focus_mode: e.target.value })} placeholder="e.g. study, work" />
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: "0.75rem", marginTop: "1rem" }}>
+                    <button type="button" className="log-intent-btn" style={{ flex: 1, padding: "0.6rem" }} onClick={() => void saveZoneEdit(zone)}>SAVE CHANGES</button>
+                    <button type="button" className="zone-delete" style={{ padding: "0.6rem 1rem" }} onClick={() => { setEditingZoneId(null); setEditZone({}); }}>CANCEL</button>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -1572,7 +1744,9 @@ export default function App() {
   const [aiDayInsight, setAiDayInsight] = useState<string | null>(null);
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const [nudge, setNudge] = useState<{ text: string; category: string } | null>(null);
+  const [checkin, setCheckin] = useState<CheckinPayload | null>(null);
   const [health, setHealth] = useState<HealthResponse | null>(null);
+  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -1580,7 +1754,7 @@ export default function App() {
   async function refreshCore() {
     setRefreshing(true);
     try {
-      const [st, se, an, lo, hs, ai, he, ca] = await Promise.allSettled([
+      const [st, se, an, lo, hs, ai, he, ca, ci] = await Promise.allSettled([
         fetchJson<DashboardState>("/api/state"),
         fetchJson<BackendSettings>("/api/settings"),
         fetchJson<Analytics>("/api/analytics/today"),
@@ -1589,6 +1763,7 @@ export default function App() {
         fetchJson<{ ai_day_insight?: string; events?: CalendarEvent[] }>("/api/calendar/today"),
         fetchJson<HealthResponse>("/api/healthz"),
         fetchJson<{ callout: string | null; category?: string }>("/api/callout"),
+        fetchJson<CheckinPayload>("/api/checkin"),
       ]);
       if (st.status === "fulfilled") setState(st.value);
       if (se.status === "fulfilled") {
@@ -1615,6 +1790,12 @@ export default function App() {
       } else if (ca.status === "fulfilled" && !ca.value.callout) {
         setNudge(null);
       }
+      if (ci.status === "fulfilled" && ci.value.checkin) {
+        setCheckin(ci.value);
+      } else if (ci.status === "fulfilled" && !ci.value.checkin) {
+        setCheckin(null);
+      }
+      setLastRefreshed(new Date());
     } finally {
       setRefreshing(false);
     }
@@ -1637,6 +1818,8 @@ export default function App() {
         onRefresh={() => void refreshCore()}
         state={state}
         logs={logs}
+        hasCheckin={!!checkin?.checkin}
+        lastRefreshed={lastRefreshed}
       >
         <Routes>
           <Route path="/" element={<Navigate replace to="/today" />} />
@@ -1655,6 +1838,8 @@ export default function App() {
                   await fetchJson("/api/callout/dismiss", { method: "POST" });
                   setNudge(null);
                 }}
+                checkin={checkin}
+                onCheckinAction={() => setCheckin(null)}
                 onRefreshLogs={refreshCore}
               />
             }
