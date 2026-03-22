@@ -354,10 +354,10 @@ button, input, select { font: inherit; }
 /* PREVIOUSLY MISSING CLASSES */
 .editorial-left {}
 .editorial-right {}
-.hero-section { margin-bottom: 0.5rem; }
+.hero-section { margin-bottom: 1.5rem; }
 .recent-channels { margin-top: 0.5rem; }
 .session-chronicle {}
-.productivity-pulse {}
+.productivity-pulse { margin-top: 1rem; }
 
 .card-subtitle {
   display: block;
