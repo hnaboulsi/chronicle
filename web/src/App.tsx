@@ -454,6 +454,8 @@ function TodayPage({
   hourlySummaries,
   aiDayInsight,
   calendarEvents,
+  nudge,
+  onDismissNudge,
   onRefreshLogs,
 }: {
   state: DashboardState | null;
@@ -462,6 +464,8 @@ function TodayPage({
   hourlySummaries: HourlySummary[];
   aiDayInsight?: string | null;
   calendarEvents: CalendarEvent[];
+  nudge: { text: string; category: string } | null;
+  onDismissNudge: () => void;
   onRefreshLogs: () => void;
 }) {
   const [chatInput, setChatInput] = useState("");
@@ -670,6 +674,20 @@ function TodayPage({
               </div>
             )}
           </article>
+
+          {nudge && (
+            <div className="nudge-banner">
+              <span className="nudge-text">{nudge.text}</span>
+              <button
+                className="nudge-dismiss"
+                type="button"
+                onClick={onDismissNudge}
+                aria-label="Dismiss"
+              >
+                ✕
+              </button>
+            </div>
+          )}
 
           <article className="editorial-card productivity-pulse">
             <div
@@ -1553,6 +1571,7 @@ export default function App() {
   const [hourlySummaries, setHourlySummaries] = useState<HourlySummary[]>([]);
   const [aiDayInsight, setAiDayInsight] = useState<string | null>(null);
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+  const [nudge, setNudge] = useState<{ text: string; category: string } | null>(null);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
@@ -1561,7 +1580,7 @@ export default function App() {
   async function refreshCore() {
     setRefreshing(true);
     try {
-      const [st, se, an, lo, hs, ai, he] = await Promise.allSettled([
+      const [st, se, an, lo, hs, ai, he, ca] = await Promise.allSettled([
         fetchJson<DashboardState>("/api/state"),
         fetchJson<BackendSettings>("/api/settings"),
         fetchJson<Analytics>("/api/analytics/today"),
@@ -1569,6 +1588,7 @@ export default function App() {
         fetchJson<HourlySummary[]>("/api/hourly-summaries?limit=168"),
         fetchJson<{ ai_day_insight?: string; events?: CalendarEvent[] }>("/api/calendar/today"),
         fetchJson<HealthResponse>("/api/healthz"),
+        fetchJson<{ callout: string | null; category?: string }>("/api/callout"),
       ]);
       if (st.status === "fulfilled") setState(st.value);
       if (se.status === "fulfilled") {
@@ -1590,6 +1610,11 @@ export default function App() {
         setCalendarEvents(ai.value.events ?? []);
       }
       if (he.status === "fulfilled") setHealth(he.value);
+      if (ca.status === "fulfilled" && ca.value.callout) {
+        setNudge({ text: ca.value.callout, category: ca.value.category ?? "" });
+      } else if (ca.status === "fulfilled" && !ca.value.callout) {
+        setNudge(null);
+      }
     } finally {
       setRefreshing(false);
     }
@@ -1625,6 +1650,11 @@ export default function App() {
                 hourlySummaries={hourlySummaries}
                 aiDayInsight={aiDayInsight}
                 calendarEvents={calendarEvents}
+                nudge={nudge}
+                onDismissNudge={async () => {
+                  await fetchJson("/api/callout/dismiss", { method: "POST" });
+                  setNudge(null);
+                }}
                 onRefreshLogs={refreshCore}
               />
             }

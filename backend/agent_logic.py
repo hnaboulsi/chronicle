@@ -1128,6 +1128,136 @@ async def _generate_and_store_hourly_summary(db: Session, now: datetime, force_c
     log.info("Hourly summary stored for %s (%s)", hour_label, source)
 
 
+async def _maybe_deadline_nudge(db: Session, now: datetime) -> None:
+    """Nudge user when a high-stakes calendar event is approaching and no prep activity detected.
+
+    Fires for assignment/exam/focus/meeting events 1–6 hours out.
+    Deduped per event per calendar day — at most one nudge per event per day.
+    """
+    if get_state(db, "likely_asleep", "false").lower() == "true":
+        return
+    if _checkin_is_active(db, now):
+        return
+
+    import json as _json
+    cached_types_raw = get_state(db, "calendar_ai_event_types", "{}")
+    try:
+        event_types: dict = _json.loads(cached_types_raw)
+    except Exception:
+        event_types = {}
+
+    DEADLINE_TYPES = {"assignment", "exam", "focus"}
+    SOON_TYPES = {"meeting"}  # shorter window
+    now_naive = now.replace(tzinfo=None)
+
+    # Build candidate list: assignment/exam/focus in 1–6h, meeting in 15–60min
+    window_far = now_naive + timedelta(hours=6)
+    window_near = now_naive + timedelta(hours=1)
+    window_soon_end = now_naive + timedelta(minutes=60)
+    window_soon_start = now_naive + timedelta(minutes=15)
+
+    candidates = (
+        db.query(UserCalendarEvent)
+        .filter(
+            UserCalendarEvent.start_at > now_naive,
+            UserCalendarEvent.start_at <= window_far,
+            UserCalendarEvent.calendar_name != "Vero",
+        )
+        .order_by(UserCalendarEvent.start_at)
+        .all()
+    )
+
+    today_str = now.date().isoformat()
+
+    for ev in candidates:
+        etype = event_types.get(ev.title, "other")
+        mins_until = int((ev.start_at - now_naive).total_seconds() / 60)
+
+        # Determine whether this event qualifies for a nudge
+        if etype in DEADLINE_TYPES:
+            if not (60 <= mins_until <= 360):
+                continue  # 1–6h window
+        elif etype in SOON_TYPES:
+            if not (15 <= mins_until <= 60):
+                continue
+        else:
+            continue
+
+        dedup_key = f"deadline_nudge_fired:{ev.id}:{today_str}"
+        if get_state(db, dedup_key):
+            continue  # already nudged today
+
+        # Check if recent hourly summaries show prep (last 2h)
+        two_hours_ago = now_naive - timedelta(hours=2)
+        recent_summaries = (
+            db.query(HourlySummary)
+            .filter(
+                HourlySummary.hour_start >= two_hours_ago,
+                HourlySummary.hour_start <= now_naive,
+            )
+            .order_by(HourlySummary.hour_start.desc())
+            .limit(3)
+            .all()
+        )
+
+        # Heuristic: if any recent summary mentions event-title keywords → skip (already working on it)
+        title_words = [w.lower() for w in (ev.title or "").split() if len(w) > 3]
+        already_prepping = False
+        for s in recent_summaries:
+            text = (s.summary_text or "").lower()
+            if any(word in text for word in title_words):
+                already_prepping = True
+                break
+            # Also skip if recent score is high (≥0.65) and it's a meeting (user is likely actively working)
+            if etype in SOON_TYPES and s.productivity_score and s.productivity_score >= 0.65:
+                already_prepping = True
+                break
+
+        if already_prepping:
+            # Mark as fired so we don't keep checking; they're on it
+            set_state(db, dedup_key, now.isoformat())
+            continue
+
+        # Build the nudge message
+        hrs = mins_until // 60
+        mins = mins_until % 60
+        time_label = f"{hrs}h {mins}m" if hrs and mins else (f"{hrs}h" if hrs else f"{mins}m")
+
+        if etype == "assignment":
+            nudge_text = f"📋 {ev.title} is due in {time_label} — no prep activity detected yet."
+        elif etype == "exam":
+            nudge_text = f"📝 {ev.title} in {time_label} — are you ready?"
+        elif etype == "focus":
+            nudge_text = f"⏱ {ev.title} starts in {time_label} — time to get focused."
+        else:  # meeting
+            nudge_text = f"📅 {ev.title} in {time_label} — anything to prepare?"
+
+        # Try LLM for a more natural nudge
+        if can_use_llm(db, now, task_type="prompt"):
+            recent_text = " | ".join(
+                s.summary_text[:60] for s in recent_summaries if s.summary_text
+            )
+            llm_prompt = (
+                f"The user has '{ev.title}' ({etype}) in {time_label}. "
+                + (f"Recent activity: {recent_text}. " if recent_text else "")
+                + "Write ONE short, direct nudge (under 14 words) reminding them. No emoji required. "
+                "Don't start with 'Hey' or 'Remember'."
+            )
+            try:
+                import llm_client as _lc
+                ai_msg = await _lc.ask_llm(llm_prompt, model_kind="cheap", task_type="prompt")
+                if ai_msg and len(ai_msg.strip()) > 4:
+                    nudge_text = ai_msg.strip().strip('"')
+            except Exception as _e:
+                log.debug("Deadline nudge LLM failed: %s", _e)
+
+        set_state(db, "callout_summary", nudge_text)
+        set_state(db, "callout_category", "deadline_nudge")
+        set_state(db, dedup_key, now.isoformat())
+        log.info("Deadline nudge fired for '%s' in %s min: %s", ev.title, mins_until, nudge_text)
+        return  # one nudge at a time
+
+
 def _maybe_office_hours_nudge(db: Session, now: datetime, current_category: str):
     """If office hours start within 30 min and user is distracted, set a callout nudge."""
     UNPRODUCTIVE = {"entertainment", "social_media", "distracted", "idle", "unknown"}
@@ -1962,6 +2092,9 @@ async def process_mac_telemetry(data: MacTelemetry, db: Session):
 
         # Nudge for upcoming office hours when user is distracted or unproductive
         _maybe_office_hours_nudge(db, now, new_category)
+
+        # Nudge for upcoming assignment/exam/meeting deadlines
+        await _maybe_deadline_nudge(db, now)
 
         # Refresh AI-driven app category cache (at most once per hour)
         await _refresh_app_category_cache(db, now)
