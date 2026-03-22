@@ -185,17 +185,6 @@ function gradeColor(grade: string): string {
   return "var(--bad)";
 }
 
-function getRecentApps(logs: ActivityLog[]): string[] {
-  const counts: Record<string, number> = {};
-  for (const log of logs) {
-    if (log.app_name) counts[log.app_name] = (counts[log.app_name] ?? 0) + 1;
-  }
-  const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-  const apps = sorted.slice(0, 3).map(([name]) => name.toUpperCase());
-  const fallbacks = ["VS CODE", "TERMINAL", "DOCS"];
-  while (apps.length < 3) apps.push(fallbacks[apps.length]);
-  return apps;
-}
 
 function productivePulseData(hourlySummaries: HourlySummary[]) {
   // Only use real today summaries with actual scores, sorted chronologically,
@@ -228,6 +217,7 @@ function formatTimestamp(ts: string): string {
   return new Date(normalized).toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
+    hour12: true,
   });
 }
 
@@ -479,10 +469,37 @@ function eventTypeColor(type: string): string {
   }
 }
 
+function eventTypeLabel(type: string): string {
+  switch (type) {
+    case "lecture": return "CLASS";
+    case "assignment": return "HOMEWORK";
+    case "exam": return "EXAM";
+    case "meeting": return "MEETING";
+    case "flight": return "FLIGHT";
+    default: return type.toUpperCase();
+  }
+}
+
+function getRecentFocusLabels(categoryMinutes: Record<string, number>): string[] {
+  return Object.entries(categoryMinutes)
+    .filter(([, mins]) => mins > 0)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 3)
+    .map(([cat]) => cat.replace(/_/g, " "));
+}
+
+function deriveScheduleLabel(events: CalendarEvent[]): string {
+  const types = new Set(events.map((e) => e.event_type));
+  if (types.has("lecture") && types.has("meeting")) return "CLASSES & MEETINGS";
+  if (types.has("lecture")) return "CLASS SCHEDULE";
+  if (types.has("meeting")) return "MEETINGS";
+  if (types.has("assignment") || types.has("exam")) return "UPCOMING TASKS";
+  return "TODAY'S SCHEDULE";
+}
+
 function TodayPage({
   state,
   analytics,
-  logs,
   hourlySummaries,
   aiDayInsight,
   calendarEvents,
@@ -494,7 +511,6 @@ function TodayPage({
 }: {
   state: DashboardState | null;
   analytics: Analytics | null;
-  logs: ActivityLog[];
   hourlySummaries: HourlySummary[];
   aiDayInsight?: string | null;
   calendarEvents: CalendarEvent[];
@@ -507,6 +523,8 @@ function TodayPage({
   const [chatInput, setChatInput] = useState("");
   const [chatSending, setChatSending] = useState(false);
   const [checkinInput, setCheckinInput] = useState("");
+  const [checkinLoading, setCheckinLoading] = useState(false);
+  const [nudgeLoading, setNudgeLoading] = useState(false);
 
   useEffect(() => {
     document.title = state?.mac_idle ? "Chronicle (Idle)" : "Chronicle";
@@ -526,20 +544,30 @@ function TodayPage({
   }, []);
 
   async function handleCheckin(action: "confirm" | "snooze" | "dismiss") {
-    if (action === "confirm") {
-      await fetchJson("/api/checkin/confirm", {
-        method: "POST",
-        body: JSON.stringify(checkinInput.trim()
-          ? { confirmed: false, correction: checkinInput.trim() }
-          : { confirmed: true }),
-      });
-    } else if (action === "snooze") {
-      await fetchJson("/api/checkin/snooze", { method: "POST", body: JSON.stringify({ minutes: 30 }) });
-    } else {
-      await fetchJson("/api/checkin/dismiss", { method: "POST" });
+    setCheckinLoading(true);
+    try {
+      if (action === "confirm") {
+        await fetchJson("/api/checkin/confirm", {
+          method: "POST",
+          body: JSON.stringify(checkinInput.trim()
+            ? { confirmed: false, correction: checkinInput.trim() }
+            : { confirmed: true }),
+        });
+      } else if (action === "snooze") {
+        await fetchJson("/api/checkin/snooze", { method: "POST", body: JSON.stringify({ minutes: 30 }) });
+      } else {
+        await fetchJson("/api/checkin/dismiss", { method: "POST" });
+      }
+      setCheckinInput("");
+      onCheckinAction();
+    } finally {
+      setCheckinLoading(false);
     }
-    setCheckinInput("");
-    onCheckinAction();
+  }
+
+  async function handleDismissNudge() {
+    setNudgeLoading(true);
+    try { await onDismissNudge(); } finally { setNudgeLoading(false); }
   }
 
   async function handleChat() {
@@ -559,7 +587,6 @@ function TodayPage({
   }
 
   const pulseValues = productivePulseData(hourlySummaries);
-  const recentApps = getRecentApps(logs);
   const grade = productivityGrade(analytics?.productive_pct ?? 0);
   const gColor = gradeColor(grade);
 
@@ -606,7 +633,7 @@ function TodayPage({
   const upcomingEvents = calendarEvents
     .filter((e) => !e.is_past || e.is_current)
     .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());
-  const scheduleLabel = now.getHours() >= 17 ? "TONIGHT'S SCHEDULE" : "TODAY'S REMAINING";
+  const scheduleLabel = deriveScheduleLabel(upcomingEvents);
 
   const categoryMinutes = analytics?.category_minutes ?? {};
   const categoryEntries = Object.entries(categoryMinutes)
@@ -615,6 +642,7 @@ function TodayPage({
     .slice(0, 5);
   const totalMins = Math.max(analytics?.total_active_minutes ?? 0, 1);
   const productiveCategories = new Set(["studying", "working", "creative"]);
+  const topFocusCategories = getRecentFocusLabels(categoryMinutes);
 
   return (
     <div className="editorial-page">
@@ -640,147 +668,24 @@ function TodayPage({
               />
             </div>
 
-            <div className="recent-channels">
-              <span className="section-eyebrow">RECENT CHANNELS</span>
-              <div className="channel-btns">
-                {recentApps.map((app) => (
-                  <button
-                    key={app}
-                    className="channel-btn"
-                    type="button"
-                    onClick={() => setChatInput(app)}
-                  >
-                    {app}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </section>
-        </div>
-
-        <div className="editorial-right">
-          <article className="editorial-card session-chronicle">
-            <span className="section-eyebrow">SESSION CHRONICLE</span>
-            <span className="card-subtitle">INTELLIGENCE SUMMARY</span>
-            <p className="summary-text">
-              {aiDayInsight || "Collecting signals to form the daily chronicle..."}
-            </p>
-            <div className="card-meta">
-              <div className="meta-item">
-                <svg
-                  className="meta-icon"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
-                  <circle cx="12" cy="10" r="3" />
-                </svg>
-                <span>
-                  ENVIRONMENT: {state?.current_location?.toUpperCase() ?? "STABLE"}
-                </span>
-              </div>
-              <div className="meta-item">
-                <svg
-                  className="meta-icon"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <path d="M12 2v10l4.5 4.5" />
-                  <circle cx="12" cy="12" r="10" />
-                </svg>
-                <span>
-                  OUTPUT: {analytics?.log_count ?? 0} LOGS / {analytics?.llm_used ?? 0} LLM
-                </span>
-              </div>
-            </div>
-          </article>
-
-          {/* Check-in prompt card */}
-          {checkin?.checkin && (
-            <div className="checkin-card">
-              <span className="section-eyebrow" style={{ color: "var(--accent)" }}>CHECK-IN</span>
-              <p className="checkin-question">{checkin.checkin}</p>
-              <input
-                className="checkin-input"
-                placeholder={checkin.guess ? `"${checkin.guess}" — or type a correction` : "What are you working on?"}
-                value={checkinInput}
-                onChange={(e) => setCheckinInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") void handleCheckin("confirm"); }}
-              />
-              <div className="checkin-actions">
-                <button type="button" className="checkin-btn checkin-btn-confirm" onClick={() => void handleCheckin("confirm")}>
-                  ✓ CONFIRM
-                </button>
-                <button type="button" className="checkin-btn checkin-btn-snooze" onClick={() => void handleCheckin("snooze")}>
-                  SNOOZE 30m
-                </button>
-                <button type="button" className="checkin-btn checkin-btn-dismiss" onClick={() => void handleCheckin("dismiss")}>
-                  DISMISS
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Tonight / Today's remaining events */}
-          <article className="editorial-card tonight-events">
-            <span className="section-eyebrow">{scheduleLabel}</span>
-            {upcomingEvents.length === 0 ? (
-              <p className="tonight-empty">No remaining events today.</p>
-            ) : (
-              <div className="tonight-list">
-                {upcomingEvents.map((ev) => (
-                  <div key={ev.id} className="tonight-row">
-                    <span
-                      className="tonight-dot"
-                      style={{ background: eventTypeColor(ev.event_type) }}
-                    />
-                    <div className="tonight-details">
-                      <div className="tonight-title">{ev.title}</div>
-                      <div className="tonight-meta">
-                        <span className="tonight-time">
-                          {new Date(ev.start_at).toLocaleTimeString([], {
-                            hour: "numeric",
-                            minute: "2-digit",
-                            hour12: true,
-                          })}
-                        </span>
-                        {ev.calendar_name && (
-                          <span className="tonight-cal">{ev.calendar_name}</span>
-                        )}
-                        {ev.is_current && (
-                          <span className="tonight-now">NOW</span>
-                        )}
-                      </div>
-                      {ev.event_note && (
-                        <div className="tonight-note">{ev.event_note}</div>
-                      )}
-                    </div>
-                    <span className="tonight-type">
-                      {ev.event_type.toUpperCase()}
-                    </span>
-                  </div>
-                ))}
+            {topFocusCategories.length > 0 && (
+              <div className="recent-channels">
+                <span className="section-eyebrow">RECENT FOCUS</span>
+                <div className="channel-btns">
+                  {topFocusCategories.map((cat) => (
+                    <button
+                      key={cat}
+                      className="channel-btn"
+                      type="button"
+                      onClick={() => setChatInput(cat)}
+                    >
+                      {cat.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
-          </article>
-
-          {nudge && (
-            <div className="nudge-banner">
-              <span className="nudge-text">{nudge.text}</span>
-              <button
-                className="nudge-dismiss"
-                type="button"
-                onClick={onDismissNudge}
-                aria-label="Dismiss"
-              >
-                ✕
-              </button>
-            </div>
-          )}
+          </section>
 
           <article className="editorial-card productivity-pulse">
             <div
@@ -858,7 +763,7 @@ function TodayPage({
               <div className="category-breakdown">
                 {categoryEntries.map(([cat, mins]) => (
                   <div key={cat} className="category-row">
-                    <span className="category-name">{cat.toUpperCase()}</span>
+                    <span className="category-name">{cat.replace(/_/g, " ").toUpperCase()}</span>
                     <div className="category-bar-track">
                       <div
                         className="category-bar-fill"
@@ -876,6 +781,133 @@ function TodayPage({
               </div>
             )}
           </article>
+        </div>
+
+        <div className="editorial-right">
+          <article className="editorial-card session-chronicle">
+            <span className="section-eyebrow">SESSION CHRONICLE</span>
+            <span className="card-subtitle">INTELLIGENCE SUMMARY</span>
+            <p className="summary-text">
+              {aiDayInsight || "Collecting signals to form the daily chronicle..."}
+            </p>
+            <div className="card-meta">
+              <div className="meta-item">
+                <svg
+                  className="meta-icon"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+                  <circle cx="12" cy="10" r="3" />
+                </svg>
+                <span>
+                  ENVIRONMENT: {state?.current_location?.toUpperCase() ?? "STABLE"}
+                </span>
+              </div>
+              <div className="meta-item">
+                <svg
+                  className="meta-icon"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path d="M12 2v10l4.5 4.5" />
+                  <circle cx="12" cy="12" r="10" />
+                </svg>
+                <span>
+                  OUTPUT: {analytics?.log_count ?? 0} LOGS
+                </span>
+              </div>
+            </div>
+          </article>
+
+          {/* Check-in prompt card */}
+          {checkin?.checkin && (
+            <div className="checkin-card">
+              <span className="section-eyebrow" style={{ color: "var(--accent)" }}>CHECK-IN</span>
+              <p className="checkin-question">{checkin.checkin}</p>
+              <input
+                className="checkin-input"
+                placeholder={checkin.guess ? `"${checkin.guess}" — or type a correction` : "What are you working on?"}
+                value={checkinInput}
+                onChange={(e) => setCheckinInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") void handleCheckin("confirm"); }}
+              />
+              <div className="checkin-actions">
+                <button type="button" className={`checkin-btn checkin-btn-confirm${checkinLoading ? " btn-processing" : ""}`} disabled={checkinLoading} onClick={() => void handleCheckin("confirm")}>
+                  ✓ CONFIRM
+                </button>
+                <button type="button" className={`checkin-btn checkin-btn-snooze${checkinLoading ? " btn-processing" : ""}`} disabled={checkinLoading} onClick={() => void handleCheckin("snooze")}>
+                  SNOOZE 30m
+                </button>
+                <button type="button" className={`checkin-btn checkin-btn-dismiss${checkinLoading ? " btn-processing" : ""}`} disabled={checkinLoading} onClick={() => void handleCheckin("dismiss")}>
+                  DISMISS
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Tonight / Today's remaining events */}
+          <article className="editorial-card tonight-events">
+            <span className="section-eyebrow">{scheduleLabel}</span>
+            {upcomingEvents.length === 0 ? (
+              <p className="tonight-empty">No remaining events today.</p>
+            ) : (
+              <div className="tonight-list">
+                {upcomingEvents.map((ev) => (
+                  <div key={ev.id} className="tonight-row">
+                    <span
+                      className="tonight-dot"
+                      style={{ background: eventTypeColor(ev.event_type) }}
+                    />
+                    <div className="tonight-details">
+                      <div className="tonight-title">{ev.title}</div>
+                      <div className="tonight-meta">
+                        <span className="tonight-time">
+                          {new Date(ev.start_at).toLocaleTimeString([], {
+                            hour: "numeric",
+                            minute: "2-digit",
+                            hour12: true,
+                          })}
+                        </span>
+                        {ev.calendar_name && (
+                          <span className="tonight-cal">{ev.calendar_name}</span>
+                        )}
+                        {ev.is_current && (
+                          <span className="tonight-now">NOW</span>
+                        )}
+                      </div>
+                      {ev.event_note && (
+                        <div className="tonight-note">{ev.event_note}</div>
+                      )}
+                    </div>
+                    <span className="tonight-type">
+                      {eventTypeLabel(ev.event_type)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </article>
+
+          {nudge && (
+            <div className="nudge-banner">
+              <span className="nudge-text">{nudge.text}</span>
+              <button
+                className={`nudge-dismiss${nudgeLoading ? " btn-processing" : ""}`}
+                type="button"
+                onClick={() => void handleDismissNudge()}
+                disabled={nudgeLoading}
+                aria-label="Dismiss"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
         </div>
       </div>
 
@@ -912,6 +944,8 @@ function ZonesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
+  const [processingZoneId, setProcessingZoneId] = useState<number | null>(null);
+  const [creating, setCreating] = useState(false);
   const [newZone, setNewZone] = useState<Partial<ZoneRecord>>({
     slug: "",
     name: "",
@@ -944,6 +978,7 @@ function ZonesPage() {
 
   async function toggleZone(zone: ZoneRecord) {
     if (!zone.id) return;
+    setProcessingZoneId(zone.id);
     try {
       await fetchJson(`/api/zones/${zone.id}`, {
         method: "PATCH",
@@ -952,17 +987,22 @@ function ZonesPage() {
       await load();
     } catch {
       setError("Failed to update place.");
+    } finally {
+      setProcessingZoneId(null);
     }
   }
 
   async function deleteZone(zone: ZoneRecord) {
     if (!zone.id) return;
     if (!confirm(`Remove "${zone.name}"?`)) return;
+    setProcessingZoneId(zone.id);
     try {
       await fetchJson(`/api/zones/${zone.id}`, { method: "DELETE" });
       await load();
     } catch {
       setError("Failed to remove place.");
+    } finally {
+      setProcessingZoneId(null);
     }
   }
 
@@ -971,6 +1011,7 @@ function ZonesPage() {
       setError("Name and slug are required.");
       return;
     }
+    setCreating(true);
     try {
       await fetchJson("/api/zones", {
         method: "POST",
@@ -990,11 +1031,14 @@ function ZonesPage() {
       await load();
     } catch {
       setError("Failed to create place.");
+    } finally {
+      setCreating(false);
     }
   }
 
   async function saveZoneEdit(zone: ZoneRecord) {
     if (!zone.id) return;
+    setProcessingZoneId(zone.id);
     try {
       await fetchJson(`/api/zones/${zone.id}`, {
         method: "PATCH",
@@ -1006,6 +1050,8 @@ function ZonesPage() {
       await load();
     } catch {
       setError("Failed to update place.");
+    } finally {
+      setProcessingZoneId(null);
     }
   }
 
@@ -1075,39 +1121,15 @@ function ZonesPage() {
                 <option value="gym">Gym</option>
               </select>
             </div>
-            <div className="zone-field">
-              <label>Radius (meters)</label>
-              <input
-                className="zone-input"
-                type="number"
-                min={25}
-                max={500}
-                value={newZone.radius_meters ?? 75}
-                onChange={(e) =>
-                  setNewZone({
-                    ...newZone,
-                    radius_meters: Number(e.target.value),
-                  })
-                }
-              />
-            </div>
-            <div className="zone-field">
-              <label>Focus Mode <span className="zone-field-hint">(optional)</span></label>
-              <input
-                className="zone-input"
-                value={newZone.focus_mode ?? ""}
-                onChange={(e) => setNewZone({ ...newZone, focus_mode: e.target.value })}
-                placeholder="e.g. study, work"
-              />
-            </div>
           </div>
           <button
-            className="log-intent-btn"
+            className={`log-intent-btn${creating ? " btn-processing" : ""}`}
             type="button"
             style={{ marginTop: "1.5rem", width: "auto", padding: "0.75rem 2rem" }}
+            disabled={creating}
             onClick={() => void createZone()}
           >
-            CREATE PLACE
+            {creating ? "CREATING..." : "CREATE PLACE"}
           </button>
         </div>
       )}
@@ -1139,7 +1161,8 @@ function ZonesPage() {
                 <div className="zone-card-actions">
                   <button
                     type="button"
-                    className={`zone-toggle ${zone.enabled ? "zone-toggle-on" : "zone-toggle-off"}`}
+                    className={`zone-toggle ${zone.enabled ? "zone-toggle-on" : "zone-toggle-off"}${processingZoneId === zone.id ? " btn-processing" : ""}`}
+                    disabled={processingZoneId === zone.id}
                     onClick={() => void toggleZone(zone)}
                   >
                     {zone.enabled ? "ACTIVE" : "PAUSED"}
@@ -1166,18 +1189,13 @@ function ZonesPage() {
                   </button>
                   <button
                     type="button"
-                    className="zone-delete"
+                    className={`zone-delete${processingZoneId === zone.id ? " btn-processing" : ""}`}
+                    disabled={processingZoneId === zone.id}
                     onClick={() => void deleteZone(zone)}
                   >
                     REMOVE
                   </button>
                 </div>
-              </div>
-              <div className="zone-card-meta">
-                <span>RADIUS: {zone.radius_meters}m</span>
-                {zone.focus_mode && (
-                  <span>FOCUS: {zone.focus_mode.toUpperCase()}</span>
-                )}
               </div>
               {editingZoneId === zone.id && (
                 <div className="zone-edit-form">
@@ -1196,17 +1214,9 @@ function ZonesPage() {
                         <option value="gym">Gym</option>
                       </select>
                     </div>
-                    <div className="zone-field">
-                      <label>Radius (meters)</label>
-                      <input className="zone-input" type="number" min={25} max={500} value={editZone.radius_meters ?? 75} onChange={(e) => setEditZone({ ...editZone, radius_meters: Number(e.target.value) })} />
-                    </div>
-                    <div className="zone-field">
-                      <label>Focus Mode <span className="zone-field-hint">(optional)</span></label>
-                      <input className="zone-input" value={editZone.focus_mode ?? ""} onChange={(e) => setEditZone({ ...editZone, focus_mode: e.target.value })} placeholder="e.g. study, work" />
-                    </div>
                   </div>
                   <div style={{ display: "flex", gap: "0.75rem", marginTop: "1rem" }}>
-                    <button type="button" className="log-intent-btn" style={{ flex: 1, padding: "0.6rem" }} onClick={() => void saveZoneEdit(zone)}>SAVE CHANGES</button>
+                    <button type="button" className={`log-intent-btn${processingZoneId === zone.id ? " btn-processing" : ""}`} style={{ flex: 1, padding: "0.6rem" }} disabled={processingZoneId === zone.id} onClick={() => void saveZoneEdit(zone)}>{processingZoneId === zone.id ? "SAVING..." : "SAVE CHANGES"}</button>
                     <button type="button" className="zone-delete" style={{ padding: "0.6rem 1rem" }} onClick={() => { setEditingZoneId(null); setEditZone({}); }}>CANCEL</button>
                   </div>
                 </div>
@@ -1341,7 +1351,7 @@ function HistoryPage({
                   !s.summary_text?.startsWith("Likely sleeping") &&
                   !s.summary_text?.startsWith("No Mac activity")
               )
-              .sort((a, b) => a.hour_start_local.localeCompare(b.hour_start_local));
+              .sort((a, b) => b.hour_start_local.localeCompare(a.hour_start_local));
 
             const dayAvg =
               realSummaries.length > 0
@@ -1556,6 +1566,7 @@ function SettingsPage({
   const [draft, setDraft] = useState<BackendSettings | null>(settings);
   const [calUrls, setCalUrls] = useState<string[]>(settings?.calendar_ical_urls ?? []);
   const [newUrl, setNewUrl] = useState("");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     setDraft(settings);
@@ -1721,12 +1732,17 @@ function SettingsPage({
           </div>
 
           <button
-            className="log-intent-btn"
+            className={`log-intent-btn${saving ? " btn-processing" : ""}`}
             type="button"
             style={{ width: "auto", padding: "1rem 2rem" }}
-            onClick={() => void onSave({ ...draft, calendar_ical_urls: calUrls })}
+            disabled={saving}
+            onClick={async () => {
+              setSaving(true);
+              try { await onSave({ ...draft, calendar_ical_urls: calUrls }); }
+              finally { setSaving(false); }
+            }}
           >
-            Save Changes
+            {saving ? "Saving..." : "Save Changes"}
           </button>
         </div>
       </Surface>
@@ -1830,7 +1846,6 @@ export default function App() {
               <TodayPage
                 state={state}
                 analytics={analytics}
-                logs={logs}
                 hourlySummaries={hourlySummaries}
                 aiDayInsight={aiDayInsight}
                 calendarEvents={calendarEvents}

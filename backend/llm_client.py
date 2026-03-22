@@ -517,6 +517,8 @@ async def generate_hourly_summary(
     hour_of_day: int = 12,
     day_of_week: str = "Monday",
     intent: str = "",
+    intent_age_hours: float = 0.0,
+    intent_staleness_note: str = "",
     location: str = "",
     zone_notes: str = "",
 ) -> dict:
@@ -607,7 +609,19 @@ async def generate_hourly_summary(
         time_context = "late night / early hours"
 
     # --- Intent context ---
-    intent_section = f"\nUSER'S CURRENT INTENT: \"{intent}\"\n" if intent else ""
+    if intent:
+        age_label = f" (set {intent_age_hours:.0f}h ago)" if intent_age_hours >= 1 else ""
+        intent_section = f"\nUSER'S STATED INTENT: \"{intent}\"{age_label}\n"
+        if intent_staleness_note:
+            intent_section += (
+                f"Current context: {intent_staleness_note}\n"
+                f"Use the above context to judge whether this intent is still active for this hour "
+                f"or belongs to a past session. If signals indicate the user left their work environment "
+                f"(e.g. at home/gym, phone on battery, Mac locked, walking), treat the intent as past "
+                f"and do not apply intent-disconnect penalties.\n"
+            )
+    else:
+        intent_section = ""
 
     prompt = f"""You are Chronicle, a precise personal productivity analyst. Your goal is to provide a 'smart' and highly contextual summary of the user's hour.
 
@@ -634,7 +648,7 @@ SCORING RUBRIC — be strict, do not inflate:
 
 SCORE ADJUSTMENTS:
 - Intent Alignment: If the user stated an intent (like "{intent}") and the logs match it, it's a productivity win (+0.5).
-- Intent Disconnect: If logs contradict the stated intent or calendar, penalize significantly (-1.5).
+- Intent Disconnect: If logs contradict the stated intent or calendar, penalize significantly (-1.5). Skip this penalty entirely if the context signals above indicate the user is no longer in a work environment — the intent belongs to a past session.
 - Late night (22:00+) or early morning (before 7:00): shift score up 1 if activity is reasonable.
 - Confirmed break: score 5 is neutral/expected.
 - High idle% (>50%): cap score at 5 unless idle is during confirmed break.

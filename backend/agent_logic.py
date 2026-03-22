@@ -954,7 +954,11 @@ async def _generate_and_store_hourly_summary(db: Session, now: datetime, force_c
 
     existing = db.query(HourlySummary).filter(HourlySummary.hour_start == hour_start).first()
 
-    logs = get_mac_logs_for_hour(db, since=hour_start, until=hour_end)
+    _SYSTEM_PROCESSES = {"loginwindow", "login window", "screensaver", "systemuiserver", "dock", "finder"}
+    logs = [
+        l for l in get_mac_logs_for_hour(db, since=hour_start, until=hour_end)
+        if (l.app_name or "").lower() not in _SYSTEM_PROCESSES
+    ]
     if not logs:
         fallback_text = "No Mac activity recorded this hour."
         if existing:
@@ -1068,8 +1072,47 @@ async def _generate_and_store_hourly_summary(db: Session, now: datetime, force_c
                     "activity_type": ios_entry.activity_type,
                 }
 
-            # User intent context
-            intent = get_state(db, "context_current_intent", "")
+            # User intent context — gather contextual signals to help LLM judge if intent is still active
+            _intent_row = db.query(AgentState).filter(AgentState.key == "context_current_intent").first()
+            intent = _intent_row.value if _intent_row else ""
+            intent_age_hours: float = 0.0
+            if _intent_row and _intent_row.updated_at:
+                _intent_updated = _intent_row.updated_at.replace(tzinfo=timezone.utc) if _intent_row.updated_at.tzinfo is None else _intent_row.updated_at
+                intent_age_hours = (now - _intent_updated).total_seconds() / 3600
+
+            # Build rich contextual signals so the LLM can determine intent relevance itself
+            _intent_signals: list[str] = []
+            # Zone: strongest signal
+            _study_work_zones = {"study", "work"}
+            if _zone_type in _study_work_zones:
+                _intent_signals.append(f"currently in {_zone_type} zone (productive environment)")
+            elif _zone_type == "gym":
+                _intent_signals.append("currently at gym — physical activity, unrelated to desk intent")
+            elif _zone_type == "home":
+                _intent_signals.append("currently at home zone")
+            elif _loc:
+                _intent_signals.append(f"current location: {_loc}")
+            # iOS motion activity
+            _last_activity = get_state(db, "last_ios_activity_type", "")
+            if _last_activity.lower() in ("walking", "running", "cycling", "automotive"):
+                _intent_signals.append(f"user is {_last_activity.lower()} (mobile, not at desk)")
+            elif _last_activity.lower() == "stationary":
+                _intent_signals.append("user is stationary")
+            # Charging state (implies plugged in / likely settled)
+            _charging_str = get_state(db, "last_ios_is_charging", "")
+            if _charging_str == "true":
+                _intent_signals.append("phone is charging (plugged in, likely at a fixed location)")
+            elif _charging_str == "false":
+                _intent_signals.append("phone on battery (mobile or away from desk)")
+            # Mac presence from most recent log
+            _recent_mac_presence = (logs[-1].get("presence_state") or "") if logs else ""
+            if _recent_mac_presence in ("locked", "sleeping"):
+                _intent_signals.append(f"Mac screen is {_recent_mac_presence}")
+            elif _recent_mac_presence == "away":
+                _intent_signals.append("user has been away from Mac")
+            elif _recent_mac_presence == "active":
+                _intent_signals.append("user is active at Mac")
+            intent_staleness_note = "; ".join(_intent_signals)
 
             register_llm_call(db, now)
             llm_result = await llm_client.generate_hourly_summary(
@@ -1086,6 +1129,8 @@ async def _generate_and_store_hourly_summary(db: Session, now: datetime, force_c
                 hour_of_day=local_hour_start.hour,
                 day_of_week=local_hour_start.strftime("%A"),
                 intent=intent,
+                intent_age_hours=intent_age_hours,
+                intent_staleness_note=intent_staleness_note,
                 location=_loc,
                 zone_notes=_zone_notes,
             )

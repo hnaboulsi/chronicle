@@ -201,6 +201,12 @@ button, input, select { font: inherit; }
 }
 .refresh-btn:hover:not(:disabled) { background: var(--line); color: var(--text); }
 
+.btn-processing {
+  opacity: 0.55;
+  pointer-events: none;
+  cursor: default;
+}
+
 /* EDITORIAL GRID (TODAY PAGE) */
 .editorial-page {
   display: flex;
