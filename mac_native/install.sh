@@ -3,11 +3,10 @@ set -e
 
 cd "$(dirname "$0")"
 
-echo "Building Vero..."
+echo "Building Chronicle..."
 xcodegen generate --quiet
 
 xcodebuild \
-  -project Vero.xcodeproj \
   -project Chronicle.xcodeproj \
   -scheme Chronicle \
   -configuration Debug \
@@ -25,19 +24,18 @@ fi
 # Relying on Xcode's built-in ad-hoc signing to preserve Accessibility permissions across rebuilds.
 
 echo "Installing to /Applications..."
-rm -rf "/Applications/LifeManager.app"
-rm -rf "/Applications/Vero.app"
-cp -R "$APP" "/Applications/Vero.app"
+rm -rf "/Applications/Chronicle.app"
+cp -R "$APP" "/Applications/Chronicle.app"
 
 # Skipped re-signing installed app to preserve Accessibility.
 
-echo "Launching Vero..."
+echo "Launching Chronicle..."
 # Kill existing instances — including stale VeroAgent from the old two-process architecture.
 pkill -x Vero 2>/dev/null || true
 pkill -x VeroAgent 2>/dev/null || true
 # Remove stale VeroAgent build artifact so macOS BTM can't auto-launch it.
 rm -rf /tmp/vero-build/Build/Products/Debug/VeroAgent.app 2>/dev/null || true
 sleep 0.5
-open "/Applications/Vero.app"
+open "/Applications/Chronicle.app"
 
 echo "Done!"

@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend-and-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Test backend
+        run: |
+          python -m pip install -r backend/requirements.txt
+          python -m pip install pytest
+          pytest backend -q
+      - name: Build web client
+        run: npm ci --prefix web && npm run build --prefix web
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install xcodegen
+      - name: Generate Xcode project
+        run: cd mac_native && xcodegen generate
+      - name: Build native client
+        run: >-
+          xcodebuild -project mac_native/Chronicle.xcodeproj -scheme Chronicle
+          -configuration Debug CODE_SIGNING_ALLOWED=NO build

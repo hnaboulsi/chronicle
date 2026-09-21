@@ -1,10 +1,20 @@
 # Chronicle
 
-AI-powered personal productivity tracker that understands your day. It watches what you're doing on your Mac, tracks your iPhone location, surfaces your calendar, and proactively nudges you when deadlines approach or context switches.
+A self-hosted activity and calendar context system with a native macOS agent, FastAPI backend,
+and responsive web dashboard. It records only the signals configured by the operator and keeps
+the collection path visible so behavior can be inspected rather than treated as an opaque score.
 
-Chronicle is currently in internal alpha.
+Chronicle is an experimental personal tool, not employee-monitoring software or a validated
+measure of productivity.
 
-## What It Does
+## Demo / Results
+
+The current repository includes unit tests for analytics, AI-provider routing, zones, and summary
+helpers. The web client has a reproducible Vite build, while the native client is generated from
+`mac_native/project.yml` and built with Xcode. Screenshots and longer-term performance measurements
+are still missing; the README does not claim them as completed evidence.
+
+## What I Built
 
 - **Tracks your Mac activity** — A silent native macOS agent knows what app you're using and classifies it (studying, working, entertainment, etc.)
 - **Tracks your iPhone location** — Uses iOS Shortcut geofences (Zones) to detect when you arrive at or leave a location, with zero background battery drain.
@@ -15,7 +25,7 @@ Chronicle is currently in internal alpha.
 - **AI insights** — Hourly recaps, a 7-day productivity heat map, and a daily intelligence summary. Source-transparent (LLM vs. deterministic fallback).
 - **Logs to Apple Calendar** — Productive sessions and location visits automatically appear as events on your calendar.
 
-## Architecture
+## How It Works
 
 ```
 iPhone Shortcuts ──→ Railway Backend (FastAPI + PostgreSQL) ←── Native macOS Agent
@@ -27,7 +37,7 @@ iPhone Shortcuts ──→ Railway Backend (FastAPI + PostgreSQL) ←── Nati
 
 Everything runs through a single Railway backend. The iPhone uses native Apple Shortcuts (no app needed). The Mac runs a lightweight native Swift app with a background helper agent. The dashboard is a PWA you can add to your iPhone home screen.
 
-## Quick Start
+## Running It
 
 ### 1. Deploy Backend to Railway
 
@@ -39,14 +49,15 @@ Connect the repo to Railway and set the `backend/` directory as the root. Set th
 | `GEMINI_API_KEY` | Recommended | Free Google Gemini API key for AI features |
 | `OPENAI_API_KEY` | Optional | OpenAI fallback |
 | `ANTHROPIC_API_KEY` | Optional | Anthropic Claude fallback |
-| `DASHBOARD_USER` | Optional | Login username (default: admin) |
-| `DASHBOARD_PASS` | Optional | Login password (empty = no auth) |
+| `DASHBOARD_USER` | Yes | Login username |
+| `DASHBOARD_PASS` | Yes | Strong dashboard password |
+| `SECRET_KEY` | Yes | Random session-signing secret |
 
 Verify health: `GET https://your-app.railway.app/api/healthz`
 
 ### 2. Install the Mac App
 
-1. Open `mac_native/LifeManager.xcodeproj` in Xcode (or run `./install.sh`).
+1. Open `mac_native/Chronicle.xcodeproj` in Xcode (or run `./install.sh`).
 2. Build and run.
 3. Enter your backend URL and auth credentials in the app.
 4. Click **Enable Agent** to start the background tracking helper.
@@ -140,7 +151,31 @@ Timezone is auto-synced from your browser on every app load.
 | `OPENAI_API_KEY` | — | OpenAI API key (fallback) |
 | `ANTHROPIC_API_KEY` | — | Anthropic Claude API key (fallback) |
 | `DASHBOARD_USER` | `admin` | Dashboard login username |
-| `DASHBOARD_PASS` | _(none)_ | Dashboard login password |
+| `DASHBOARD_PASS` | _(none)_ | Dashboard password; required for any network-accessible deployment |
+| `SECRET_KEY` | _(none)_ | Random session-signing key; required whenever `DASHBOARD_PASS` is set |
 | `DAILY_LLM_BUDGET` | `30` | Max LLM calls per day |
 | `USER_TIMEZONE` | _(auto)_ | Fallback timezone; auto-synced from browser on each load |
 | `BACKEND_URL` | _(auto)_ | Public URL used for Shortcut generation |
+
+## Privacy and Security Boundaries
+
+Chronicle can collect application names, browser window titles, calendar metadata, coarse zone
+events, and user-entered context. That data can reveal sensitive personal behavior. Run the
+backend only over HTTPS, set both `DASHBOARD_PASS` and a random `SECRET_KEY`, restrict database
+access, and review the configured collection fields before enabling the agent. The repository
+contains no telemetry from the author's own account. Location is represented as user-defined
+enter/leave zone events; the project does not continuously upload raw GPS coordinates.
+
+The in-memory login throttle is a convenience control, not distributed abuse protection. A
+public deployment should also use platform-level rate limiting and managed secrets.
+
+## Known Limitations
+
+The app is single-user, its classifier labels are heuristic or model-generated, and its scores
+should not be interpreted as objective judgments. Cross-device ordering depends on host clocks.
+The current repository does not include a production threat model, external security review, or
+long-duration resource benchmark.
+
+## Tech
+
+Swift and SwiftUI, EventKit, FastAPI, SQLAlchemy, PostgreSQL, React, TypeScript, and Vite.
