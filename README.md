@@ -2,6 +2,8 @@
 
 Self-hosted activity and calendar context system with a native macOS agent, FastAPI backend, and responsive web dashboard.
 
+![Chronicle architecture](media/architecture.svg)
+
 ## Why I Built It
 
 I wanted a personal tool whose collection path is visible and configurable, rather than an opaque productivity score. Chronicle keeps the native capture agent, backend, calendar integration, and dashboard in one inspectable system.
