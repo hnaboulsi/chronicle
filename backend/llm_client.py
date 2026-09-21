@@ -104,14 +104,12 @@ def _provider_order(task_type: str = "default") -> list[str]:
     elif primary == "auto":
         candidates.extend(_VALID_PROVIDERS)
 
-    # Always include Gemini/OpenAI fallbacks unless strict_primary is set.
-    # Background tasks (hourly_summary, classification) wait longer for Mistral via
-    # _acquire_mistral_slot before falling through, but they must still have Gemini
-    # available as a safety net when Mistral's budget is exhausted.
-    if _routing_mode() != "strict_primary":
+    # In task-aware mode, fallbacks are reserved for interactive requests. Background
+    # jobs wait for the primary provider instead of consuming a secondary provider's budget.
+    if _task_allows_fallback(task_type):
         candidates.extend(fallbacks)
-    elif not any(_provider_available(p) for p in candidates):
-        # strict_primary: only add fallbacks if primary is completely unavailable
+    elif _routing_mode() == "strict_primary" and not any(_provider_available(p) for p in candidates):
+        # Strict-primary mode still permits a configured fallback when the primary is absent.
         candidates.extend(fallbacks)
 
     ordered: list[str] = []

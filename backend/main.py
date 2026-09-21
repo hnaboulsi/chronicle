@@ -221,7 +221,10 @@ _NO_AUTH_PATHS = {
 
 def _session_token(password: str) -> str:
     """Deterministic token derived from the password — no server-side state needed."""
-    key = os.environ.get("SECRET_KEY", "vero-default-secret").encode()
+    secret_key = os.environ.get("SECRET_KEY", "").strip()
+    if not secret_key:
+        raise RuntimeError("SECRET_KEY is required when dashboard authentication is enabled")
+    key = secret_key.encode()
     return hmac.new(key, password.encode(), hashlib.sha256).hexdigest()
 
 
@@ -280,7 +283,7 @@ async def auth_middleware(request: Request, call_next):
 
     password = os.environ.get("DASHBOARD_PASS", "").strip()
     if not password:
-        return await call_next(request)  # No password set — open (local dev)
+        return await call_next(request)  # Local development only; public deployments must set auth.
 
     client_ip = request.client.host if request.client else "unknown"
 
