@@ -8,6 +8,12 @@ Self-hosted activity and calendar context system with a native macOS agent, Fast
 
 I wanted a personal tool whose collection path is visible and configurable, rather than an opaque productivity score. Chronicle keeps the native capture agent, backend, calendar integration, and dashboard in one inspectable system.
 
+## Demo
+
+![Chronicle dashboard](media/chronicle-dashboard.png)
+
+This local capture shows the Today dashboard with seeded demo activity and a synthetic schedule. It contains no personal activity or calendar data.
+
 ## What It Does
 
 The Mac agent samples configured application activity and writes selected sessions to the backend. iPhone Shortcuts report user-defined zone enter/leave events, the dashboard combines activity with calendar context, and deterministic or model-backed summaries surface the day's state. A tracking toggle and configurable sleep window keep collection operator-controlled.
